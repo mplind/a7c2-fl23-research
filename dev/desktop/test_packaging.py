@@ -128,3 +128,39 @@ def test_dmg_has_fresh_staging_and_arch_specific_filename(tmp_path):
     assert result.name=='A7C2Tools-macOS-arm64.dmg'
     assert not list(tmp_path.glob('a7c2-dmg-*'))
     assert run.call_args.args[0]==['hdiutil','verify',str(result)]
+
+
+def fake_mac_toolchain(calls):
+    """PyInstaller creates the app; codesign/hdiutil succeed without touching the host."""
+    def command(args,**kwargs):
+        calls.append(list(args))
+        if args[1:3]==['-m','PyInstaller']:
+            app=Path(args[args.index('--distpath')+1])/'A7C2Tools.app'
+            app.mkdir(parents=True);(app/'file').write_bytes(b'app')
+        elif args[:2]==['hdiutil','create']:Path(args[-1]).write_bytes(b'dmg')
+    return command
+
+
+def test_main_packages_intel_mac_with_x86_64_dmg(tmp_path,capsys):
+    calls=[]
+    def symlink(path,target,**kwargs):path.write_text(str(target))
+    with patch.object(build.sys,'platform','darwin'), \
+            patch.object(build.platform,'machine',return_value='x86_64'), \
+            patch.object(build.sys,'argv',['build.py','--output',str(tmp_path)]), \
+            patch.object(build,'profile_files',return_value={}), \
+            patch.object(build.subprocess,'run',side_effect=fake_mac_toolchain(calls)), \
+            patch.object(Path,'symlink_to',symlink):
+        build.main()
+    import json
+    printed=json.loads(capsys.readouterr().out)
+    assert Path(printed['artifact'])==tmp_path/'A7C2Tools-macOS-x86_64.dmg'
+    assert printed['camera_io'] is False
+    assert calls[0][1:3]==['-m','PyInstaller'] and calls[0][-1].endswith('desktop.spec')
+
+
+def test_main_still_refuses_hosts_other_than_windows_and_macos(tmp_path):
+    with patch.object(build.sys,'platform','linux'), \
+            patch.object(build.sys,'argv',['build.py','--output',str(tmp_path)]), \
+            patch.object(build.subprocess,'run') as run:
+        with pytest.raises(RuntimeError,match='native Windows or macOS'):build.main()
+    run.assert_not_called()

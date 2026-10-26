@@ -57,8 +57,6 @@ def main():
     parser.add_argument('--output',type=Path,default=ROOT/'dist')
     args=parser.parse_args()
     if sys.platform not in ('win32','darwin'):raise RuntimeError('Build on native Windows or macOS')
-    if sys.platform=='darwin' and platform.machine()!='arm64':
-        raise RuntimeError('macOS packaging supports Apple Silicon only; Intel builds are not provided')
     output=args.output.resolve();output.mkdir(parents=True,exist_ok=True)
     profile_files()
     subprocess.run([sys.executable,'-m','PyInstaller','--noconfirm',
