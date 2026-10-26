@@ -130,32 +130,113 @@ def test_dmg_has_fresh_staging_and_arch_specific_filename(tmp_path):
     assert run.call_args.args[0]==['hdiutil','verify',str(result)]
 
 
+import struct
+posix_symlinks=pytest.mark.skipif(sys.platform=='win32',reason='macOS bundle layout needs POSIX symlinks')
+
+
+def macho(path,room,signed=False):
+    """Minimal x86_64 Mach-O: __TEXT/__text starts `room` bytes after the load commands."""
+    size=72+80+(16 if signed else 0)
+    text=32+size+room
+    section=struct.pack('<16s16sQQ8I',b'__text',b'__TEXT',0x100000000+text,8,text,0,0,0,0,0,0,0)
+    commands=struct.pack('<II16sQQQQiiII',0x19,72+80,b'__TEXT',0x100000000,0x1000,0,0x1000,5,5,1,0)+section
+    if signed:commands+=struct.pack('<4I',0x1d,16,0x2000,0x100)
+    header=struct.pack('<8I',0xfeedfacf,0x01000007,3,2,2 if signed else 1,size,0x200085,0)
+    path.write_bytes(header+commands+bytes(room)+b'UAWAVAUA')
+    return path
+
+
+def test_unsigned_zig_without_signature_room_needs_upstream_copy(tmp_path):
+    # Zig 0.13.0 for Intel macOS: load commands end at 2360, __text starts at 2368.
+    assert build.needs_unsigned_copy(macho(tmp_path/'zig',room=8)) is True
+
+
+def test_room_for_a_signature_is_left_to_pyinstaller(tmp_path):
+    assert build.needs_unsigned_copy(macho(tmp_path/'zig',room=16)) is False
+
+
+def test_already_signed_zig_is_left_to_pyinstaller(tmp_path):
+    # Apple Silicon Zig is linker-signed; re-signing replaces that command in place.
+    assert build.needs_unsigned_copy(macho(tmp_path/'zig',room=8,signed=True)) is False
+
+
+def test_non_macho_compiler_is_rejected(tmp_path):
+    path=tmp_path/'zig';path.write_bytes(b'\x7fELF'+bytes(60))
+    with pytest.raises(ValueError,match='Mach-O'):build.needs_unsigned_copy(path)
+
+
+@pytest.mark.skipif(sys.platform!='darwin' or build.platform.machine()!='x86_64',reason='Intel macOS Zig wheel only')
+def test_installed_intel_zig_0_13_has_no_signature_room():
+    import ziglang
+    zig=Path(ziglang.__file__).resolve().parent/'zig'
+    if not zig.is_file():pytest.skip('ziglang executable not installed')
+    assert build.needs_unsigned_copy(zig) is True
+
+
+def pyinstaller_app(root):
+    """PyInstaller's macOS layout: signed Zig in Frameworks, Resources links to it."""
+    app=root/'A7C2Tools.app'
+    framework=app/'Contents/Frameworks/ziglang/zig';framework.parent.mkdir(parents=True)
+    framework.write_bytes(b'signature overwrote code');framework.chmod(0o755)
+    resource=app/'Contents/Resources/ziglang/zig';resource.parent.mkdir(parents=True)
+    resource.symlink_to('../../Frameworks/ziglang/zig')
+    return app
+
+
+@posix_symlinks
+def test_keep_upstream_zig_seals_original_bytes_and_resigns_app(tmp_path):
+    app=pyinstaller_app(tmp_path);upstream=macho(tmp_path/'upstream-zig',room=8);upstream.chmod(0o755)
+    with patch.object(build.subprocess,'run') as run:build.keep_upstream_zig(app,upstream)
+    resource=app/'Contents/Resources/ziglang/zig';framework=app/'Contents/Frameworks/ziglang/zig'
+    assert not resource.is_symlink() and resource.read_bytes()==upstream.read_bytes()
+    assert resource.stat().st_mode&0o111
+    assert framework.is_symlink() and framework.resolve()==resource.resolve()
+    run.assert_called_once_with(['codesign','--force','--sign','-',str(app)],check=True)
+
+
 def fake_mac_toolchain(calls):
     """PyInstaller creates the app; codesign/hdiutil succeed without touching the host."""
     def command(args,**kwargs):
         calls.append(list(args))
         if args[1:3]==['-m','PyInstaller']:
-            app=Path(args[args.index('--distpath')+1])/'A7C2Tools.app'
-            app.mkdir(parents=True);(app/'file').write_bytes(b'app')
+            pyinstaller_app(Path(args[args.index('--distpath')+1]))
         elif args[:2]==['hdiutil','create']:Path(args[-1]).write_bytes(b'dmg')
     return command
 
 
-def test_main_packages_intel_mac_with_x86_64_dmg(tmp_path,capsys):
-    calls=[]
-    def symlink(path,target,**kwargs):path.write_text(str(target))
+def run_mac_main(tmp_path,upstream,calls):
+    output=tmp_path/'dist'
     with patch.object(build.sys,'platform','darwin'), \
             patch.object(build.platform,'machine',return_value='x86_64'), \
-            patch.object(build.sys,'argv',['build.py','--output',str(tmp_path)]), \
+            patch.object(build.sys,'argv',['build.py','--output',str(output)]), \
             patch.object(build,'profile_files',return_value={}), \
-            patch.object(build.subprocess,'run',side_effect=fake_mac_toolchain(calls)), \
-            patch.object(Path,'symlink_to',symlink):
+            patch.object(build,'upstream_zig',return_value=upstream), \
+            patch.object(build.subprocess,'run',side_effect=fake_mac_toolchain(calls)):
         build.main()
+    return output
+
+
+@posix_symlinks
+def test_main_packages_intel_mac_with_x86_64_dmg_and_upstream_zig(tmp_path,capsys):
+    calls=[];upstream=macho(tmp_path/'upstream-zig',room=8)
+    output=run_mac_main(tmp_path,upstream,calls)
     import json
     printed=json.loads(capsys.readouterr().out)
-    assert Path(printed['artifact'])==tmp_path/'A7C2Tools-macOS-x86_64.dmg'
+    assert Path(printed['artifact'])==output/'A7C2Tools-macOS-x86_64.dmg'
     assert printed['camera_io'] is False
     assert calls[0][1:3]==['-m','PyInstaller'] and calls[0][-1].endswith('desktop.spec')
+    assert (output/'A7C2Tools.app/Contents/Resources/ziglang/zig').read_bytes()==upstream.read_bytes()
+    # Re-seal the bundle before the DMG step verifies it.
+    assert calls.index(['codesign','--force','--sign','-',str(output/'A7C2Tools.app')])<calls.index(
+        ['codesign','--verify','--deep','--strict',str(output/'A7C2Tools.app')])
+
+
+@posix_symlinks
+def test_main_keeps_pyinstaller_zig_when_signature_fits(tmp_path,capsys):
+    calls=[];output=run_mac_main(tmp_path,macho(tmp_path/'upstream-zig',room=8,signed=True),calls)
+    framework=output/'A7C2Tools.app/Contents/Frameworks/ziglang/zig'
+    assert not framework.is_symlink() and framework.read_bytes()==b'signature overwrote code'
+    assert ['codesign','--force','--sign','-',str(output/'A7C2Tools.app')] not in calls
 
 
 def test_main_still_refuses_hosts_other_than_windows_and_macos(tmp_path):

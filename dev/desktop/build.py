@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import platform
 import shutil
+import struct
 import subprocess
 import sys
 import tempfile
@@ -11,6 +12,45 @@ import zipfile
 from profilepack import files as profile_files
 
 ROOT = Path(__file__).resolve().parents[2]
+LC_SEGMENT_64,LC_CODE_SIGNATURE=0x19,0x1d
+
+
+def upstream_zig():
+    import ziglang
+    return Path(ziglang.__file__).resolve().parent/'zig'
+
+
+def needs_unsigned_copy(path):
+    """True when codesign cannot add a signature without overwriting code.
+
+    Zig 0.13.0 for Intel macOS leaves 8 bytes between its load commands and
+    __text. The 16-byte LC_CODE_SIGNATURE then overwrites machine code and every
+    clang compile segfaults. A binary that is already signed is re-signed in place.
+    """
+    with open(path,'rb') as stream:
+        magic,_,_,_,count,size,_,_=struct.unpack('<8I',stream.read(32))
+        if magic!=0xfeedfacf:raise ValueError('Not a 64-bit little-endian Mach-O: '+str(path))
+        commands=stream.read(size)
+    first=None;offset=0
+    for _ in range(count):
+        command,length=struct.unpack_from('<II',commands,offset)
+        if command==LC_CODE_SIGNATURE:return False
+        if command==LC_SEGMENT_64:
+            for index in range(struct.unpack_from('<I',commands,offset+64)[0]):
+                start=struct.unpack_from('<I',commands,offset+72+80*index+48)[0]
+                if start and (first is None or start<first):first=start
+        offset+=length
+    return first is not None and first-(32+size)<16
+
+
+def keep_upstream_zig(app,upstream):
+    """Seal the unsigned upstream Zig as a resource; Frameworks links to it."""
+    framework=app/'Contents/Frameworks/ziglang/zig'
+    resource=app/'Contents/Resources/ziglang/zig'
+    resource.unlink()
+    shutil.copy2(upstream,resource)
+    framework.unlink();framework.symlink_to('../../Resources/ziglang/zig')
+    subprocess.run(['codesign','--force','--sign','-',str(app)],check=True)
 
 
 def make_dmg(output):
@@ -62,6 +102,8 @@ def main():
     subprocess.run([sys.executable,'-m','PyInstaller','--noconfirm',
                     '--distpath',str(output),'--workpath',str(ROOT/'build/desktop'),
                     str(ROOT/'dev/desktop/desktop.spec')],cwd=ROOT,check=True)
+    zig=upstream_zig() if sys.platform=='darwin' else None
+    if zig and needs_unsigned_copy(zig):keep_upstream_zig(output/'A7C2Tools.app',zig)
     target=make_dmg(output) if sys.platform=='darwin' else make_windows_zip(output)
     print(json.dumps(dict(artifact=str(target),bytes=target.stat().st_size,camera_io=False)))
 
