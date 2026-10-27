@@ -81,7 +81,7 @@ class PowerProgressTests(unittest.TestCase):
 
     def test_empty_batch_does_not_prompt_power_or_start_a_job(self):
         window=self.window()
-        with patch.object(W.QMessageBox,'warning') as warning,patch.object(W.QMessageBox,'question') as question,patch.object(jobs,'new_job') as job:
+        with patch.object(W.QMessageBox,'warning') as warning,patch('desktopapp.window.ask') as question,patch.object(jobs,'new_job') as job:
             window.launch('direct_looks_import',window.look_batch_args())
         warning.assert_called_once();question.assert_not_called();job.assert_not_called()
 
@@ -90,7 +90,7 @@ class PowerProgressTests(unittest.TestCase):
         window=self.window()
         window.look_editor.add_row(4)
         write=window.look_editor.add_row(6);write.action.setCurrentIndex(1);write.set_file(presets.catalog()[5]['path'])
-        with patch.object(W.QMessageBox,'question',return_value=W.QMessageBox.Yes) as question,patch('desktopapp.window.QtCore.QProcess'):
+        with patch('desktopapp.window.ask', return_value=True) as question,patch('desktopapp.window.QtCore.QProcess'):
             next(b for b in window.buttons if b.objectName()=='action_direct_looks_import').click()
         request=json.loads((window.current_job/'request.private.json').read_text())
         self.assertEqual(request['action'],'direct_looks_import')
@@ -119,7 +119,7 @@ class PowerProgressTests(unittest.TestCase):
         window = self.window()
         self.assertFalse(hasattr(window, 'battery'))
         self.assertNotIn('battery', window.common())
-        with patch.object(W.QMessageBox, 'question', return_value=W.QMessageBox.Cancel) as question, \
+        with patch('desktopapp.window.ask', return_value=False) as question, \
              patch.object(jobs, 'new_job') as job:
             window.launch('look_install', {'workspace': 'not-opened'})
         self.assertIn('电量充足', question.call_args.args[2])
@@ -133,7 +133,7 @@ class PowerProgressTests(unittest.TestCase):
 
     def test_each_write_requires_a_fresh_popup_and_records_confirmation(self):
         window = self.window()
-        with patch.object(W.QMessageBox, 'question', return_value=W.QMessageBox.Yes) as question, \
+        with patch('desktopapp.window.ask', return_value=True) as question, \
              patch('desktopapp.window.QtCore.QProcess') as process:
             for action in ('look_install', 'sound_off'):
                 window.launch(action, {'workspace': 'offline-mocked'})
@@ -164,13 +164,13 @@ class PowerProgressTests(unittest.TestCase):
         window = self.window()
         window.settings['fl23_direct_work'] = 'previous-completed-job'
         args = window.direct_args('fl23', mode='fl23_enable')
-        with patch.object(W.QMessageBox, 'question', return_value=W.QMessageBox.Cancel):
+        with patch('desktopapp.window.ask', return_value=False):
             window.launch('direct_fl23_enable', args)
         self.assertEqual(window.direct_verify_args('fl23')['workspace'], 'previous-completed-job')
 
     def test_enable_button_starts_write_directly_without_pre_restart_or_verify(self):
         window = self.window()
-        with patch.object(W.QMessageBox, 'question', return_value=W.QMessageBox.Yes), \
+        with patch('desktopapp.window.ask', return_value=True), \
              patch.object(window, 'show_reload_guide') as reload_popup, \
              patch('desktopapp.window.QtCore.QProcess') as process:
             button = next(b for b in window.buttons if b.objectName()=='action_direct_fl23_enable')
@@ -193,7 +193,7 @@ class PowerProgressTests(unittest.TestCase):
         (latest / 'direct.private.json').write_text('{"phase":"NEEDS_REVIEW","journal":[]}')
         window.settings['factory_direct_work'] = str(latest)
         with patch('looktool.factoryrecover.pending', return_value=(failed.resolve(), {'phase': 'NEEDS_REVIEW'})), \
-             patch.object(W.QMessageBox, 'question', return_value=W.QMessageBox.Yes) as question, \
+             patch('desktopapp.window.ask', return_value=True) as question, \
              patch('desktopapp.window.QtCore.QProcess'):
             window.launch('direct_factory_reset', {'workspace': str(self.root / 'next'), 'firmware': '2.01'})
         request = json.loads((window.current_job / 'request.private.json').read_text())
@@ -210,7 +210,7 @@ class PowerProgressTests(unittest.TestCase):
         window.fields['factory_failed_work'].setText(str(failed))
         window.settings['factory_direct_work'] = str(failed)
         with patch('looktool.factoryrecover.pending', return_value=(failed.resolve(), {'phase': 'NEEDS_REVIEW'})), \
-             patch.object(W.QMessageBox, 'question', return_value=W.QMessageBox.Cancel), \
+             patch('desktopapp.window.ask', return_value=False), \
              patch.object(jobs, 'new_job') as new_job:
             window.launch('direct_factory_reset', {'workspace': 'not-started'})
         new_job.assert_not_called()
@@ -245,8 +245,7 @@ class PowerProgressTests(unittest.TestCase):
             window = self.window()
         zadig = window.findChild(W.QPushButton, 'zadig_guide')
         automatic = window.findChild(W.QPushButton, 'action_usb_prepare')
-        self.assertTrue(zadig.property('primary'))
-        self.assertIs(zadig.parentWidget(), automatic.parentWidget())
+        self.assertIs(zadig.parentWidget(), automatic.parentWidget())  # same row, beside the automatic install
         self.assertIn('0336', zadigguide.TEXT); self.assertIn('libusbK', zadigguide.TEXT)
         with patch.object(W.QDialog, 'exec', return_value=0) as shown:
             zadig.click()
@@ -258,11 +257,11 @@ class PowerProgressTests(unittest.TestCase):
         window = self.window()
         window.fields['restore_work'].setText(str(self.root / 'unused-recovery'))
         window.settings['factory_direct_work'] = str(self.root / 'factory')
-        with patch.object(W.QMessageBox, 'question', return_value=W.QMessageBox.Cancel), \
+        with patch('desktopapp.window.ask', return_value=False), \
              patch('desktopapp.window.QtCore.QProcess'):
             window.findChild(W.QPushButton, 'action_restore_verify').click()
         self.assertIsNone(window.process)
-        with patch.object(W.QMessageBox, 'question', return_value=W.QMessageBox.Yes), \
+        with patch('desktopapp.window.ask', return_value=True), \
              patch('desktopapp.window.QtCore.QProcess'):
             window.findChild(W.QPushButton, 'action_restore_verify').click()
         request = json.loads((window.current_job / 'request.private.json').read_text())
@@ -282,7 +281,7 @@ class PowerProgressTests(unittest.TestCase):
         window.settings['factory_direct_work'] = str(completed)
         window.fields['factory_failed_work'].setText(str(failed))
         with patch('looktool.factoryrecover.pending', return_value=(completed.resolve(), {'phase': 'AWAITING_RELOAD'})), \
-             patch.object(W.QMessageBox, 'question', return_value=W.QMessageBox.Yes) as question, \
+             patch('desktopapp.window.ask', return_value=True) as question, \
              patch('desktopapp.window.QtCore.QProcess'):
             window.launch('direct_factory_reset', {'workspace': 'not-started'})
         # The worker verifies the finished restore first and writes only if
@@ -304,7 +303,7 @@ class PowerProgressTests(unittest.TestCase):
         window=self.window();window.fields['factory_failed_work'].setText(str(old))
         window.settings['factory_direct_work']=str(loaded)
         args=window.direct_args('factory',mode='factory_reset',factory='builtin')
-        with patch.object(W.QMessageBox,'question',return_value=W.QMessageBox.Yes) as question, \
+        with patch('desktopapp.window.ask', return_value=True) as question, \
                 patch('desktopapp.window.QtCore.QProcess'):
             window.launch('direct_factory_reset',args)
         request=json.loads((window.current_job/'request.private.json').read_text())

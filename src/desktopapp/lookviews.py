@@ -7,7 +7,7 @@ import threading
 import numpy as np
 from PySide6 import QtCore, QtGui, QtWidgets as W
 from .i18n import tr
-from .theme import COLORS
+from . import theme
 
 
 def rating_word(rating):
@@ -40,6 +40,114 @@ def colour_note(colour):
     return ' ' + tr('照片标记为非 sRGB（可能是 Adobe RGB）但没有内嵌配置文件，已按 sRGB 处理，颜色会有偏差。')
 
 
+LOOK = QtCore.Qt.UserRole
+SWATCH, GAP = 10, 2  # a list row's swatches and the gap between them, px
+
+
+def swatch_centres(rect, count, size=SWATCH, gap=GAP):
+    """Centre points of count swatches laid left to right from rect's top-left."""
+    return [QtCore.QPoint(rect.left() + i * (size + gap) + size // 2, rect.top() + size // 2) for i in range(count)]
+
+
+def paint_swatches(painter, rect, colours, size=SWATCH, gap=GAP, radius=2):
+    """Rounded squares left to right from rect's top-left, each with a faint edge so a near-black
+    swatch still shows on a dark window and a pale one on a light window."""
+    painter.save()
+    painter.setRenderHint(QtGui.QPainter.Antialiasing)
+    painter.setPen(QtGui.QPen(QtGui.QColor(theme.color('swatch_edge')), 1))
+    for i, colour in enumerate(colours):
+        painter.setBrush(QtGui.QColor(colour))
+        box = QtCore.QRectF(rect.left() + i * (size + gap), rect.top(), size, size).adjusted(0.5, 0.5, -0.5, -0.5)
+        painter.drawRoundedRect(box, radius, radius)
+    painter.restore()
+
+
+def fit_colour(rating):
+    return theme.color({'good': 'success', 'fair': 'info', 'unknown': 'text2'}.get(rating, 'danger'))
+
+
+def look_summary(look):
+    return '%s, %s, %s' % (look['name'], kind_word(look['kind']), tr('拟合：') + rating_word(look['fit']['rating']))
+
+
+class LookDelegate(W.QStyledItemDelegate):
+    """Library rows: the look's name over its kind, and its swatch strip over its fit, trailing."""
+    ROW = 46
+
+    def sizeHint(self, option, index):
+        return QtCore.QSize(option.rect.width(), self.ROW)
+
+    def strip_rect(self, rect):
+        from .looklibrary import REFERENCE
+        width = len(REFERENCE) * (SWATCH + GAP) - GAP
+        return QtCore.QRect(rect.right() - 10 - width + 1, rect.top() + 10, width, SWATCH)
+
+    def paint(self, painter, option, index):
+        look = index.data(LOOK)
+        painter.save()
+        painter.setRenderHint(QtGui.QPainter.Antialiasing)
+        rect = QtCore.QRect(option.rect)
+        selected = bool(option.state & W.QStyle.State_Selected)
+        on_accent = selected and bool(option.state & W.QStyle.State_Active)
+        if selected:
+            painter.setPen(QtCore.Qt.NoPen)
+            painter.setBrush(QtGui.QColor(theme.color('accent_fill' if on_accent else 'sel_inactive')))
+            painter.drawRoundedRect(QtCore.QRectF(rect).adjusted(2, 1, -2, -1), 6, 6)
+        strip = self.strip_rect(rect)
+        if look.get('swatches'):
+            paint_swatches(painter, strip, look['swatches'])
+        words = rect.adjusted(10, 0, -(rect.right() - strip.left() + 12), 0)
+        name, detail = QtGui.QFont(option.font), QtGui.QFont(option.font)
+        name.setPixelSize(13); name.setWeight(QtGui.QFont.Medium); detail.setPixelSize(11)
+        painter.setFont(name)
+        painter.setPen(QtGui.QColor(theme.color('on_accent' if on_accent else 'text')))
+        painter.drawText(QtCore.QRect(words.left(), rect.top() + 6, words.width(), 18), QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter,
+                         QtGui.QFontMetrics(name).elidedText(look['name'], QtCore.Qt.ElideRight, words.width()))
+        painter.setFont(detail)
+        painter.setPen(QtGui.QColor(theme.color('on_accent' if on_accent else 'text2')))
+        painter.drawText(QtCore.QRect(words.left(), rect.top() + 24, words.width(), 16), QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter,
+                         kind_word(look['kind']))
+        painter.setPen(QtGui.QColor(theme.color('on_accent') if on_accent else fit_colour(look['fit']['rating'])))
+        painter.drawText(QtCore.QRect(strip.left(), rect.top() + 24, strip.width(), 16), QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter,
+                         tr('拟合：') + rating_word(look['fit']['rating']))
+        painter.restore()
+
+
+class SwatchStrip(W.QWidget):
+    """The reference colours over the selected look's predicted in-camera rendering of them."""
+    SIZE, SPACE = 22, 4
+
+    def __init__(self):
+        super().__init__()
+        from .looklibrary import REFERENCE
+        self.references = ['#%02X%02X%02X' % rgb for _, rgb in REFERENCE]
+        self.colours = []
+        self.rows = (tr('参考色'), tr('机内'))
+        self.setFixedHeight(2 * self.SIZE + self.SPACE)
+        self.setToolTip(tr('上：参考色（%s）。下：此外观在相机中的预测效果。') % tr('、').join(tr(name) for name, _ in REFERENCE))
+
+    def show_look(self, colours):
+        self.colours = list(colours or [])
+        self.setVisible(bool(self.colours))
+        self.update()
+
+    def label_width(self):
+        font = QtGui.QFont(self.font()); font.setPixelSize(11)
+        return max(QtGui.QFontMetrics(font).horizontalAdvance(row) for row in self.rows) + 10
+
+    def paintEvent(self, event):
+        painter = QtGui.QPainter(self)
+        font = QtGui.QFont(self.font()); font.setPixelSize(11)
+        painter.setFont(font)
+        painter.setPen(QtGui.QColor(theme.color('text2')))
+        left = self.label_width()
+        for row, (label, colours) in enumerate(zip(self.rows, (self.references, self.colours))):
+            top = row * (self.SIZE + self.SPACE)
+            painter.drawText(QtCore.QRect(0, top, left, self.SIZE), QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter, label)
+            paint_swatches(painter, QtCore.QRect(left, top, 0, 0), colours, self.SIZE, self.SPACE, 4)
+        painter.end()
+
+
 class FilmLibraryDialog(W.QDialog):
     add_requested = QtCore.Signal(object, int)
     preview_requested = QtCore.Signal(str)
@@ -48,32 +156,44 @@ class FilmLibraryDialog(W.QDialog):
         super().__init__(parent)
         self.looks = looks
         self.setWindowTitle(tr('胶片外观库'))
-        self.resize(900, 560)
+        self.resize(900, 600)
         box = W.QVBoxLayout(self)
+        box.setContentsMargins(20, 20, 20, 20); box.setSpacing(12)
         intro = W.QLabel(tr('每款外观都注明来源、许可和机内拟合。先用自己的照片预览，再添加到清单中的自订槽位。'))
-        intro.setWordWrap(True); box.addWidget(intro)
-        middle = W.QHBoxLayout(); box.addLayout(middle, 1)
+        intro.setWordWrap(True); intro.setProperty('role', 'callout'); box.addWidget(intro)
+        middle = W.QHBoxLayout(); middle.setSpacing(16); box.addLayout(middle, 1)
         self.list = W.QListWidget(); self.list.setFixedWidth(330)
+        self.list.setItemDelegate(LookDelegate(self.list))
         for look in looks:
-            self.list.addItem('%s · %s · %s' % (look['name'], kind_word(look['kind']),
-                                                tr('拟合：') + rating_word(look['fit']['rating'])))
+            item = W.QListWidgetItem(look['name'])
+            item.setData(LOOK, look)
+            item.setToolTip(look_summary(look))
+            item.setData(QtCore.Qt.AccessibleTextRole, look_summary(look))
+            self.list.addItem(item)
         middle.addWidget(self.list)
+        right = W.QVBoxLayout(); right.setSpacing(10); middle.addLayout(right, 1)
+        self.strip = SwatchStrip()
+        right.addWidget(self.strip)
         self.details = W.QTextBrowser(); self.details.setOpenExternalLinks(True)
-        middle.addWidget(self.details, 1)
-        actions = W.QHBoxLayout(); box.addLayout(actions)
-        actions.addWidget(W.QLabel(tr('目标槽位')))
+        right.addWidget(self.details, 1)
+        choose = W.QHBoxLayout(); choose.setSpacing(8); right.addLayout(choose)
+        slot_label = W.QLabel(tr('目标槽位')); slot_label.setProperty('muted', True); choose.addWidget(slot_label)
         self.slot = W.QComboBox()
         for number in range(1, 7):
             self.slot.addItem(tr('自订 %d') % number, number)
-        actions.addWidget(self.slot)
-        self.add = W.QPushButton(tr('添加到清单')); self.add.setProperty('primary', True)
+        choose.addWidget(self.slot); choose.addStretch()
         self.preview = W.QPushButton(tr('在我的照片上预览…'))
-        actions.addWidget(self.add); actions.addWidget(self.preview); actions.addStretch()
+        choose.addWidget(self.preview)
+        # Apple order: supporting action leading; Close, then the primary action, trailing.
+        actions = W.QHBoxLayout(); actions.setSpacing(8); box.addLayout(actions)
         if notices is not None:
             licences = W.QPushButton(tr('许可声明…'))
             licences.clicked.connect(lambda: QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(str(notices))))
             actions.addWidget(licences)
+        actions.addStretch()
         close = W.QPushButton(tr('关闭')); close.clicked.connect(self.accept); actions.addWidget(close)
+        self.add = W.QPushButton(tr('添加到清单')); self.add.setProperty('primary', True)
+        actions.addWidget(self.add)
         # Bound methods, not lambdas: a lambda capturing self keeps a closed dialog alive.
         self.add.clicked.connect(self.request_add)
         self.preview.clicked.connect(self.request_preview)
@@ -89,10 +209,15 @@ class FilmLibraryDialog(W.QDialog):
     def request_preview(self):
         self.preview_requested.emit(str(self.selected()['path']))
 
+    def restyle(self):
+        self.show_details(self.list.currentRow())
+        self.list.viewport().update()
+
     def show_details(self, row):
         look = self.looks[row]; source = look['source']; fit = look['fit']
         self.preview.setEnabled(look['preview'])
-        rows = [(tr('来源'), '%s · %s' % (html.escape(source['project']), html.escape(source['author']))),
+        self.strip.show_look(look.get('swatches'))
+        rows = [(tr('来源'), tr('%s，作者 %s') % (html.escape(source['project']), html.escape(source['author']))),
                 (tr('网址'), '<a href="%s">%s</a>' % (html.escape(source['url'], quote=True), html.escape(source['url']))),
                 (tr('许可'), html.escape(source['licence'])),
                 (tr('改动'), html.escape(look['modification'])),
@@ -100,12 +225,12 @@ class FilmLibraryDialog(W.QDialog):
         if look['notes']:
             rows.append((tr('注意'), html.escape(look['notes'])))
         table = ''.join('<tr><td style="padding:3px 12px 3px 0;color:%s">%s</td><td style="padding:3px 0">%s</td></tr>'
-                        % (COLORS['muted'], html.escape(key), value) for key, value in rows)
+                        % (theme.color('text2'), html.escape(key), value) for key, value in rows)
         from .looklibrary import CONCERNS
-        colour = COLORS['warning'] if fit['rating'] in CONCERNS else COLORS['text']
+        colour = theme.color('warning') if fit['rating'] in CONCERNS else theme.color('text')
         self.details.setHtml('<h3>%s</h3><p style="color:%s">%s</p><table>%s</table><p style="color:%s">%s</p>'
                              % (html.escape(look['name']), colour, html.escape(fit_text(fit)), table,
-                                COLORS['muted'], html.escape(fit_help())))
+                                theme.color('text2'), html.escape(fit_help())))
 
 
 class Panel(W.QWidget):

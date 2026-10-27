@@ -235,3 +235,63 @@ def test_the_thresholds_rate_the_libraries_own_median_good_and_its_worst_fair():
     assert looklibrary.rating(mae[-1], p95[-1]) == 'fair'
     assert all(fit['rating'] in ('good', 'fair') for fit in fits)
     assert looklibrary.GOOD[0] - median[0] < .01 and looklibrary.GOOD[1] - median[1] < .01
+
+
+def test_reference_colours_name_skin_sky_foliage_and_a_neutral_ramp():
+    names = [name for name, _ in looklibrary.REFERENCE]
+    assert len(names) == len(set(names)) == 8
+    for colour in [rgb for _, rgb in looklibrary.REFERENCE]:
+        assert len(colour) == 3 and all(0 <= channel <= 255 for channel in colour)
+    neutrals = [rgb for _, rgb in looklibrary.REFERENCE if len(set(rgb)) == 1]
+    assert len(neutrals) >= 3 and neutrals == sorted(neutrals)
+
+
+def test_catalog_keeps_the_swatches_a_look_renders_on_the_reference_colours(tmp_path):
+    swatches = ['#A0B1C2', '#000000', '#FFFFFF', '#123456', '#654321', '#0F0F0F', '#777777', '#ABCDEF']
+    folder = write_catalog(tmp_path / 'library', [entry(swatches=swatches)])
+    look_file(folder / 'portra400.a7look', mae=3.0, p95=9.0)
+    assert looklibrary.catalog(folder)[0]['swatches'] == swatches
+    plain = write_catalog(tmp_path / 'plain', [entry()])
+    look_file(plain / 'portra400.a7look', mae=3.0, p95=9.0)
+    assert looklibrary.catalog(plain)[0]['swatches'] is None  # libraries prepared before swatches still load
+
+
+@pytest.mark.parametrize('swatches', [['#A0B1C2'] * 7, ['#A0B1C2'] * 9, ['A0B1C2'] * 8, ['#A0B1CZ'] * 8, '#A0B1C2', [1] * 8])
+def test_catalog_rejects_malformed_swatches(tmp_path, swatches):
+    folder = write_catalog(tmp_path / 'library', [entry(swatches=swatches)])
+    look_file(folder / 'portra400.a7look', mae=3.0, p95=9.0)
+    with pytest.raises(ValueError, match='swatches'):
+        looklibrary.catalog(folder)
+
+
+def test_prepare_records_each_looks_camera_rendering_of_the_reference_colours(tmp_path, monkeypatch):
+    import numpy as np
+    from looktool import lookpreview
+    source = tmp_path / 'looks'; source.mkdir()
+    look_file(source / 'portra400.a7look', mae=3.0, p95=9.0)
+    look_file(source / 'nofit.a7look', mae=3.0, p95=9.0, controls=False)
+    for name in prepare_film_looks.NOTICES:
+        (source / name).write_text('notice')
+    origin = {'project': 'spektrafilm', 'author': 'Andrea Volpato', 'url': 'https://github.com/andreavolpato/spektrafilm',
+              'licence': 'CC BY-SA 4.0'}
+    (source / 'metrics.json').write_text(json.dumps({'looks': [
+        {'slug': slug, 'camera_name': slug, 'kind': 'negative', 'kept': True, 'source': origin}
+        for slug in ('portra400', 'nofit')]}))
+    seen = []
+
+    def predict(document, rgb, model=None):
+        if lookfile_controls(document) is None:
+            raise ValueError('This look has no fit data (native controls)')
+        seen.append(np.asarray(rgb))
+        return np.asarray(rgb, float)[:, ::-1]  # a stand-in rendering: swap red and blue
+    from looktool import lookfile
+    lookfile_controls = lookfile.native_controls
+    monkeypatch.setattr(lookpreview, 'predict', predict)
+    monkeypatch.setattr(lookpreview, 'load_model', lambda: object())
+    target = tmp_path / 'desktop-assets/film-looks-v1'
+    prepare_film_looks.prepare(source, target)
+    portra, nofit = looklibrary.catalog(target)
+    expected = ['#%02X%02X%02X' % (b, g, r) for _, (r, g, b) in looklibrary.REFERENCE]
+    assert portra['swatches'] == expected
+    assert np.allclose(seen[0], np.asarray([rgb for _, rgb in looklibrary.REFERENCE]) / 255)
+    assert nofit['swatches'] is None

@@ -38,8 +38,8 @@ def write_row(editor, path, slot=1):
 
 
 @pytest.mark.parametrize('mae,p95,expected', [
-    (2.0, 7.0, 'Fit: good (MAE 2.0 · P95 7.0)'),
-    (4.0, 12.0, 'Fit: fair (MAE 4.0 · P95 12.0)'),
+    (2.0, 7.0, 'Fit: good (MAE 2.0, P95 7.0)'),
+    (4.0, 12.0, 'Fit: fair (MAE 4.0, P95 12.0)'),
 ])
 def test_a_write_row_shows_the_measured_fit_of_its_file(app, english, tmp_path, mae, p95, expected):
     editor = LookEditor()
@@ -53,7 +53,7 @@ def test_a_poor_unknown_or_unreadable_fit_is_shown_as_a_warning(app, english, tm
     poor = write_row(editor, look_file(tmp_path / 'poor.a7look', mae=6.0, p95=20.0), 1)
     unknown = write_row(editor, look_file(tmp_path / 'unknown.a7look'), 2)
     broken = write_row(editor, tmp_path / 'missing.a7look', 3)
-    assert poor.fit.text().startswith('Fit: poor (MAE 6.0 · P95 20.0)') and 'differ' in poor.fit.text()
+    assert poor.fit.text().startswith('Fit: poor (MAE 6.0, P95 20.0)') and 'differ' in poor.fit.text()
     assert unknown.fit.text() == 'Fit: unknown (the file has no held-out validation data)'
     assert broken.fit.text().startswith('Cannot read this A7Look: ')
     assert all(row.fit.property('warning') for row in (poor, unknown, broken))
@@ -84,27 +84,83 @@ def test_fit_text_lists_every_rating_in_english(english):
     assert not HAN.search(fit_text(dict(rating='unknown', mae=None, p95=None)))
 
 
-def library(tmp_path):
+PORTRA = ['#6C5043', '#BB9281', '#607FA2', '#616645', '#D8954D', '#313332', '#79797A', '#C0C2C5']
+
+
+def library(tmp_path, swatches=(PORTRA, None)):
     folder = tmp_path / 'library'; folder.mkdir()
     entries = []
-    for slug, name, kind, mae, notes in (('portra400', 'Portra 400', 'negative', 3.07, ''),
-                                        ('velvia100', 'Velvia 100', 'slide', 3.48, 'Slight cyan cast in deep shadows.')):
+    for (slug, name, kind, mae, notes), colours in zip((('portra400', 'Portra 400', 'negative', 3.07, ''),
+                                                        ('velvia100', 'Velvia 100', 'slide', 3.48,
+                                                         'Slight cyan cast in deep shadows.')), swatches):
         look_file(folder / (slug + '.a7look'), mae=mae, p95=9.0, name=name)
         entries.append({'id': slug, 'name': name, 'kind': kind, 'file': slug + '.a7look',
                         'source': {'project': 'spektrafilm', 'author': 'Andrea Volpato',
                                    'url': 'https://github.com/andreavolpato/spektrafilm', 'licence': 'CC BY-SA 4.0'},
                         'modification': 'Baked to a 33^3 cube', 'shareable': True, 'notes': notes})
+        if colours:
+            entries[-1]['swatches'] = colours
     (folder / 'catalog.json').write_text(json.dumps({'schema': looklibrary.SCHEMA, 'looks': entries}))
     return looklibrary.catalog(folder)
 
 
+def test_library_rows_name_each_look_and_read_out_its_kind_and_fit(app, english, tmp_path):
+    from PySide6 import QtCore
+    dialog = FilmLibraryDialog(library(tmp_path))
+    assert [dialog.list.item(i).text() for i in range(dialog.list.count())] == ['Portra 400', 'Velvia 100']
+    assert dialog.list.item(1).data(QtCore.Qt.AccessibleTextRole) == 'Velvia 100, Slide, Fit: fair'
+    assert dialog.list.item(1).toolTip() == 'Velvia 100, Slide, Fit: fair'
+
+
+def render_row(dialog, row, selected=False):
+    from PySide6 import QtCore, QtGui
+    option = W.QStyleOptionViewItem()
+    option.rect = QtCore.QRect(0, 0, 330, dialog.list.itemDelegate().ROW)
+    option.font = dialog.list.font()
+    option.state = W.QStyle.State_Selected | W.QStyle.State_Active if selected else W.QStyle.State_None
+    image = QtGui.QImage(option.rect.size(), QtGui.QImage.Format_ARGB32)
+    image.fill(QtCore.Qt.transparent)
+    painter = QtGui.QPainter(image)
+    dialog.list.itemDelegate().paint(painter, option, dialog.list.model().index(row, 0))
+    painter.end()
+    return image
+
+
+def test_library_rows_carry_the_looks_swatch_strip(app, english, tmp_path):
+    from desktopapp import lookviews
+    dialog = FilmLibraryDialog(library(tmp_path))
+    image = render_row(dialog, 0)
+    centres = lookviews.swatch_centres(dialog.list.itemDelegate().strip_rect(image.rect()), len(PORTRA))
+    assert [image.pixelColor(point).name().upper() for point in centres] == PORTRA
+    plain = render_row(dialog, 1)  # a look prepared without swatches draws no strip
+    assert all(plain.pixelColor(point).alpha() == 0 for point in centres)
+    assert not render_row(dialog, 0, selected=True).isNull()
+
+
+def test_the_selected_look_shows_reference_colours_over_its_camera_rendering(app, english, tmp_path):
+    dialog = FilmLibraryDialog(library(tmp_path))
+    dialog.list.setCurrentRow(0)
+    assert not dialog.strip.isHidden()
+    assert dialog.strip.colours == PORTRA
+    assert dialog.strip.references == ['#%02X%02X%02X' % rgb for _, rgb in looklibrary.REFERENCE]
+    image = dialog.strip.grab().toImage()
+    assert not image.isNull()
+    dialog.list.setCurrentRow(1)
+    assert dialog.strip.isHidden()
+
+
+def test_library_buttons_follow_the_title_case_verbs(app, english, tmp_path):
+    dialog = FilmLibraryDialog(library(tmp_path), notices=tmp_path)
+    texts = sorted(button.text() for button in dialog.findChildren(W.QPushButton))
+    assert texts == ['Add to List', 'Close', 'Licence Notices…', 'Preview on My Photo…']
+    assert dialog.add.property('primary') is True
+
+
 def test_library_lists_looks_and_shows_source_licence_and_notes(app, english, tmp_path):
     dialog = FilmLibraryDialog(library(tmp_path))
-    assert [dialog.list.item(i).text() for i in range(dialog.list.count())] == [
-        'Portra 400 · Colour negative · Fit: fair', 'Velvia 100 · Slide · Fit: fair']
     dialog.list.setCurrentRow(1)
     details = dialog.details.toPlainText()
-    for text in ('Velvia 100', 'spektrafilm', 'Andrea Volpato', 'CC BY-SA 4.0', 'Baked to a 33^3 cube',
+    for text in ('Velvia 100', 'spektrafilm by Andrea Volpato', 'CC BY-SA 4.0', 'Baked to a 33^3 cube',
                  'Slight cyan cast', 'MAE 3.5'):
         assert text in details
     assert 'https://github.com/andreavolpato/spektrafilm' in dialog.details.toHtml()
@@ -147,20 +203,20 @@ def test_a_poor_fit_asks_before_the_write_confirmation_and_cancel_starts_nothing
     ui = window()
     i18n.configure('en')  # the window applies the saved language; the warning text is built on click
     write_row(ui.look_editor, look_file(tmp_path / 'poor.a7look', mae=6.0, p95=20.0, name='Weak'), 3)
-    with patch.object(W.QMessageBox, 'question', return_value=W.QMessageBox.Cancel) as asked, \
+    with patch('desktopapp.window.ask', return_value=False) as asked, \
             patch.object(jobs, 'new_job') as new:
         ui.look_button.click()
     new.assert_not_called()
     assert asked.call_count == 1
     title, text = asked.call_args.args[1:3]
-    assert title == 'Fit warning' and 'Custom 3' in text and 'poor' in text and not HAN.search(title + text)
+    assert title == 'Some looks may not match on the camera' and 'Custom 3' in text and 'poor' in text and not HAN.search(title + text)
 
 
 def test_accepting_the_fit_warning_continues_to_the_write_confirmation(window, tmp_path):
     ui = window()
     write_row(ui.look_editor, look_file(tmp_path / 'unknown.a7look', name='Unmeasured'), 3)
-    answers = [W.QMessageBox.Yes, W.QMessageBox.Cancel]
-    with patch.object(W.QMessageBox, 'question', side_effect=answers) as asked, patch.object(jobs, 'new_job') as new:
+    answers = [True, False]
+    with patch('desktopapp.window.ask', side_effect=answers) as asked, patch.object(jobs, 'new_job') as new:
         ui.look_button.click()
     new.assert_not_called()
     assert asked.call_count == 2
@@ -169,7 +225,7 @@ def test_accepting_the_fit_warning_continues_to_the_write_confirmation(window, t
 def test_good_fits_go_straight_to_the_write_confirmation(window, tmp_path):
     ui = window()
     write_row(ui.look_editor, look_file(tmp_path / 'good.a7look', mae=2.0, p95=7.0), 3)
-    with patch.object(W.QMessageBox, 'question', return_value=W.QMessageBox.Cancel) as asked, \
+    with patch('desktopapp.window.ask', return_value=False) as asked, \
             patch.object(jobs, 'new_job'):
         ui.look_button.click()
     assert asked.call_count == 1 and '3' in asked.call_args.args[2]
@@ -181,7 +237,7 @@ def test_one_click_setup_with_own_looks_checks_their_fit(window, tmp_path):
     ui.setup_presets.setChecked(False)
     ui.fields['setup_look_2'].setText(str(look_file(tmp_path / 'poor.a7look', mae=6.0, p95=20.0)))
     with patch.object(ui, 'drivers_first', return_value=True), \
-            patch.object(W.QMessageBox, 'question', return_value=W.QMessageBox.Cancel) as asked, \
+            patch('desktopapp.window.ask', return_value=False) as asked, \
             patch.object(jobs, 'new_job') as new:
         ui.launch('setup_all', ui.setup_args())
     new.assert_not_called()
@@ -278,7 +334,7 @@ def test_restore_rows_are_not_fit_checked(window, tmp_path):
     ui = window()
     ui.look_editor.add_row(1)
     write_row(ui.look_editor, look_file(tmp_path / 'poor.a7look', mae=6.0, p95=20.0, name='Weak'), 2)
-    with patch.object(W.QMessageBox, 'question', return_value=W.QMessageBox.Cancel) as asked, \
+    with patch('desktopapp.window.ask', return_value=False) as asked, \
             patch.object(jobs, 'new_job'):
         ui.look_button.click()
     tr = i18n.tr
@@ -297,7 +353,7 @@ def test_preview_needs_the_fitted_native_controls(app, tmp_path):
 def test_the_fit_warning_suggests_a_preview_only_when_one_is_possible(window, tmp_path):
     ui = window()
     write_row(ui.look_editor, look_file(tmp_path / 'old.a7look', controls=False), 3)
-    with patch.object(W.QMessageBox, 'question', return_value=W.QMessageBox.Cancel) as asked, \
+    with patch('desktopapp.window.ask', return_value=False) as asked, \
             patch.object(jobs, 'new_job'):
         ui.look_button.click()
     assert asked.call_args.args[1] == i18n.tr('拟合提醒')
@@ -413,7 +469,7 @@ def test_one_click_setup_refuses_an_unreadable_look_before_any_prompt(window, tm
     ui.setup_presets.setChecked(False)
     ui.fields['setup_look_2'].setText(str(tmp_path / 'moved-away.a7look'))
     with patch.object(ui, 'drivers_first', side_effect=AssertionError('driver prompt shown')), \
-            patch.object(W.QMessageBox, 'question') as asked, patch.object(W.QMessageBox, 'warning') as warned, \
+            patch('desktopapp.window.ask') as asked, patch.object(W.QMessageBox, 'warning') as warned, \
             patch.object(jobs, 'new_job') as new:
         ui.launch('setup_all', ui.setup_args())
     asked.assert_not_called(); new.assert_not_called()
@@ -431,6 +487,23 @@ def test_one_click_setup_fit_checks_the_built_in_six(window):
     checked = []
     with patch('desktopapp.looklibrary.fit_concerns', side_effect=lambda looks: checked.extend(looks) or []), \
             patch.object(ui, 'drivers_first', return_value=True), \
-            patch.object(W.QMessageBox, 'question', return_value=W.QMessageBox.Cancel), patch.object(jobs, 'new_job'):
+            patch('desktopapp.window.ask', return_value=False), patch.object(jobs, 'new_job'):
         ui.launch('setup_all', ui.setup_args())
     assert sorted(look['slot'] for look in checked) == [1, 2, 3, 4, 5, 6]
+
+
+@pytest.mark.parametrize('scheme', ['light', 'dark'])
+def test_swatches_have_an_edge_that_shows_on_the_page(app, english, tmp_path, scheme):
+    # A near-black swatch must not vanish into a dark window, nor a pale one into a light window.
+    from PySide6 import QtCore, QtGui
+    from desktopapp import lookviews, theme
+    with patch.object(theme, 'mode', return_value=scheme):
+        background = QtGui.QColor(theme.color('group'))
+        for colour in (background.name(), '#0B1213', '#F5F5F5'):
+            image = QtGui.QImage(40, 40, QtGui.QImage.Format_ARGB32)
+            image.fill(background)
+            painter = QtGui.QPainter(image)
+            lookviews.paint_swatches(painter, QtCore.QRect(10, 10, 0, 0), [colour], size=20)
+            painter.end()
+            edge = image.pixelColor(10, 20)  # on the swatch's left edge
+            assert edge != background, (scheme, colour)

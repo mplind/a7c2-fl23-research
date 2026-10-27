@@ -59,7 +59,7 @@ def test_the_compiler_dialog_accepts_tiffs_and_offers_the_hald_tools(ui):
         ui.compiler_dialog()
     dialog = ui.findChildren(W.QDialog)[-1]
     names = {b.objectName(): b.text() for b in dialog.findChildren(W.QPushButton)}
-    assert names['hald_identity'] == 'Save a HALD image for DxO…' and names['hald_check'] == 'Check a HALD export…'
+    assert names['hald_identity'] == 'Save HALD Image for DxO…' and names['hald_check'] == 'Check HALD Export…'
     source = [b for b in dialog.findChildren(W.QPushButton) if b.text() == i18n.tr('选择…')][0]
     with patch.object(W.QFileDialog, 'getOpenFileName', return_value=('', '')) as chosen:
         source.click()
@@ -100,6 +100,37 @@ def test_the_compiler_dialog_is_tall_enough_for_its_contents(ui):
         ui.compiler_dialog()
     dialog = ui.findChildren(W.QDialog)[-1]
     assert dialog.height() >= dialog.sizeHint().height()
+
+
+def test_the_compiler_dialog_ends_with_cancel_and_a_primary_generate_sized_to_their_labels(ui):
+    with patch.object(W.QDialog, 'exec'):
+        ui.compiler_dialog()
+    dialog = ui.findChildren(W.QDialog)[-1]
+    dialog.show()
+    try:
+        run = dialog.findChild(W.QPushButton, 'compile_run')
+        cancel = dialog.findChild(W.QPushButton, 'compile_cancel')
+        formats = dialog.findChild(W.QPushButton, 'compile_formats')
+        assert (run.text(), cancel.text(), formats.text()) == ('Generate', 'Cancel', 'Supported LUT Formats…')
+        assert run.property('primary') is True
+        for button in (run, cancel, formats, dialog.findChild(W.QPushButton, 'hald_identity')):
+            assert button.width() < dialog.width() / 2, button.text()
+        assert formats.x() < cancel.x() < run.x()  # supporting action leading, then Cancel, the verb last
+        with patch.object(type(ui), 'launch') as launched:
+            cancel.click()
+        launched.assert_not_called()
+        assert not dialog.isVisible()
+    finally:
+        dialog.close()
+
+
+def test_the_compiler_dialog_opens_the_format_notes(ui):
+    with patch.object(W.QDialog, 'exec'):
+        ui.compiler_dialog()
+    dialog = ui.findChildren(W.QDialog)[-1]
+    with patch.object(type(ui), 'show_look_format_guide') as guide:
+        dialog.findChild(W.QPushButton, 'compile_formats').click()
+    guide.assert_called_once()
 
 
 def test_a_look_name_starting_with_a_dash_is_a_name_not_an_option(tmp_path, capsys):

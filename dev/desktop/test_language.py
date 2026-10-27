@@ -12,7 +12,7 @@ from unittest.mock import Mock, patch
 
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 import pytest
-from PySide6 import QtWidgets as W
+from PySide6 import QtGui, QtWidgets as W
 from desktopapp import i18n, jobs, reloadguide, completion
 from desktopapp.en import STRINGS
 from desktopapp.paths import write_json
@@ -64,8 +64,8 @@ def test_new_install_defaults_to_english_and_no_page_shows_chinese(ui):
     create, app, _ = ui
     window = create()
     assert window.language.currentData() == 'en'
-    assert window.nav.item(0).text() == 'Home · One-click install'
-    assert window.setup_button.text() == 'One-click install'
+    assert window.nav.item(0).text() == 'One-Click Install'
+    assert window.setup_button.text() == 'One-Click Install'
     for index in range(window.pages.count()):
         window.nav.setCurrentRow(index)
         app.processEvents()
@@ -104,13 +104,13 @@ def test_language_change_keeps_input_and_applies_on_next_launch(ui):
     assert settings['language'] == 'zh_CN'
     assert settings['sound_source'] == '/example/user 文件.wav'
     assert window.look_editor.values() == [{'slot': 4, 'action': 'restore'}]
-    assert window.setup_button.text() == 'One-click install'
+    assert window.setup_button.text() == 'One-Click Install'
     reopened = create()
     assert reopened.nav.item(0).text() == '首页 · 一键安装'
     assert reopened.fields['sound_source'].text() == '/example/user 文件.wav'
     with patch.object(W.QMessageBox, 'information'):
         reopened.language.setCurrentIndex(0)
-    assert create().setup_button.text() == 'One-click install'
+    assert create().setup_button.text() == 'One-Click Install'
 
 
 @pytest.mark.parametrize('language', ['en', 'zh_CN'])
@@ -124,7 +124,7 @@ def test_language_does_not_change_worker_action_or_slot_data(ui, language):
     assert window.look_batch_args()['operations'] == [dict(
         slot=4, action='write', path='/example/source 文件.a7look', name='My look 原名')]
     window.look_editor.set_operations([dict(slot=4, action='restore')])
-    with patch.object(W.QMessageBox, 'question', return_value=W.QMessageBox.Yes), \
+    with patch('desktopapp.window.ask', return_value=True), \
             patch('desktopapp.window.QtCore.QProcess'):
         window.look_button.click()
     request = json.loads((window.current_job / 'request.private.json').read_text())
@@ -139,12 +139,12 @@ def test_english_write_confirmation_can_cancel_without_creating_job(ui):
     create, _, _ = ui
     window = create()
     window.look_editor.add_row(3)
-    with patch.object(W.QMessageBox, 'question', return_value=W.QMessageBox.Cancel) as confirm, \
+    with patch('desktopapp.window.ask', return_value=False) as confirm, \
             patch.object(jobs, 'new_job') as new:
         window.look_button.click()
     new.assert_not_called()
     title, text = confirm.call_args.args[1:3]
-    assert title == 'Start writing to the camera'
+    assert title == 'Write to the camera?'
     assert 'ILCE-7CM2' in text and '2.01' in text and '50%' in text
     assert 'Custom 3' in text
     assert not HAN.search(title + text)
@@ -221,7 +221,60 @@ def test_windows_driver_controls_and_zadig_guide_use_english(ui):
         window = create('en')
     automatic = window.findChild(W.QPushButton, 'action_usb_prepare')
     zadig = window.findChild(W.QPushButton, 'zadig_guide')
-    assert automatic.text() == 'Prepare two-stage drivers and test connection (automatic)'
-    assert zadig.text().startswith('Install with Zadig')
+    assert automatic.text() == 'Prepare'
+    assert zadig.text() == 'Zadig Guide…'
     from desktopapp.zadigguide import TEXT
     assert '054C 0336' in i18n.tr(TEXT) and 'administrator' in i18n.tr(TEXT)
+
+
+def test_english_table_has_no_repeated_source_strings():
+    # A repeated key silently replaces the earlier translation.
+    from collections import Counter
+    source = (Path(__file__).resolve().parents[2] / 'src/desktopapp/en.py').read_text(encoding='utf-8')
+    keys = [key.value for node in ast.walk(ast.parse(source)) if isinstance(node, ast.Dict)
+            for key in node.keys if isinstance(key, ast.Constant)]
+    assert [key for key, count in Counter(keys).items() if count > 1] == []
+
+
+# Quoted texts in the English copy that are not this app's labels: what the camera, Windows, DxO
+# or Qt shows, a format description, status words, and the sound credit's placeholders.
+OUTSIDE_THE_APP = {'Check the connected device', 'Please check the connected device', 'Mass Storage', 'OK',
+                   'Run as administrator', 'libusbK USB Devices', 'No correction',
+                   'Sony ST / sRGB input → target look → sRGB output', 'Reading and writing have ended',
+                   'restore complete', 'verify after restart', '%(title)s', '%(url)s'}
+
+
+def visible_labels(ui):
+    labels = {button.text() for button in ui.findChildren(W.QAbstractButton)}
+    labels |= {label.text() for label in ui.findChildren(W.QLabel)}
+    labels |= {ui.nav.item(i).text() for i in range(ui.nav.count())}
+    labels |= {action.text() for action in ui.findChildren(QtGui.QAction)}
+    labels |= {combo.itemText(i) for combo in ui.findChildren(W.QComboBox) for i in range(combo.count())}
+    return labels
+
+
+def test_every_label_the_english_copy_quotes_is_on_screen(window):
+    labels = set()
+    for platform in ('darwin', 'win32'):
+        ui = window('en', platform=platform)
+        ui.look_editor.add_row(3)
+        with patch.object(W.QDialog, 'exec', return_value=0):
+            ui.compiler_dialog()
+            if platform == 'win32':
+                ui.show_zadig_guide()
+        labels |= visible_labels(ui)
+    # Buttons that change their label with the task state show these in other states.
+    labels |= {i18n.tr(key) for key in ('继续安装', '开始新的一键安装', '继续槽位更改', '断电后重试恢复（本次尚未写入）',
+                                        '重启后核对并完成恢复')}
+    quoted = {text for english in STRINGS.values() for text in re.findall(r'"([^"]+)"', english)}
+    assert sorted(quoted - labels - OUTSIDE_THE_APP) == []
+
+
+@pytest.mark.parametrize('language, cancel, close', [('zh_CN', '取消', '关闭'), ('en', 'Cancel', 'Close')])
+def test_qts_own_buttons_follow_the_interface_language(ui, language, cancel, close):
+    # Confirmations, alerts and Settings use Qt's standard buttons; the copy calls OK "确定".
+    create, _, _ = ui
+    window = create(language)
+    box = W.QMessageBox(W.QMessageBox.Warning, 'title', 'text', W.QMessageBox.Cancel | W.QMessageBox.Ok)
+    assert box.button(W.QMessageBox.Cancel).text() == cancel
+    assert window.settings_dialog.findChild(W.QDialogButtonBox).button(W.QDialogButtonBox.Close).text() == close

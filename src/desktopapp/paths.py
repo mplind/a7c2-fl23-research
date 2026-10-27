@@ -28,3 +28,7 @@ def write_json(path, value):
 def load_settings():
     path = data_root() / 'desktop.json'
     return json.loads(path.read_text(encoding='utf-8')) if path.exists() else {}
+
+
+def save_settings(settings):
+    write_json(data_root() / 'desktop.json', settings)

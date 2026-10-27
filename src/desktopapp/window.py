@@ -1,5 +1,5 @@
 """Six explicit workflows, background workers and a complete diagnostic log."""
-from .i18n import configure, tr
+from .i18n import configure, translate_qt, tr
 from datetime import datetime
 import json
 from pathlib import Path
@@ -12,10 +12,19 @@ from . import presets
 from . import reloadguide
 
 DRIVER_HINT = ('\n驱动或连接没有成功：先在“连接与驱动”页卸载驱动后重装；仍不行，'
-               '可点该页的“用 Zadig 手动安装驱动”，按说明给 0E8A 和 0336 两个身份分别装 libusbK。')
+               '可点该页的“Zadig 指南…”，按说明给 0E8A 和 0336 两个身份分别装 libusbK。')
 from . import connectionguide
-from .paths import ROOT, data_root, load_settings, write_json
-from .theme import WINDOW as STYLE
+from . import shell
+from . import theme
+from .shell import ask  # camera-write confirmations; tests patch desktopapp.window.ask
+from .paths import ROOT, data_root, load_settings, save_settings, write_json
+
+
+FIRMWARE = '2.01'  # the only firmware this release supports
+# Sidebar: (section title shown above the first page of a section, page label, icon).
+NAVIGATION = (('安装与连接', '首页 · 一键安装', 'home'), (None, '连接与驱动', 'connection'), (None, '恢复原厂功能', 'restore'),
+              ('相机功能', 'FL2 / FL3', 'film'), (None, '自定义创意外观', 'looks'), (None, '竖屏显示', 'vertical'),
+              (None, '电子快门声音', 'sound'), ('实验性', '胶片配方（实验性）', 'recipes'))
 
 
 class Window(W.QMainWindow):
@@ -23,7 +32,7 @@ class Window(W.QMainWindow):
         super().__init__()
         self.settings = load_settings()
         configure(self.settings.get('language', 'en'))
-        self.setWindowTitle(tr('A7C II Tools · Desktop Preview'))
+        self.setWindowTitle('A7C II Tools')
         self.resize(1130, 850)
         self.setMinimumSize(960, 730)
         self.fields, self.buttons = {}, []
@@ -32,27 +41,45 @@ class Window(W.QMainWindow):
         self.process = None
         self.demo = demo
         self.camera_operation = False
-        self.setStyleSheet(STYLE)
+        self.page_meta = []
+        app = W.QApplication.instance()
+        translate_qt(app)
+        theme.apply(app)
+        app.styleHints().colorSchemeChanged.connect(self.restyle)
         central = W.QWidget()
+        central.setObjectName('content')
         self.setCentralWidget(central)
         layout = W.QHBoxLayout(central)
         layout.setContentsMargins(0, 0, 0, 0)
-        self.nav = W.QListWidget()
-        # Wide enough for the English labels; long translations wrap instead of scrolling.
-        self.nav.setFixedWidth(230)
-        self.nav.setWordWrap(True)
-        self.nav.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
-        self.nav.addItems([tr('首页 · 一键安装'), tr('连接与驱动'), tr('恢复原厂功能'), 'FL2 / FL3', tr('自定义创意外观'), tr('竖屏显示'), tr('电子快门声音'), tr('胶片配方（实验性）')])
+        layout.setSpacing(0)
+        self.nav = shell.sidebar([(tr(section) if section else None, tr(label) if label != 'FL2 / FL3' else label, icon)
+                                  for section, label, icon in NAVIGATION])
         layout.addWidget(self.nav)
         right = W.QVBoxLayout()
-        right.setContentsMargins(22, 18, 22, 16)
+        right.setContentsMargins(24, 20, 24, 0)
+        right.setSpacing(12)
         layout.addLayout(right, 1)
-        heading = W.QHBoxLayout()
-        title = W.QLabel('A7C II Tools')
-        title.setStyleSheet('font-size:25px;font-weight:650;')
-        heading.addWidget(title)
-        heading.addStretch()
-        heading.addWidget(W.QLabel(tr('界面语言（重启软件后生效）')))
+        header = W.QVBoxLayout()
+        header.setSpacing(4)
+        self.page_title = shell.text_label('', 'title1')
+        self.page_detail = shell.text_label('', 'callout')
+        header.addWidget(self.page_title)
+        header.addWidget(self.page_detail)
+        right.addLayout(header)
+        self.status_area = shell.StatusArea()
+        self.status = self.status_area.banner.text
+        self.status.setText(tr('就绪。选择左侧功能；启动软件不会访问相机。'))
+        self.progress = self.status_area.banner.progress
+        self.progress.setRange(0, 100)
+        self.progress.setValue(0)
+        self.log = self.status_area.log
+        self.stop = self.status_area.stop
+        self.stop.clicked.connect(self.cancel_offline)
+        self.status_area.open_folder.clicked.connect(self.open_job)
+        self.status_area.export.clicked.connect(self.export_logs)
+        right.addWidget(self.status_area)
+        self.pages = W.QStackedWidget()
+        right.addWidget(self.pages, 1)
         self.language = W.QComboBox()
         self.language.setObjectName('interface_language')
         self.language.addItem('English', 'en')
@@ -60,17 +87,8 @@ class Window(W.QMainWindow):
         self.language.setCurrentIndex(1 if self.settings.get('language') == 'zh_CN' else 0)
         self.language.currentIndexChanged.connect(self.save_language)
         self.buttons.append(self.language)
-        heading.addWidget(self.language)
-        heading.addWidget(W.QLabel(tr('固件版本')))
-        self.firmware = W.QComboBox()
-        self.firmware.addItems(['2.01'])
-        heading.addWidget(self.firmware)
-        right.addLayout(heading)
-        self.description = W.QLabel((tr('Windows 测试版') if sys.platform == 'win32' else tr('桌面开发版')) + tr(' · 一键安装与六个功能入口 · ') + VERSION)
-        self.description.setProperty('hint', True)
-        right.addWidget(self.description)
-        self.pages = W.QStackedWidget()
-        right.addWidget(self.pages, 1)
+        build = tr('Windows 测试版') if sys.platform == 'win32' else tr('桌面开发版')
+        self.settings_dialog = shell.SettingsDialog(self, self.language, FIRMWARE, tr('%s（%s）') % (VERSION, build))
         self.home_page()
         self.connection_page()
         self.recovery_page()
@@ -79,68 +97,88 @@ class Window(W.QMainWindow):
         self.vertical_page()
         self.sound_page()
         self.recipe_page()
-        self.nav.currentRowChanged.connect(self.pages.setCurrentIndex)
+        self.nav.currentRowChanged.connect(self.show_page)
         self.nav.setCurrentRow(0)
-        self.progress = W.QProgressBar()
-        self.progress.setRange(0, 100)
-        self.progress.setValue(0)
-        self.progress.setTextVisible(False)
-        right.addWidget(self.progress)
-        self.status = W.QLabel(tr('就绪。选择左侧功能；启动软件不会访问相机。'))
-        self.status.setWordWrap(True)
-        right.addWidget(self.status)
-        self.log = W.QPlainTextEdit()
-        self.log.setReadOnly(True)
-        self.log.setMaximumHeight(180)
-        self.log.setPlaceholderText(tr('完整运行日志与原始报错会显示在这里。'))
-        right.addWidget(self.log)
-        bottom = W.QHBoxLayout()
-        open_log = W.QPushButton(tr('打开任务目录'))
-        open_log.clicked.connect(self.open_job)
-        bottom.addWidget(open_log)
-        export = W.QPushButton(tr('导出诊断包'))
-        export.clicked.connect(self.export_logs)
-        bottom.addWidget(export)
-        bottom.addStretch()
-        self.stop = W.QPushButton(tr('停止离线任务'))
-        self.stop.setEnabled(False)
-        self.stop.clicked.connect(self.cancel_offline)
-        bottom.addWidget(self.stop)
-        right.addLayout(bottom)
+        self.menus()
         self.timer = QtCore.QTimer(self)
         self.timer.timeout.connect(self.poll_job)
         self.timer.start(250)
+
+    def menus(self):
+        """Settings in the app menu (⌘,) on macOS, under Edit on Windows; guides under Help."""
+        bar = self.menuBar()
+        settings = QtGui.QAction(tr('设置…'), self)
+        settings.setMenuRole(QtGui.QAction.PreferencesRole)
+        settings.setShortcut(QtGui.QKeySequence.Preferences)
+        settings.triggered.connect(self.settings_dialog.open)
+        bar.addMenu(tr('编辑')).addAction(settings)
+        help_menu = bar.addMenu(tr('帮助'))
+        for title, callback in ((tr('连接相机前须知…'), self.show_connection_notice),
+                                (tr('断电重开步骤…'), self.show_reload_guide),
+                                (tr('支持的 LUT 格式…'), self.show_look_format_guide)):
+            action = QtGui.QAction(title, self)
+            action.triggered.connect(callback)
+            help_menu.addAction(action)
+
+    def show_page(self, index):
+        self.pages.setCurrentIndex(index)
+        title, detail = self.page_meta[index]
+        self.page_title.setText(title)
+        self.page_detail.setText(detail)
+        self.page_detail.setVisible(bool(detail))
+
+    def restyle(self, *_):
+        """The system appearance changed: restyle the app and everything drawn from tokens."""
+        theme.apply(W.QApplication.instance())
+        self.status_area.banner.refresh()
+        self.nav.viewport().update()
+        for dialog in self.findChildren(W.QDialog):
+            if hasattr(dialog, 'restyle'):
+                dialog.restyle()
+
+    def set_state(self, kind):
+        """The status banner's kind: '' (idle), info (running), success, warning or danger.
+        The progress bar shows only while a task runs; a failure opens the log."""
+        self.status_area.banner.set_kind(kind)
+        self.progress.setVisible(kind == 'info')
+        self.stop.setVisible(kind == 'info')
+        if kind == 'danger':
+            self.status_area.show_log(True)
 
     def save_language(self):
         self.settings['language'] = self.language.currentData()
         for key, field in self.fields.items():
             self.settings[key] = field.text()
-        write_json(data_root() / 'desktop.json', self.settings)
+        save_settings(self.settings)
         W.QMessageBox.information(self, tr('语言设置已保存'),
             tr('下次启动软件时使用所选语言。当前输入和任务保持不变。'))
 
     def page(self, title, detail):
+        """A scrolling page; its title and one-line description appear in the window header."""
         wrapper = W.QScrollArea()
+        wrapper.setObjectName('page')
         wrapper.setWidgetResizable(True)
+        wrapper.setFrameShape(W.QFrame.NoFrame)
         body = W.QWidget()
         layout = W.QVBoxLayout(body)
-        layout.setContentsMargins(0, 8, 8, 8)
-        label = W.QLabel(title)
-        label.setStyleSheet('font-size:20px;font-weight:600;')
-        layout.addWidget(label)
-        hint = W.QLabel(detail)
-        hint.setWordWrap(True)
-        hint.setProperty('hint', True)
-        layout.addWidget(hint)
+        layout.setContentsMargins(0, 4, 4, 20)
+        layout.setSpacing(10)
         wrapper.setWidget(body)
         self.pages.addWidget(wrapper)
+        self.page_meta.append((title, detail))
         return layout
 
     def box(self, layout, title):
-        group = W.QGroupBox(title)
-        form = W.QFormLayout(group)
+        """A Settings-style group holding a form: the title above, labels leading, fields trailing."""
+        group = shell.section(layout, title)
+        holder = W.QWidget()
+        form = W.QFormLayout(holder)
+        form.setContentsMargins(0, 0, 0, 0)
+        form.setHorizontalSpacing(12)
+        form.setVerticalSpacing(8)
+        form.setLabelAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
         form.setFieldGrowthPolicy(W.QFormLayout.AllNonFixedFieldsGrow)
-        layout.addWidget(group)
+        group.add(holder)
         return form
 
     def advanced(self, layout, title):
@@ -152,7 +190,8 @@ class Window(W.QMainWindow):
         content = W.QWidget()
         content.setVisible(False)
         inner = W.QVBoxLayout(content)
-        inner.setContentsMargins(0, 0, 0, 0)
+        inner.setContentsMargins(0, 2, 0, 6)
+        inner.setSpacing(10)
         toggle.toggled.connect(content.setVisible)
         toggle.toggled.connect(lambda open: toggle.setArrowType(QtCore.Qt.DownArrow if open else QtCore.Qt.RightArrow))
         layout.addWidget(toggle)
@@ -180,7 +219,7 @@ class Window(W.QMainWindow):
         return dict(self.common(), workspace=root, options=options)
 
     def home_page(self):
-        layout = self.page(tr('一键安装'), tr('六款外观、FL2／FL3、电子快门声及竖屏保存开关合并安装。按提示断电重开后，同一按钮只核对加载；无需逐槽安装。'))
+        layout = self.page(tr('一键安装'), tr('一次安装所选功能。相机按提示重启后，再点同一个按钮完成核对；无需逐个槽位安装。'))
         self.setup_presets = W.QCheckBox(tr('安装内置六款外观（替换自订 1–6，原有创意外观保留）'))
         self.setup_presets.setChecked(True)
         self.setup_fl23 = W.QCheckBox(tr('启用 FL2／FL3')); self.setup_fl23.setChecked(True)
@@ -196,27 +235,32 @@ class Window(W.QMainWindow):
                 box.setChecked(bool(options.get(key,key!='plugin')))
             for box in (self.setup_presets,self.setup_fl23,self.setup_sound,self.setup_vertical,self.setup_plugin):box.setEnabled(False)
 
-        self.setup_note=W.QLabel(tr('安装尚未结束，请点击“继续安装”，按弹窗完成下一步；需要断电时，接回 USB 后仍点击此按钮。'))
-        self.setup_note.setWordWrap(True)
+        self.setup_note=shell.text_label(tr('安装尚未结束，请点击“继续安装”，按弹窗完成下一步；需要断电时，接回 USB 后仍点击此按钮。'))
+        self.setup_note.setProperty('warning', True)
         self.setup_note.setVisible(bool(prior) and prior.get('phase')!='COMPLETE')
         layout.addWidget(self.setup_note)
-        layout.addWidget(self.setup_presets)
         self.setup_preset_summary = W.QLabel(tr(presets.SUMMARY))
-        self.setup_preset_summary.setWordWrap(True)
         if prior and prior.get('phase')!='COMPLETE':
             names = ['%s %s' % (r['slot'], r.get('name', Path(r['path']).stem)) for r in prior['options'].get('looks', [])]
-            self.setup_preset_summary.setText(tr('本次已保存外观：') + (' · '.join(names) if names else tr('未选择外观，不会新增六款')))
+            self.setup_preset_summary.setText(tr('本次已保存外观：') + (tr('、').join(names) if names else tr('未选择外观，不会新增六款')))
         else:
             self.setup_preset_summary.setEnabled(self.setup_presets.isChecked())
             self.setup_presets.toggled.connect(self.setup_preset_summary.setEnabled)
-        layout.addWidget(self.setup_preset_summary)
-        for check in (self.setup_fl23, self.setup_sound, self.setup_vertical, self.setup_plugin):layout.addWidget(check)
-        self.setup_button=self.button(layout, tr('开始新的一键安装') if prior.get('phase')=='COMPLETE' else tr('继续安装') if prior else tr('一键安装'),
-                                      'setup_all', self.setup_args, primary=True)
+        group = shell.section(layout, tr('安装内容'))
+        group.add(shell.CheckRow(self.setup_presets, self.setup_preset_summary))
+        group.add(shell.CheckRow(self.setup_fl23, tr('在相机的创意外观列表中加入 FL2 和 FL3。')))
+        group.add(shell.CheckRow(self.setup_sound, tr('使用电子快门拍摄时播放索尼原生快门声。')))
+        group.add(shell.CheckRow(self.setup_vertical, tr('竖握相机时，拍摄信息跟随转向。')))
+        group.add(shell.CheckRow(self.setup_plugin, tr('让 Lightroom Classic 为每张照片自动选择对应的配置文件。')))
+        actions = W.QHBoxLayout()
+        layout.addLayout(actions)
         self.setup_result_button=W.QPushButton(tr('查看上次安装结果（不连接相机）'))
         self.setup_result_button.clicked.connect(self.show_setup_result)
         self.setup_result_button.setVisible(prior.get('phase')=='COMPLETE')
-        layout.addWidget(self.setup_result_button);self.buttons.append(self.setup_result_button)
+        actions.addWidget(self.setup_result_button);self.buttons.append(self.setup_result_button)
+        actions.addStretch()
+        self.setup_button=self.button(actions, tr('开始新的一键安装') if prior.get('phase')=='COMPLETE' else tr('继续安装') if prior else tr('一键安装'),
+                                      'setup_all', self.setup_args, primary=True)
         look_section=self.advanced(layout,tr('改用自己的 A7Look 文件（先取消勾选内置六款）'))
         custom_container = self.setup_custom_container = look_section.parentWidget()
         custom_container.setEnabled(not self.setup_presets.isChecked() and not (prior and prior.get('phase')!='COMPLETE'))
@@ -225,9 +269,9 @@ class Window(W.QMainWindow):
         for slot in range(1, 7):
             self.field(form, 'setup_look_' + str(slot), tr('自订 ') + str(slot), kind='file', filter=tr('Compiled looks (*.a7look)'))
         compile_button = W.QPushButton(tr('从 DCP／LUT 生成 A7Look…'))
-        compile_button.clicked.connect(self.compiler_dialog); look_section.addWidget(compile_button); self.buttons.append(compile_button)
-        hint = W.QLabel(tr('恢复出厂、卸载驱动和删除外观不会混入安装流程。自定义声音请在“电子快门声音”中转换后直接保存，试听可选。'))
-        hint.setWordWrap(True); layout.addWidget(hint); layout.addStretch()
+        compile_button.clicked.connect(self.compiler_dialog); look_section.addWidget(compile_button, 0, QtCore.Qt.AlignLeft); self.buttons.append(compile_button)
+        layout.addWidget(shell.text_label(tr('恢复出厂、卸载驱动和删除外观不会混入安装流程。自定义声音请在“电子快门声音”中转换后直接保存，试听可选。'), 'callout'))
+        layout.addStretch()
 
     def drivers_first(self, arguments):
         """Suggest the connection page before a first one-click install on Windows."""
@@ -245,12 +289,12 @@ class Window(W.QMainWindow):
         box.setText(tr('这台电脑还没有成功连接过相机。建议先到“连接与驱动”页，点“准备两阶段驱动并测试连接”，'
                     '看到连接成功后再回来一键安装。'))
         box.setInformativeText(tr('一键安装也会自动尝试安装驱动，但驱动失败时排查更麻烦。'
-                               '驱动反复装不上，可点该页的“用 Zadig 手动安装驱动”，按说明操作。'))
+                               '驱动反复装不上，可点该页的“Zadig 指南…”，按说明操作。'))
         go = box.addButton(tr('先去安装驱动'), W.QMessageBox.AcceptRole)
         box.addButton(tr('直接一键安装'), W.QMessageBox.DestructiveRole)
         cancel = box.addButton(W.QMessageBox.Cancel)
         box.setDefaultButton(go)
-        box.exec()
+        shell.modal(box)
         return 'drivers' if box.clickedButton() is go else 'cancel' if box.clickedButton() is cancel else 'continue'
 
     def driver_step_failed(self, action):
@@ -313,18 +357,24 @@ class Window(W.QMainWindow):
         sound=self.work('sound')
         for key,value in (('sound_work',sound),('sound_backup',sound+'-backup')):
             self.fields[key].setText(value);self.settings[key]=value
-        write_json(data_root()/'desktop.json',self.settings)
+        save_settings(self.settings)
         self.log.appendPlainText(tr('原厂恢复已核对通过；已清除旧安装状态。历史诊断日志保留，新安装从头开始。') if verified else
                                  tr('原厂恢复写入已完成；旧的声音记录已停用（文件保留），之后的声音操作不再受它们影响。'))
 
-    def reload_controls(self, layout, checks):
+    def reload_controls(self, group, checks):
+        """The restart confirmation as a row of group: the checkbox, and the steps one click away."""
         guide = W.QPushButton(tr('如何断电重开？查看详细步骤'))
+        guide.setProperty('quiet', True)
         guide.clicked.connect(lambda: self.show_reload_guide())
-        layout.addWidget(guide)
         self.buttons.append(guide)
         confirm = W.QCheckBox(tr('已拔 USB、等灯停、关机，取下电池至少 1 分钟后重开；\n已确认') + checks)
         confirm.setToolTip(reloadguide.text())
-        layout.addWidget(confirm)
+        row = W.QWidget()
+        line = W.QHBoxLayout(row)
+        line.setContentsMargins(0, 0, 0, 0)
+        line.addWidget(confirm, 1)
+        line.addWidget(guide, 0, QtCore.Qt.AlignTop)
+        group.add(row)
         return confirm
 
     def show_reload_guide(self, *, setup=False, mode=None):
@@ -332,6 +382,15 @@ class Window(W.QMainWindow):
                  tr('恢复尚未完成，请重启后核对') if mode=='factory_reset' else
                  tr('试听结果已记录，请断电恢复原声') if mode=='sound_confirm' else tr('读写已结束，请断电重开'))
         W.QMessageBox.information(self, title, reloadguide.text(setup=setup, mode=mode))
+
+    def connection_notice_due(self):
+        """True only the first time the app opens; afterwards the guide stays in the Help menu and on
+        the Connection page, so no alert interrupts every launch."""
+        if self.settings.get('connection_notice_seen'):
+            return False
+        self.settings['connection_notice_seen'] = True
+        save_settings(self.settings)
+        return True
 
     def show_connection_notice(self):
         W.QMessageBox.information(self,tr(connectionguide.TITLE),tr(connectionguide.TEXT))
@@ -342,6 +401,7 @@ class Window(W.QMainWindow):
         self.fields[key] = line
         if kind:
             row = W.QHBoxLayout()
+            row.setSpacing(8)
             row.addWidget(line, 1)
             button = W.QPushButton(tr('选择…'))
             button.clicked.connect(lambda: self.browse(line, kind, filter))
@@ -361,84 +421,107 @@ class Window(W.QMainWindow):
         if path:
             field.setText(path)
 
-    def button(self, layout, text, action, arguments=lambda: {}, *, primary=False):
+    def action_button(self, text, action, arguments=lambda: {}, *, primary=False):
+        """A button that launches a worker action; disabled with the others while a task runs."""
         button = W.QPushButton(text)
         button.setObjectName('action_' + action)
         button.setProperty('primary', primary)
         button.clicked.connect(lambda: self.launch(action, arguments()))
-        layout.addWidget(button)
         self.buttons.append(button)
+        return button
+
+    def button(self, layout, text, action, arguments=lambda: {}, *, primary=False):
+        """An action button sized to its label, placed in layout."""
+        button = self.action_button(text, action, arguments, primary=primary)
+        if isinstance(layout, W.QVBoxLayout):
+            layout.addWidget(button, 0, QtCore.Qt.AlignLeft)
+        else:
+            layout.addWidget(button)
+        return button
+
+    def act(self, group, title, help_text, verb, action, arguments=lambda: {}, *, primary=False):
+        """A Settings-style row: what the action does on the leading side, a verb button trailing."""
+        button = self.action_button(verb, action, arguments, primary=primary)
+        group.add(shell.ActionRow(title, help_text, [button]))
         return button
 
     def text(self, key):
         return self.fields[key].text().strip()
 
     def common(self):
-        return {'firmware': self.firmware.currentText()}
+        return {'firmware': FIRMWARE}
 
     def work(self, label):
         return str(data_root() / 'work' / (datetime.now().strftime('%Y%m%d-%H%M%S') + '-' + label + '-' + uuid.uuid4().hex[:5]))
 
     def connection_page(self):
         layout = self.page(tr('连接与驱动'), tr('相机开机并选择“海量存储／Mass Storage”，使用可传数据的 USB 线。一次只连接一台相机。'))
+        guide = shell.Banner()
+        guide.set_kind('info')
+        guide.text.setText(tr('相机显示“请检查所连接的设备”是正常现象，以本工具的结果为准。相机操作开始后，不要关机或拔线。'))
+        read = W.QPushButton(tr('连接相机前须知…'))
+        read.setProperty('quiet', True)
+        read.clicked.connect(self.show_connection_notice)
+        guide.actions.addWidget(read, 0, QtCore.Qt.AlignVCenter)
+        layout.addWidget(guide)
         form = self.box(layout, tr('USB 连接'))
         self.driver_identity = W.QComboBox()
         self.driver_identity.addItems([tr('普通连接 · 054C:0E8A'), tr('服务连接 · 054C:0336')])
         form.addRow(tr('驱动目标'), self.driver_identity)
         if sys.platform == 'darwin':
             self.field(form, 'mac_volume', tr('macOS 相机存储卷'), kind='folder', value='/Volumes/')
-        self.button(layout, tr('检测相机与驱动'), 'driver_scan', primary=True)
+        group = shell.section(layout, tr('检查与准备'))
+        self.act(group, tr('检测相机与驱动'), tr('只读。列出电脑在 USB 上看到的相机和驱动。'), tr('检测'), 'driver_scan', primary=True)
         if sys.platform == 'win32':
             # Manual Zadig installation sits beside the automatic one: many
             # computers where the automatic install fails succeed with it.
-            drivers = W.QHBoxLayout()
-            layout.addLayout(drivers)
-            self.button(drivers, tr('准备两阶段驱动并测试连接（自动）'), 'usb_prepare', primary=True)
-            zadig = W.QPushButton(tr('用 Zadig 手动安装驱动（自动失败时）'))
+            zadig = W.QPushButton(tr('Zadig 指南…'))
             zadig.setObjectName('zadig_guide')
-            zadig.setProperty('primary', True)
             zadig.clicked.connect(self.show_zadig_guide)
-            drivers.addWidget(zadig)
             self.buttons.append(zadig)
+            group.add(shell.ActionRow(tr('准备两阶段驱动并测试连接（自动）'),
+                                      tr('安装两个连接身份所需的驱动，然后测试连接。自动安装失败时，许多电脑改用 Zadig 手动安装即可成功。'),
+                                      [zadig, self.action_button(tr('准备'), 'usb_prepare')]))
         else:
-            self.button(layout, tr('准备 USB 服务连接'), 'usb_prepare', primary=True)
-        self.button(layout, tr('单独安装所选身份的驱动（高级）') if sys.platform == 'win32'
-                    else tr('检查 USB 访问（macOS 无需 Zadig）'), 'driver_install',
-                    lambda: {'pid': ['0e8a', '0336'][self.driver_identity.currentIndex()]})
+            self.act(group, tr('准备 USB 服务连接'), tr('让相机进入服务连接，以便读取和写入。'), tr('准备'), 'usb_prepare')
+        self.act(group, tr('单独安装所选身份的驱动（高级）') if sys.platform == 'win32' else tr('检查 USB 访问（macOS 无需 Zadig）'),
+                 tr('只为上方选择的连接身份安装驱动。') if sys.platform == 'win32' else tr('确认本机可以访问相机的 USB 接口。'),
+                 tr('安装') if sys.platform == 'win32' else tr('检查'), 'driver_install',
+                 lambda: {'pid': ['0e8a', '0336'][self.driver_identity.currentIndex()]})
         if sys.platform == 'darwin':
-            self.button(layout, tr('推出选中的相机存储卷'), 'mac_unmount', lambda: {'volume': self.text('mac_volume')})
-        self.button(layout, tr('测试服务连接（不写固件）'), 'connect')
-        self.button(layout, tr('检测 USB 连接稳定性（只读）'), 'usb_stability')
+            self.act(group, tr('推出选中的相机存储卷'), tr('在建立服务连接前推出上方选择的存储卷。'), tr('推出'), 'mac_unmount',
+                     lambda: {'volume': self.text('mac_volume')})
+        self.act(group, tr('测试服务连接（不写固件）'), tr('连接后立即断开，不写入任何内容。'), tr('测试'), 'connect')
+        self.act(group, tr('检测 USB 连接稳定性（只读）'), tr('反复读取相同文件以检测线缆和接口，只读。'), tr('检查'), 'usb_stability')
         if sys.platform == 'win32':
-            self.button(layout, tr('卸载相机驱动，恢复 Windows 默认连接'), 'driver_uninstall',
-                        lambda: {'pids': ['0e8a', '0336']})
-        hint = W.QLabel(tr('连接中断后先查看完整日志。报错不会触发重新刷写或自动重装驱动。'))
-        hint.setWordWrap(True)
-        layout.addWidget(hint)
+            self.act(group, tr('卸载相机驱动，恢复 Windows 默认连接'), tr('备份并移除第三方驱动，让 Windows 重新识别相机。'), tr('卸载…'),
+                     'driver_uninstall', lambda: {'pids': ['0e8a', '0336']})
+        layout.addWidget(shell.text_label(tr('连接中断后先查看完整日志。报错不会触发重新刷写或自动重装驱动。'), 'callout'))
         layout.addStretch()
 
     def recovery_page(self):
         layout = self.page(tr('恢复原厂功能'), tr('已内置本项目修改区域的原厂 2.01 基准。移除已支持的项目修改，六个自订栏位设为 ST 默认，保留机身校准。无需旧备份或下载完整固件；旧配方不找回。'))
-        self.factory_button=self.button(layout, tr('恢复／继续恢复原厂 2.01 功能（无需旧备份）'), 'direct_factory_reset',
+        group = shell.section(layout, tr('原厂 2.01 功能'))
+        self.factory_status=shell.text_label(tr('恢复写入后必须按弹窗重启，再接回核对；核对通过前不会标记恢复完成。'), 'callout')
+        self.factory_button=self.action_button(tr('恢复／继续恢复原厂 2.01 功能（无需旧备份）'), 'direct_factory_reset',
                     lambda: self.direct_args('factory', mode='factory_reset', factory='builtin'), primary=True)
-        self.factory_status=W.QLabel(tr('恢复写入后必须按弹窗重启，再接回核对；核对通过前不会标记恢复完成。'))
-        self.factory_status.setWordWrap(True);layout.addWidget(self.factory_status)
+        group.add(shell.ActionRow(tr('移除本工具的修改，六个自订栏位恢复为 ST'), self.factory_status, [self.factory_button]))
+        self.factory_accept = self.reload_controls(group, tr('取景、拍照和回放正常'))
+        self.act(group, tr('重启后核对并完成恢复（恢复写入后必做）'), tr('恢复写入后必做：确认相机加载了原厂内容。'), tr('核对'), 'direct_verify',
+                 lambda: self.direct_verify_args('factory', self.factory_accept.isChecked()))
+        layout.addWidget(shell.text_label(tr('相机仍需能够进入 USB 服务通信；此操作不是索尼更新器的降级重刷。'), 'callout'))
         resume_section = self.advanced(layout, tr('恢复事务（自动识别；也可手动选择）'))
-        resume_form = W.QFormLayout()
+        resume_form = self.box(resume_section, '')
         self.field(resume_form, 'factory_failed_work', tr('恢复事务目录（通常自动）'), kind='folder',
                    value=self.settings.get('factory_direct_work', ''))
-        resume_section.addLayout(resume_form)
-        self.factory_accept = self.reload_controls(layout, tr('取景、拍照和回放正常'))
-        self.button(layout, tr('重启后核对并完成恢复（恢复写入后必做）'), 'direct_verify',
-                    lambda: self.direct_verify_args('factory', self.factory_accept.isChecked()))
-        layout.addWidget(W.QLabel(tr('相机仍需能够进入 USB 服务通信；此操作不是索尼更新器的降级重刷。')))
         expert = self.advanced(layout, tr('导入完整原厂 2.01 参考文件（高级、可选）'))
         reference = self.box(expert, tr('原厂文件'))
         self.field(reference, 'factory_file', 'Sony BODYDATA.DAT', kind='file', filter=tr('Sony firmware (*.DAT *.bin);;All files (*)'))
-        self.button(expert, tr('准备所选原厂文件（不连接相机）'), 'factory_prepare',
-                    lambda: {'source': self.text('factory_file') or str(data_root() / 'factory-2.01')})
-        self.button(expert, tr('使用导入的完整原厂文件恢复'), 'direct_factory_reset',
-                    lambda: self.direct_args('factory', mode='factory_reset', factory=str(data_root() / 'factory-2.01')))
+        steps = shell.section(expert, '')
+        self.act(steps, tr('准备所选原厂文件（不连接相机）'), tr('只在电脑上处理文件，不连接相机。'), tr('准备'), 'factory_prepare',
+                 lambda: {'source': self.text('factory_file') or str(data_root() / 'factory-2.01')})
+        self.act(steps, tr('使用导入的完整原厂文件恢复'), tr('用导入的文件代替内置基准进行恢复。'), tr('恢复…'), 'direct_factory_reset',
+                 lambda: self.direct_args('factory', mode='factory_reset', factory=str(data_root() / 'factory-2.01')))
         legacy = self.advanced(layout, tr('使用旧备份回到过去的状态（可选）'))
         self.backup_recovery_controls(legacy)
         layout.addStretch()
@@ -476,51 +559,54 @@ class Window(W.QMainWindow):
         choose_zip.clicked.connect(lambda: self.browse(self.fields['restore_backup'], 'file', 'Backup (*.zip);;All files (*)'))
         form.addRow('', choose_zip)
         self.field(form, 'restore_work', tr('恢复任务目录'), kind='folder', value=self.work('recovery'))
-        self.button(layout, tr('检查所选备份（离线）'), 'backup_inspect', lambda: {'backup': self.text('restore_backup')})
-        auto = W.QPushButton(tr('一键还原：查找并使用最初完整备份'))
+        group = shell.section(layout, tr('还原步骤'))
+        self.act(group, tr('检查所选备份（离线）'), tr('离线检查备份是否完整，不连接相机。'), tr('检查'), 'backup_inspect',
+                 lambda: {'backup': self.text('restore_backup')})
+        auto = W.QPushButton(tr('查找并还原…'))
         auto.setObjectName('one_click_restore')
         auto.clicked.connect(self.one_click_restore)
         self.buttons.append(auto)
-        layout.addWidget(auto)
-        self.button(layout, tr('恢复所选备份并完整读回'), 'restore', lambda: dict(self.common(),
-            backup=self.text('restore_backup'), workspace=self.text('restore_work')), primary=True)
-        self.recovery_accept = self.reload_controls(layout, tr('恢复后取景、拍照和回放正常'))
-        self.button(layout, tr('核对旧备份恢复后的加载状态'), 'restore_verify', lambda: {
-            'workspace': self.text('restore_work'), 'accepted': self.recovery_accept.isChecked()})
-        note = W.QLabel(tr('相机需要仍可进入服务通信。此入口使用机身备份；不把官方 BODYDATA.DAT 当作备份刷入。'))
-        note.setWordWrap(True)
-        layout.addWidget(note)
+        group.add(shell.ActionRow(tr('一键还原：查找并使用最初完整备份'), tr('自动找到这台相机最早的完整备份并还原。'), [auto]))
+        self.act(group, tr('恢复所选备份并完整读回'), tr('写入上方选择的备份，并完整读回核对。'), tr('还原…'), 'restore',
+                 lambda: dict(self.common(), backup=self.text('restore_backup'), workspace=self.text('restore_work')), primary=True)
+        self.recovery_accept = self.reload_controls(group, tr('恢复后取景、拍照和回放正常'))
+        self.act(group, tr('核对旧备份恢复后的加载状态'), tr('还原后重启相机，再确认它加载了备份内容。'), tr('核对'), 'restore_verify',
+                 lambda: {'workspace': self.text('restore_work'), 'accepted': self.recovery_accept.isChecked()})
+        layout.addWidget(shell.text_label(tr('相机需要仍可进入服务通信。此入口使用机身备份；不把官方 BODYDATA.DAT 当作备份刷入。'), 'callout'))
 
     def fl23_page(self):
         layout = self.page('FL2 / FL3', tr('直接启用／移除，不要求创建备份。移除只关闭 FL2／FL3 的列表入口，保留自定义外观所需的共用色彩代码；之后可以重新启用。'))
-        self.button(layout, tr('启用／重新启用 FL2 / FL3'), 'direct_fl23_enable',
-                    lambda: self.direct_args('fl23', mode='fl23_enable'), primary=True)
-        self.button(layout, tr('从列表移除 FL2 / FL3，保留自定义外观'), 'direct_fl23_disable',
-                    lambda: self.direct_args('fl23', mode='fl23_disable'))
-        info = W.QLabel(tr('写入读回后按弹窗断电重开，在相机确认即可使用；无需再接电脑核对。'))
-        info.setWordWrap(True); layout.addWidget(info)
+        group = shell.section(layout, tr('创意外观列表'))
+        self.act(group, tr('启用／重新启用 FL2 / FL3'), tr('把 FL2 和 FL3 加入相机的创意外观列表；再次启用可修复它们。'), tr('启用'),
+                 'direct_fl23_enable', lambda: self.direct_args('fl23', mode='fl23_enable'), primary=True)
+        self.act(group, tr('从列表移除 FL2 / FL3，保留自定义外观'), tr('只从列表中隐藏；自定义外观照常可用，之后可以重新启用。'), tr('移除'),
+                 'direct_fl23_disable', lambda: self.direct_args('fl23', mode='fl23_disable'))
+        layout.addWidget(shell.text_label(tr('写入读回后按弹窗断电重开，在相机确认即可使用；无需再接电脑核对。'), 'callout'))
         diagnostic = self.advanced(layout, tr('加载核对（可选诊断，不是使用前提）'))
-        self.fl23_accept = self.reload_controls(diagnostic, tr('菜单、拍照和回放正常'))
-        self.button(diagnostic, tr('只读核对已加载的版本（可选）'), 'direct_verify',
-                    lambda: self.direct_verify_args('fl23', self.fl23_accept.isChecked()))
+        check = shell.section(diagnostic, '')
+        self.fl23_accept = self.reload_controls(check, tr('菜单、拍照和回放正常'))
+        self.act(check, tr('只读核对已加载的版本（可选）'), tr('只读：确认相机加载的是新写入的版本。'), tr('核对'), 'direct_verify',
+                 lambda: self.direct_verify_args('fl23', self.fl23_accept.isChecked()))
         layout.addStretch()
 
     def look_page(self):
         from .lookeditor import LookEditor
         layout=self.page(tr('自定义创意外观'),tr('按需添加本次要改的槽位；未添加的槽位保持原样。可在同一批操作中写入外观和恢复 ST 默认。'))
-        self.look_pending=W.QLabel();self.look_pending.setWordWrap(True);layout.addWidget(self.look_pending)
+        self.look_pending=shell.text_label('');self.look_pending.setProperty('warning',True);layout.addWidget(self.look_pending)
         self.look_editor=LookEditor();layout.addWidget(self.look_editor)
+        actions=W.QHBoxLayout();layout.addLayout(actions)
+        actions.addWidget(shell.text_label(tr('同一次操作自动检查当前状态、写入并完整读回。结束后按弹窗断电加载，无需单独点击核对。'),'callout'),1)
         self.look_button=W.QPushButton(tr('添加操作项后继续'));self.look_button.setProperty('primary',True)
         self.look_button.setObjectName('action_direct_looks_import');self.look_button.clicked.connect(self.launch_look_changes)
-        layout.addWidget(self.look_button);self.buttons.append(self.look_button)
-        tools=W.QHBoxLayout();layout.addLayout(tools)
-        for title,callback in [(tr('打开内置 DCP／A7Look 配对库'),self.open_profile_library),(tr('从 DCP／LUT 生成 A7Look…'),self.compiler_dialog),(tr('安装 LrC 自动识别插件…'),self.plugin_dialog)]:
-            button=W.QPushButton(title);button.clicked.connect(callback);tools.addWidget(button);self.buttons.append(button)
-        formats=W.QPushButton(tr('LUT 格式说明：ST / sRGB，不是 S-Log3…'))
-        formats.clicked.connect(self.show_look_format_guide);layout.addWidget(formats);self.buttons.append(formats)
-        layout.addWidget(W.QLabel(tr('写入页选择 .a7look；.cube / .dcp 先用上方工具转换。仅更改清单内的槽位。')))
-        hint=W.QLabel(tr('同一次操作自动检查当前状态、写入并完整读回。结束后按弹窗断电加载，无需单独点击核对。'))
-        hint.setWordWrap(True);layout.addWidget(hint)
+        actions.addWidget(self.look_button,0,QtCore.Qt.AlignTop);self.buttons.append(self.look_button)
+        tools=shell.section(layout,tr('工具'))
+        for title,detail,verb,callback in [
+                (tr('打开内置 DCP／A7Look 配对库'),tr('内置的 DCP 配置文件和对应的相机外观文件。'),tr('打开'),self.open_profile_library),
+                (tr('从 DCP、LUT 或 HALD 图像生成 A7Look'),tr('写入页选择 .a7look；.cube / .dcp 先用上方工具转换。仅更改清单内的槽位。'),tr('生成…'),self.compiler_dialog),
+                (tr('安装 LrC 自动识别插件…'),tr('让 Lightroom Classic 为每张照片自动选择对应的配置文件。'),tr('安装…'),self.plugin_dialog),
+                (tr('LUT 格式说明：ST / sRGB，不是 S-Log3…'),tr('哪些 LUT 可以直接转换，以及 Log LUT 怎么处理。'),tr('查看…'),self.show_look_format_guide)]:
+            button=W.QPushButton(verb);button.clicked.connect(callback);self.buttons.append(button)
+            tools.add(shell.ActionRow(title,detail,[button]))
         layout.addStretch()
         self._look_displayed_pending=None;self._look_refreshing=False
         self.look_editor.changed.connect(self.refresh_look_controls)
@@ -544,7 +630,7 @@ class Window(W.QMainWindow):
         dialog=FilmLibraryDialog(looks,self,notices=looklibrary.location())
         dialog.add_requested.connect(self.add_library_look)
         dialog.preview_requested.connect(self.preview_look)
-        dialog.exec()
+        shell.modal(dialog)
 
     def add_library_look(self,look,slot):
         """Write the library look to slot: update that slot's row, or add one."""
@@ -562,7 +648,7 @@ class Window(W.QMainWindow):
             dialog=PreviewDialog(path,cache=data_root()/'preview-cache',parent=self)
         except READ_ERRORS as exc:
             W.QMessageBox.warning(self,tr('无法预览此外观'),str(exc));return
-        dialog.exec()
+        shell.modal(dialog)
 
     def setup_looks(self,arguments):
         """The looks a fresh one-click setup would install, the built-in six expanded, read and
@@ -579,10 +665,9 @@ class Window(W.QMainWindow):
         if not concerns:return True
         lines=[tr('自订 %s：%s（拟合%s）')%(c['slot'],c.get('name') or Path(c['path']).stem,rating_word(c['fit']['rating'])) for c in concerns]
         advice=tr('\n可以预览的外观，建议先预览。') if any(c['fit'].get('preview') for c in concerns) else ''
-        answer=W.QMessageBox.question(self,tr('拟合提醒'),
+        return ask(self,tr('拟合提醒'),
             tr('以下外观在机内的拟合较差或未知，相机效果可能与原外观明显不同。\n')+'\n'.join(lines)+advice+tr('\n仍要继续？'),
-            W.QMessageBox.Yes|W.QMessageBox.Cancel,W.QMessageBox.Cancel)
-        return answer==W.QMessageBox.Yes
+            tr('仍然继续'))
 
     def look_pending_state(self):
         prior=self.settings.get('look_direct_work')
@@ -667,27 +752,20 @@ class Window(W.QMainWindow):
         form = self.box(layout, tr('显示任务'))
         self.field(form, 'vertical_work', tr('任务目录'), kind='folder', value=str(data_root() / 'vertical'))
         args = lambda: dict(self.common(), workspace=self.text('vertical_work'))
-        self.button(layout, tr('开启竖屏显示'), 'vertical_enable', args, primary=True)
-        self.button(layout, tr('关闭竖屏显示'), 'vertical_disable', args)
-        frame_hint=W.QLabel(tr('开启会保存竖屏开关并应用当前的 Fn／子菜单显示修正；关闭会先关闭竖屏，再撤销显示修正。两个操作都支持重复覆盖。'))
-        frame_hint.setWordWrap(True);layout.addWidget(frame_hint)
-        known=W.QLabel(tr('已知显示问题：竖屏创意外观选择页的外框仍偏粗；刻度已横向显示，但橙色指针朝向尚未修正。'))
-        known.setWordWrap(True);layout.addWidget(known)
-        hint = W.QLabel(tr('开启／关闭会一次完成所选写入和读回，再统一弹窗提示断电加载。相同状态可重复点击，相同内容不重复写入。'))
-        hint.setWordWrap(True)
-        layout.addWidget(hint)
+        group = shell.section(layout, tr('竖屏显示'))
+        self.act(group, tr('开启竖屏显示'), tr('保存竖屏开关并应用 Fn／子菜单显示修正，相机重启后生效。'), tr('开启'),
+                 'vertical_enable', args, primary=True)
+        self.act(group, tr('关闭竖屏显示'), tr('先关闭竖屏，再撤销显示修正。'), tr('停用'), 'vertical_disable', args)
+        layout.addWidget(shell.text_label(tr('已知显示问题：竖屏创意外观选择页的外框仍偏粗；刻度已横向显示，但橙色指针朝向尚未修正。'), 'callout'))
+        layout.addWidget(shell.text_label(tr('开启／关闭会一次完成所选写入和读回，再统一弹窗提示断电加载。相同状态可重复点击，相同内容不重复写入。'), 'callout'))
         layout.addStretch()
 
     def sound_page(self):
         layout = self.page(tr('电子快门声音'), tr('独立开关控制电子快门发声分支。音频转换后可直接保存，临时试听可选；写入后按弹窗断电加载。'))
-        form = self.box(layout, tr('声音工作区'))
-        self.field(form, 'sound_work', tr('工作目录'), kind='folder', value=str(data_root() / 'sound'))
-        self.field(form, 'sound_backup', tr('第二份备份'), kind='folder', value=str(data_root() / 'sound-backup'))
         args = lambda: dict(self.common(), workspace=self.text('sound_work'), backup=self.text('sound_backup'))
-        row = W.QHBoxLayout()
-        layout.addLayout(row)
-        self.button(row, tr('开启电子快门声'), 'sound_on', args)
-        self.button(row, tr('关闭电子快门声'), 'sound_off', args)
+        switch = shell.section(layout, tr('索尼原生快门声'))
+        self.act(switch, tr('开启电子快门声'), tr('使用电子快门拍摄时播放快门声。'), tr('开启'), 'sound_on', args)
+        self.act(switch, tr('关闭电子快门声'), tr('电子快门拍摄时保持静音。'), tr('停用'), 'sound_off', args)
         media = self.box(layout, tr('导入音频／视频片段'))
         self.field(media, 'sound_source', tr('声音文件'), kind='file', filter=tr('Audio / video (*.wav *.mp3 *.mp4 *.m4a *.flac *.ogg);;All files (*)'))
         self.sound_start = W.QDoubleSpinBox()
@@ -699,36 +777,38 @@ class Window(W.QMainWindow):
         self.sound_duration.setDecimals(3)
         self.sound_duration.setValue(.5)
         media.addRow(tr('长度（秒）'), self.sound_duration)
-        row = W.QHBoxLayout()
-        layout.addLayout(row)
-        self.button(row, tr('转换所选片段'), 'sound_import', lambda: dict(args(), source=self.text('sound_source'),
-            start=self.sound_start.value(), duration=self.sound_duration.value(), peak=.4))
-        self.button(row, tr('相机内临时试听'), 'sound_audition', args)
-        volume = W.QHBoxLayout()
-        layout.addLayout(volume)
-        self.button(volume, tr('音量降低 −3 dB'), 'sound_volume', lambda: dict(args(), decibels=-3))
-        self.button(volume, tr('音量提高 +3 dB'), 'sound_volume', lambda: dict(args(), decibels=3))
-        self.button(volume, tr('还原转换时音量'), 'sound_volume', lambda: dict(args(), reset=True))
-        volume_hint=W.QLabel(tr('先转换片段，再调节音量；仅处理电脑上的音频，不连接相机。达到音量上限会自动限制以避免削波；保存时使用调整后的声音。重新转换会重置音量。'))
-        volume_hint.setWordWrap(True);layout.addWidget(volume_hint)
-        self.button(layout, tr('保存当前自定义声音'), 'sound_install', args, primary=True)
-        hint=W.QLabel(tr('转换成功即可直接保存；自动建立工作区并准备电子快门声支援，不必先开启或关联旧任务。试听可选；全部写入完成后按弹窗统一断电加载。'))
-        hint.setWordWrap(True);layout.addWidget(hint)
+        custom = shell.section(layout, tr('自定义快门声'))
+        self.act(custom, tr('转换所选片段'), tr('只在电脑上处理音频，不连接相机。'), tr('转换'), 'sound_import',
+                 lambda: dict(args(), source=self.text('sound_source'), start=self.sound_start.value(),
+                              duration=self.sound_duration.value(), peak=.4))
+        volume = [self.action_button(tr('音量降低 −3 dB'), 'sound_volume', lambda: dict(args(), decibels=-3)),
+                  self.action_button(tr('音量提高 +3 dB'), 'sound_volume', lambda: dict(args(), decibels=3)),
+                  self.action_button(tr('还原转换时音量'), 'sound_volume', lambda: dict(args(), reset=True))]
+        custom.add(shell.ActionRow(tr('音量'), tr('达到上限时自动限制以避免削波；保存时使用调整后的声音。重新转换会重置音量。'), volume))
+        self.act(custom, tr('相机内临时试听'), tr('可选：保存前在相机上临时试听。'), tr('试听'), 'sound_audition', args)
+        self.act(custom, tr('保存当前自定义声音'), tr('写入相机；工作区和电子快门声支援会自动准备。'), tr('保存到相机…'), 'sound_install', args, primary=True)
+        check = shell.section(layout, tr('重启后'))
+        self.sound_accept = self.reload_controls(check, tr('声音正确、拍摄和回放正常'))
+        self.act(check, tr('重开后核对声音'), tr('确认相机加载了新的快门声。'), tr('核对'), 'sound_verify',
+                 lambda: dict(args(), accepted=self.sound_accept.isChecked()))
+        self.act(check, tr('恢复原厂音效'), tr('改回相机原来的快门声。'), tr('恢复…'), 'sound_restore_sound', args)
         optional=self.advanced(layout,tr('试听确认与恢复记录（可选，不影响保存）'))
-        self.button(optional, tr('确认试听正确'), 'sound_confirm', lambda: dict(args(), result='correct'))
-        self.button(optional, tr('已断电恢复原声，记录恢复完成'), 'sound_confirm_recovery', args)
-        self.sound_accept = self.reload_controls(layout, tr('声音正确、拍摄和回放正常'))
-        self.button(layout, tr('重开后核对声音'), 'sound_verify', lambda: dict(args(), accepted=self.sound_accept.isChecked()))
-        self.button(layout, tr('恢复原厂音效'), 'sound_restore_sound', args)
+        records = shell.section(optional, '')
+        self.act(records, tr('确认试听正确'), tr('记录试听时的声音是正确的。'), tr('确认'), 'sound_confirm', lambda: dict(args(), result='correct'))
+        self.act(records, tr('已断电恢复原声，记录恢复完成'), tr('试听后已断电恢复原声时，记录恢复完成。'), tr('记录'), 'sound_confirm_recovery', args)
+        folders = self.advanced(layout, tr('声音工作区'))
+        form = self.box(folders, '')
+        self.field(form, 'sound_work', tr('工作目录'), kind='folder', value=str(data_root() / 'sound'))
+        self.field(form, 'sound_backup', tr('第二份备份'), kind='folder', value=str(data_root() / 'sound-backup'))
         layout.addStretch()
 
     def recipe_page(self):
         from . import recipes
         layout=self.page(tr('胶片配方（实验性）'),tr('通过 USB 把创意外观配方（基础外观、八项微调、白平衡偏移和 DRO）写入相机设置；不修改固件。'))
-        warning=W.QLabel(tr('实验功能：使用索尼 PC 遥控协议，尚未在 α7C II 实机上验证。每次先只读读取相机并列出全部更改，确认后才写入，写入后逐项读回核对。'))
-        warning.setWordWrap(True);warning.setProperty('warning',True);layout.addWidget(warning)
-        setup=W.QLabel(tr('相机设置：菜单 > 设置 > USB > USB 连接模式选“PC 遥控”，模式拨盘置于 P／A／S／M。先退出“照片”、“图像捕获”、Lightroom 和 Imaging Edge。'))
-        setup.setWordWrap(True);layout.addWidget(setup)
+        warning=shell.Banner();warning.set_kind('warning')
+        warning.text.setText(tr('实验功能：使用索尼 PC 遥控协议，尚未在 α7C II 实机上验证。每次先只读读取相机并列出全部更改，确认后才写入，写入后逐项读回核对。'))
+        layout.addWidget(warning)
+        layout.addWidget(shell.text_label(tr('相机设置：菜单 > 设置 > USB > USB 连接模式选“PC 遥控”，模式拨盘置于 P／A／S／M。先退出“照片”、“图像捕获”、Lightroom 和 Imaging Edge。'),'callout'))
         form=self.box(layout,tr('配方'))
         self.recipe_preset=W.QComboBox()
         for preset in recipes.PRESETS:self.recipe_preset.addItem(preset.name)
@@ -736,16 +816,21 @@ class Window(W.QMainWindow):
         self.recipe_target=W.QComboBox();self.recipe_target.addItem(tr('直接调整基础外观'),None)
         for slot in range(1,7):self.recipe_target.addItem(tr('存入自订外观 %d')%slot,slot)
         form.addRow(tr('写入位置'),self.recipe_target)
-        self.recipe_details=W.QLabel();self.recipe_details.setWordWrap(True);self.recipe_details.setTextFormat(QtCore.Qt.RichText)
-        self.recipe_details.setOpenExternalLinks(True);layout.addWidget(self.recipe_details)
+        self.recipe_details=shell.text_label('','callout');self.recipe_details.setTextFormat(QtCore.Qt.RichText)
+        self.recipe_details.setOpenExternalLinks(True);form.addRow(self.recipe_details)
         self.recipe_preset.currentIndexChanged.connect(self.show_recipe);self.show_recipe()
         self.recipe_ptpcamerad=W.QCheckBox(tr('允许暂时停止 macOS 相机服务 ptpcamerad（仅限当前用户，系统会自动重新启动它）'))
         self.recipe_ptpcamerad.setToolTip(tr('ptpcamerad 会占用相机的 PC 遥控接口。勾选后，本工具连接前先结束它；不需要管理员密码。'))
-        self.recipe_ptpcamerad.setVisible(sys.platform=='darwin');layout.addWidget(self.recipe_ptpcamerad)
-        self.recipe_button=self.button(layout,tr('读取相机并列出更改（只读）'),'recipe_plan',self.recipe_args,primary=True)
-        self.recipe_windows_note=W.QLabel(tr('Windows 需要为 PC 遥控接口安装 WinUSB 驱动，本工具暂不提供，因此此功能在 Windows 上停用。'))
-        self.recipe_windows_note.setWordWrap(True);self.recipe_windows_note.setVisible(sys.platform=='win32')
-        layout.addWidget(self.recipe_windows_note)
+        connection=shell.section(layout,tr('连接'))
+        consent=connection.add(shell.CheckRow(self.recipe_ptpcamerad,tr('ptpcamerad 会占用相机的 PC 遥控接口。勾选后，本工具连接前先结束它；不需要管理员密码。')))
+        consent.parentWidget().setVisible(sys.platform=='darwin')
+        self.recipe_ptpcamerad.setVisible(sys.platform=='darwin')
+        self.recipe_windows_note=shell.text_label(tr('Windows 需要为 PC 遥控接口安装 WinUSB 驱动，本工具暂不提供，因此此功能在 Windows 上停用。'),'callout')
+        self.recipe_windows_note.setVisible(sys.platform=='win32')
+        connection.add(self.recipe_windows_note).parentWidget().setVisible(sys.platform=='win32')
+        actions=W.QHBoxLayout();layout.addLayout(actions)
+        actions.addWidget(shell.text_label(tr('只读：先列出全部更改，确认后才写入。'),'callout'),1)
+        self.recipe_button=self.button(actions,tr('读取相机并列出更改（只读）'),'recipe_plan',self.recipe_args,primary=True)
         if sys.platform=='win32':
             self.buttons.remove(self.recipe_button);self.recipe_button.setEnabled(False)
         layout.addStretch()
@@ -760,13 +845,13 @@ class Window(W.QMainWindow):
         from . import recipes
         recipe=recipes.PRESETS[self.recipe_preset.currentIndex()]
         def text(value):return html.escape(value,quote=False)
-        sliders=' · '.join('%s %s'%(s.label,recipes.display_value(s.code,v)) for s,v in recipe.slider_values())
+        sliders=tr('、').join('%s %s'%(s.label,recipes.display_value(s.code,v)) for s,v in recipe.slider_values())
         balance=recipe.white_balance+(' %d K'%recipe.kelvin if recipe.kelvin else '') if recipe.white_balance else tr('保持相机当前模式')
         shifts=tr('白平衡偏移 %s · %s')%(recipes.display_value(recipes.WB_SHIFT_AB,recipes.wb_shift_wire(recipe.wb_shift_ab)),
                                       recipes.display_value(recipes.WB_SHIFT_GM,recipes.wb_shift_wire(recipe.wb_shift_gm)))
-        source=text(recipe.source)+(' · <a href="%s">%s</a>'%(html.escape(recipe.source_url),text(recipe.source_url)) if recipe.source_url else '')
-        lines=[text(tr('基础外观 %s')%recipe.base_look+' · '+sliders),
-               text(tr('白平衡：%s')%balance+' · '+shifts+' · '+tr('DRO：%s')%(recipe.dro or tr('不变'))),
+        source=text(recipe.source)+(text(tr('；'))+'<a href="%s">%s</a>'%(html.escape(recipe.source_url),text(recipe.source_url)) if recipe.source_url else '')
+        lines=[text(tr('基础外观 %s')%recipe.base_look+tr('；')+sliders),
+               text(tr('白平衡：%s')%balance+tr('；')+shifts+tr('；')+tr('DRO：%s')%(recipe.dro or tr('不变'))),
                text(tr('来源：'))+source]
         if recipe.note:lines.append(text(tr('说明：')+recipe.note))
         self.recipe_details.setText('<br>'.join(lines))
@@ -798,8 +883,7 @@ class Window(W.QMainWindow):
         if later:text+=tr('\n\n切换外观或白平衡后，先重新读取相机，再写入：\n')+lines(later)
         if notes:text+=tr('\n\n说明：\n')+lines(notes)
         text+=tr('\n\n这是实验功能，尚未在 α7C II 实机上验证。每项写入后读回核对；如有设置未生效或其他设置被改变，会停止并报告。写入期间不要操作相机或拔线。\n现在写入？')
-        answer=W.QMessageBox.question(self,tr('写入配方（实验性）'),text,W.QMessageBox.Yes|W.QMessageBox.Cancel,W.QMessageBox.Cancel)
-        if answer==W.QMessageBox.Yes:
+        if ask(self,tr('写入配方（实验性）'),text,tr('写入配方')):
             self.launch('recipe_apply',dict(recipe=result['recipe'],stop_ptpcamerad=result['stop_ptpcamerad'],reviewed=result['steps']))
 
     def show_zadig_guide(self):
@@ -812,7 +896,7 @@ class Window(W.QMainWindow):
         download.clicked.connect(lambda: QtGui.QDesktopServices.openUrl(QtCore.QUrl(URL)))
         close = W.QPushButton(tr('关闭')); close.clicked.connect(dialog.accept)
         row.addWidget(download); row.addWidget(close)
-        dialog.exec()
+        shell.modal(dialog)
 
     def show_look_format_guide(self):
         from .lookguide import TITLE,TEXT
@@ -820,37 +904,55 @@ class Window(W.QMainWindow):
         layout=W.QVBoxLayout(dialog)
         content=W.QTextBrowser();content.setPlainText(tr(TEXT));layout.addWidget(content)
         close=W.QPushButton(tr('关闭'));close.clicked.connect(dialog.accept);layout.addWidget(close)
-        dialog.exec()
+        shell.modal(dialog)
 
     def compiler_dialog(self):
         from looktool.compilelook import DEFAULT_CALIBRATION
         dialog = W.QDialog(self)
         dialog.setWindowTitle(tr('生成 A7Look'))
-        dialog.resize(760, 370)
         layout = W.QVBoxLayout(dialog)
-        hint = W.QLabel(tr('CUBE：输入必须是 Sony ST / sRGB，输出 sRGB；不能直接使用 S-Log3 / S-Gamut3.Cine 或其他 Log LUT。\nDCP：内置离线解析与拟合，不需要 Lightroom、插件或联网。转换 LookTable／色调曲线，机内效果为拟合近似。\nTIFF：在 DxO PhotoLab／FilmPack 等软件中处理过的 HALD 图像（用下方按钮生成和检查）。此工具只生成 .a7look，不写相机。'))
-        hint.setWordWrap(True)
-        layout.addWidget(hint)
-        help_button=W.QPushButton(tr('支持哪些格式和色彩空间？查看完整说明…'))
-        help_button.clicked.connect(self.show_look_format_guide);layout.addWidget(help_button)
-        halds=W.QHBoxLayout();layout.addLayout(halds)
-        for name,title,callback in (('hald_identity',tr('保存用于 DxO 的 HALD 图像…'),self.save_hald_identity),
-                                    ('hald_check',tr('检查 HALD 导出…'),self.check_hald_export)):
-            button=W.QPushButton(title);button.setObjectName(name);button.clicked.connect(callback);halds.addWidget(button)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(10)
+        layout.addWidget(shell.text_label(tr('CUBE：输入必须是 Sony ST / sRGB，输出 sRGB；不能直接使用 S-Log3 / S-Gamut3.Cine 或其他 Log LUT。\nDCP：内置离线解析与拟合，不需要 Lightroom、插件或联网。转换 LookTable／色调曲线，机内效果为拟合近似。\nTIFF：在 DxO PhotoLab／FilmPack 等软件中处理过的 HALD 图像（用下方按钮生成和检查）。此工具只生成 .a7look，不写相机。'), 'callout'))
         form = self.box(layout, tr('源文件与输出'))
         self.field(form, 'compile_source', 'DCP / CUBE / TIFF', kind='file', filter=tr('Reference (*.dcp *.cube *.tif *.tiff)'))
         self.field(form, 'compile_name', tr('外观名称'))
         self.field(form, 'compile_output', tr('输出 A7Look'), kind='save', filter='A7Look (*.a7look)')
         self.field(form, 'compile_model', tr('响应文件'), kind='file', filter=tr('Response (*.npz)'),
                    value=str(DEFAULT_CALIBRATION))
+        tools = []
+        for name, title, callback in (('hald_identity', tr('保存用于 DxO 的 HALD 图像…'), self.save_hald_identity),
+                                      ('hald_check', tr('检查 HALD 导出…'), self.check_hald_export)):
+            button = W.QPushButton(title)
+            button.setObjectName(name)
+            button.clicked.connect(callback)
+            tools.append(button)
+        shell.section(layout, tr('用 DxO 制作外观')).add(shell.ActionRow(
+            tr('HALD 图像'), tr('保存 HALD 图像，在 DxO 中只加胶片渲染后导出 TIFF，再把导出的 TIFF 选为上方的源文件。'), tools))
+        layout.addStretch()
+        # Apple order: the supporting action leading; Cancel, then the verb, trailing.
+        actions = W.QHBoxLayout()
+        actions.setSpacing(8)
+        layout.addLayout(actions)
+        formats = W.QPushButton(tr('支持的 LUT 格式…'))
+        formats.setObjectName('compile_formats')
+        formats.clicked.connect(self.show_look_format_guide)
+        actions.addWidget(formats)
+        actions.addStretch()
+        cancel = W.QPushButton(tr('取消'))
+        cancel.setObjectName('compile_cancel')
+        cancel.clicked.connect(dialog.reject)
+        actions.addWidget(cancel)
         run = W.QPushButton(tr('开始生成'))
+        run.setObjectName('compile_run')
+        run.setProperty('primary', True)
         run.clicked.connect(lambda: (dialog.accept(), self.launch('compile_look', {
             'source': self.text('compile_source'), 'name': self.text('compile_name'),
             'output': self.text('compile_output'), 'model': self.text('compile_model'),
             'input_space': 'sony-st-srgb', 'passes': 3})))
-        layout.addWidget(run)
-        dialog.resize(760, max(370, dialog.sizeHint().height()))  # long translations need more height
-        dialog.exec()
+        actions.addWidget(run)
+        dialog.resize(760, max(420, dialog.sizeHint().height()))  # long translations need more height
+        shell.modal(dialog)
 
     def save_hald_identity(self):
         from looktool import hald
@@ -926,11 +1028,10 @@ class Window(W.QMainWindow):
         if action == 'restore_verify' and not Path(arguments.get('workspace', ''), 'rollback.private.json').is_file():
             # This button checks a backup restore only. A built-in or firmware
             # file restore is checked by the factory verification button.
-            answer = W.QMessageBox.question(self, tr('这里没有旧备份恢复记录'),
+            if not ask(self, tr('这里没有旧备份恢复记录'),
                 tr('“核对旧备份恢复后的加载状态”只用于“使用旧备份回到过去的状态”。\n'
                 '用内置原厂基准或固件文件恢复后，应点“重启后核对并完成恢复”。\n现在改为核对原厂恢复？'),
-                W.QMessageBox.Yes | W.QMessageBox.Cancel, W.QMessageBox.Yes)
-            if answer != W.QMessageBox.Yes:
+                tr('核对原厂恢复')):
                 return
             action, arguments = 'direct_verify', self.direct_verify_args('factory', bool(arguments.get('accepted')))
         if action == 'direct_factory_reset':
@@ -952,11 +1053,10 @@ class Window(W.QMainWindow):
                 action = 'direct_resume_factory'
                 arguments = dict(arguments, failed_workspace=str(original), accepted=self.factory_accept.isChecked())
         if action == 'driver_uninstall':
-            answer = W.QMessageBox.question(self, tr('卸载相机驱动'),
+            if not ask(self, tr('卸载相机驱动'),
                 tr('将备份并卸载 Sony 054C:0E8A／0336 的第三方驱动，让 Windows 重新识别相机。\n'
                 '完成后可能需要拔插 USB，重新选择海量存储模式。此操作不修改相机固件。\n现在卸载？'),
-                W.QMessageBox.Yes | W.QMessageBox.Cancel, W.QMessageBox.Cancel)
-            if answer != W.QMessageBox.Yes:
+                tr('卸载驱动')):
                 return
         if fit_looks and not self.confirm_fit(fit_looks):
             return
@@ -985,12 +1085,11 @@ class Window(W.QMainWindow):
                      tr('将移除项目程序修改、将六个自订栏位设为 ST 默认；旧配方不找回。请先在相机选择 ST。\n') if action == 'direct_factory_reset' else
                      tr('只关闭 FL2／FL3 列表入口，保留 LUT 与共用代码。请先在相机选择 ST。\n') if action == 'direct_fl23_disable' else
                      tr('将所选自订栏位设为 ST 默认，保留其他栏位。\n') if action == 'direct_slot_default' else '')
-            answer = W.QMessageBox.question(self, tr('开始相机写入'),
+            if not ask(self, tr('开始相机写入'),
                 scope + tr('目标：') + str(target) + tr('\n请确认机身为 ILCE-7CM2、固件 2.01，电量充足（建议至少 50%）。\n'
                 '其它项目修改的固件可能与本工具冲突。\n'
                 '操作和完整读回期间保持供电、USB 连接，不要关机或拔线。\n确认供电充足并开始？'),
-                W.QMessageBox.Yes | W.QMessageBox.Cancel, W.QMessageBox.Cancel)
-            if answer != W.QMessageBox.Yes:
+                tr('写入相机')):
                 return
             arguments = dict(arguments, power_confirmed=True)
             arguments.pop('battery', None)
@@ -1006,11 +1105,11 @@ class Window(W.QMainWindow):
             for box in (self.setup_presets,self.setup_fl23,self.setup_sound,self.setup_vertical,self.setup_plugin):box.setEnabled(False)
         for key, field in self.fields.items():
             self.settings[key] = field.text()
-        write_json(data_root() / 'desktop.json', self.settings)
+        save_settings(self.settings)
         self.current_job = jobs.new_job(action, arguments)
         if action in ('direct_looks_import','direct_resume_looks') or (action=='direct_verify' and arguments.get('workspace')==self.settings.get('look_direct_work')):
             self.settings['look_job_dir']=str(self.current_job)
-            write_json(data_root()/'desktop.json',self.settings)
+            save_settings(self.settings)
         self.log_offset = 0
         self.log.clear()
         self.camera_operation = action in jobs.CAMERA_ACTIONS or action in jobs.REMOTE_ACTIONS or action == 'driver_install'
@@ -1020,6 +1119,8 @@ class Window(W.QMainWindow):
         self.stop.setEnabled(not self.camera_operation)
         self.progress.setRange(0, 0)
         self.status.setText(tr('正在执行：') + action + tr('。详细日志持续保存。'))
+        self.stop.setToolTip('' if not self.camera_operation else tr('相机任务不能安全中途停止；请等待它完成。'))
+        self.set_state('info')
         self.process = QtCore.QProcess(self)
         self.process.setProcessChannelMode(QtCore.QProcess.MergedChannels)
         env = QtCore.QProcessEnvironment.systemEnvironment()
@@ -1088,7 +1189,7 @@ class Window(W.QMainWindow):
                 if status['result'].get(key):self.fields[target].setText(status['result'][key])
         for key, field in self.fields.items():
             self.settings[key] = field.text()
-        write_json(data_root() / 'desktop.json', self.settings)
+        save_settings(self.settings)
         waiting=success and reloadguide.required(status.get('action'),status.get('result',{}))
         sound_notice=reloadguide.sound_notice(status.get('action'),status.get('result',{})) if success else None
         factory_wait=success and status.get('result',{}).get('mode')=='factory_reset' and status['result'].get('phase')=='AWAITING_RELOAD'
@@ -1121,6 +1222,8 @@ class Window(W.QMainWindow):
         for button in self.buttons:
             button.setEnabled(True)
         self.stop.setEnabled(False)
+        self.set_state('danger' if not success else 'warning' if (waiting or resource_wait or resource_ready or factory_wait or sound_notice)
+                       else 'success')
         self.process.deleteLater()
         self.process = None
         if success and status.get('action') in ('direct_looks_import','direct_resume_looks','direct_verify') and status.get('result',{}).get('mode') in ('install_all','look_import','slot_default') and status['result'].get('phase') in ('COMPLETED','AWAITING_RELOAD','LOADED','COMPLETE') and (status['action']!='direct_verify' or self._look_displayed_pending is not None):
@@ -1210,6 +1313,7 @@ def main():
         if font.is_file():
             QtGui.QFontDatabase.addApplicationFont(str(font))
     app.setApplicationName('A7C2Tools')
+    app.setApplicationVersion(VERSION)
     app.setOrganizationName('QAQLeonard')
     window = Window()
     window.show()
@@ -1223,5 +1327,6 @@ def main():
         window.nav.setCurrentRow(0)
         QtCore.QTimer.singleShot(800, app.quit)
     else:
-        QtCore.QTimer.singleShot(0,window.show_connection_notice)
+        if window.connection_notice_due():
+            QtCore.QTimer.singleShot(0,window.show_connection_notice)
     return app.exec()

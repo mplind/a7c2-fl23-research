@@ -32,10 +32,29 @@ def dangerous(argv):
 
 
 @pytest.fixture(autouse=True)
+def release_widgets():
+    """Delete every top-level widget a test leaves behind. Widgets left alive are restyled on every
+    application style change and stay connected to the appearance signal, so each test after them
+    runs slower (the suite once timed out this way)."""
+    from PySide6 import QtCore, QtWidgets
+    app = QtWidgets.QApplication.instance()
+    before = set(map(id, app.topLevelWidgets())) if app else set()
+    yield
+    app = QtWidgets.QApplication.instance()
+    if app is None:
+        return
+    for widget in app.topLevelWidgets():
+        if id(widget) not in before:
+            widget.close()
+            widget.deleteLater()
+    QtWidgets.QApplication.sendPostedEvents(None, QtCore.QEvent.DeferredDelete)
+
+
+@pytest.fixture(autouse=True)
 def blocked_side_effects(monkeypatch):
-    """No test may start a worker, ask for administrator rights, enumerate USB or stop macOS camera
-    services. Each attempt is refused and recorded, and fails the test at teardown, because Qt
-    prints and swallows an exception raised inside a slot."""
+    """No test may start a worker, ask for administrator rights, enumerate USB, stop macOS camera
+    services or block on a modal dialog. Each attempt is refused and recorded, and fails the test at
+    teardown, because Qt prints and swallows an exception raised inside a slot."""
     import subprocess
     import usb.core
     from PySide6 import QtCore
@@ -51,6 +70,10 @@ def blocked_side_effects(monkeypatch):
         return refuse(name) if name else real_run(argv, *args, **kwargs)
 
     monkeypatch.setattr(QtCore.QProcess, 'start', lambda *a, **k: refuse('starting a worker process'))
+    # An unpatched modal dialog would wait forever for a click offscreen: refuse it instead.
+    from PySide6 import QtWidgets
+    monkeypatch.setattr(QtWidgets.QDialog, 'exec', lambda *a, **k: refuse('opening a modal dialog'))
+    monkeypatch.setattr(QtWidgets.QMessageBox, 'exec', lambda *a, **k: refuse('opening a modal dialog'))
     monkeypatch.setattr(usb.core, 'find', lambda *a, **k: refuse('USB enumeration'))
     monkeypatch.setattr(subprocess, 'run', guarded_run)
     # ptpremote binds subprocess.run as a default argument when it is imported.
@@ -85,5 +108,5 @@ def window(tmp_path, monkeypatch):
     yield create
     for result in windows:
         result.process = None
-        result.close()
+        result.close()  # release_widgets then deletes it
     i18n.configure('zh_CN')

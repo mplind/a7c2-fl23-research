@@ -1,6 +1,7 @@
 """Bundled film looks with their source licences and measured fit; no conversion or USB."""
 import json
 import math
+import re
 from pathlib import Path
 from looktool import lookfile
 from .paths import ROOT
@@ -17,6 +18,13 @@ SOURCE = ('project', 'author', 'url', 'licence')
 # library whenever it is present.
 GOOD = (2.39, 8.03)
 ACCEPTED = (4.82, 14.76)
+# Reference colours for the library's swatches: ColorChecker patches in sRGB (skin, sky, foliage,
+# a warm tone) and a neutral ramp. Each look's catalog entry records its predicted in-camera
+# rendering of these, so a stock's character shows before any preview. Names are display keys.
+REFERENCE = (('深肤色', (115, 82, 68)), ('浅肤色', (194, 150, 130)), ('蓝天', (98, 122, 157)),
+             ('树叶', (87, 108, 67)), ('橙黄', (224, 163, 46)), ('暗部灰', (52, 52, 52)),
+             ('中灰', (122, 122, 122)), ('亮部灰', (200, 200, 200)))
+HEX = re.compile(r'#[0-9A-Fa-f]{6}\Z')
 # What reading a look can raise: lookfile.validate trips KeyError, TypeError or
 # AttributeError on a malformed embedded profile, besides ValueError and OSError.
 READ_ERRORS = (OSError, ValueError, KeyError, TypeError, AttributeError)
@@ -86,6 +94,10 @@ def checked(entry, root):
         raise ValueError('Film look %r has an unknown kind %r' % (label, entry['kind']))
     if not isinstance(entry['shareable'], bool) or not isinstance(entry.get('notes', ''), str):
         raise ValueError('Film look %r has an invalid shareable flag or notes' % label)
+    swatches = entry.get('swatches')
+    if swatches is not None and not (isinstance(swatches, list) and len(swatches) == len(REFERENCE)
+                                     and all(isinstance(value, str) and HEX.match(value) for value in swatches)):
+        raise ValueError('Film look %r swatches must be %d #RRGGBB colours' % (label, len(REFERENCE)))
     name = entry['file']
     if Path(name).name != name or not name.endswith('.a7look'):
         raise ValueError('Film look %r file must be an .a7look inside the library' % label)
@@ -93,7 +105,7 @@ def checked(entry, root):
     if not path.is_file():
         raise FileNotFoundError('Film look %r file is missing: %s' % (label, path))
     document = lookfile.read(path)
-    return dict(entry, notes=entry.get('notes', ''), path=path, fit=document_fit(document),
+    return dict(entry, notes=entry.get('notes', ''), swatches=swatches, path=path, fit=document_fit(document),
                 preview=lookfile.native_controls(document) is not None)
 
 

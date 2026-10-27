@@ -1,9 +1,8 @@
 """Incremental custom-slot editor. This module never opens a camera."""
 from .i18n import tr
 from pathlib import Path
-from PySide6 import QtCore, QtGui, QtWidgets as W
+from PySide6 import QtCore, QtWidgets as W
 from .lookviews import fit_help, fit_text
-from .theme import COLORS, EDITOR as STYLE
 
 FIT_CHARS = 120  # two lines of the fit label at the window's minimum width; the tooltip has the rest
 
@@ -14,13 +13,6 @@ def label(text, *, muted=False):
     return result
 
 
-class Choice(W.QComboBox):
-    def paintEvent(self,event):
-        super().paintEvent(event)
-        painter=QtGui.QPainter(self);painter.setRenderHint(QtGui.QPainter.Antialiasing)
-        painter.setPen(QtCore.Qt.NoPen);painter.setBrush(QtGui.QColor(COLORS['muted']))
-        x,y=self.width()-13,self.height()//2
-        painter.drawPolygon(QtGui.QPolygon([QtCore.QPoint(x-4,y-2),QtCore.QPoint(x+4,y-2),QtCore.QPoint(x,y+3)]))
 
 
 class Operation(W.QFrame):
@@ -35,12 +27,12 @@ class Operation(W.QFrame):
         box=W.QVBoxLayout(self);box.setContentsMargins(17,15,17,15);box.setSpacing(12)
         top=W.QHBoxLayout();box.addLayout(top)
         top.addWidget(label(tr('目标槽位'),muted=True))
-        self.slot=Choice()
+        self.slot=W.QComboBox()
         for number in range(1,7):self.slot.addItem(tr('自订 %d') % number,number)
         self.slot.setCurrentIndex(slot-1);self.slot.setFixedWidth(130)
         top.addWidget(self.slot);top.addSpacing(18)
         top.addWidget(label(tr('本次操作'),muted=True))
-        self.action=Choice();self.action.addItems([tr('恢复 ST 默认'),tr('写入 A7Look')])
+        self.action=W.QComboBox();self.action.addItems([tr('恢复 ST 默认'),tr('写入 A7Look')])
         self.action.setFixedWidth(160);top.addWidget(self.action);top.addStretch()
         remove=W.QPushButton(tr('移除这项'));remove.setProperty('quiet',True)
         remove.setToolTip(tr('仅移除此操作项，该槽保持原样'))
@@ -99,7 +91,7 @@ class LookEditor(W.QWidget):
     library_requested=QtCore.Signal()
 
     def __init__(self):
-        super().__init__();self.rows=[];self._loading=False;self.setStyleSheet(STYLE)
+        super().__init__();self.rows=[];self._loading=False
         box=W.QVBoxLayout(self);box.setContentsMargins(0,0,0,0);box.setSpacing(12)
         top=W.QHBoxLayout();self.add=W.QPushButton(tr('+ 添加操作项'))
         self.add.clicked.connect(lambda:self.add_row());top.addWidget(self.add)
@@ -110,13 +102,13 @@ class LookEditor(W.QWidget):
         self.empty=W.QFrame();self.empty.setProperty('card',True)
         empty_box=W.QVBoxLayout(self.empty);empty_box.setContentsMargins(20,25,20,25)
         empty_title=label(tr('尚未添加操作项'));empty_title.setAlignment(QtCore.Qt.AlignCenter)
-        empty_title.setStyleSheet('font-size:17px;font-weight:600;');empty_box.addWidget(empty_title)
+        empty_title.setProperty('role','title3');empty_box.addWidget(empty_title)
         note=label(tr('点击“添加操作项”，选择目标槽位和操作。当前六个槽位均保持原样。'),muted=True)
         note.setWordWrap(True);note.setAlignment(QtCore.Qt.AlignCenter);empty_box.addWidget(note)
         self.row_box.addWidget(self.empty)
         summary=W.QFrame();summary.setProperty('card',True)
         summary_box=W.QVBoxLayout(summary);summary_box.setContentsMargins(15,12,15,12)
-        self.summary=label('');self.summary.setStyleSheet('font-size:15px;font-weight:600;');summary_box.addWidget(self.summary)
+        self.summary=label('');self.summary.setProperty('role','headline');summary_box.addWidget(self.summary)
         self.preserved=label('',muted=True);self.preserved.setWordWrap(True);summary_box.addWidget(self.preserved)
         self.validation=label('');self.validation.setProperty('warning',True);self.validation.setWordWrap(True);summary_box.addWidget(self.validation)
         box.addWidget(summary);self.update_summary()

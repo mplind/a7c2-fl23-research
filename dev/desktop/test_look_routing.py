@@ -59,7 +59,7 @@ class LookRoutingTests(unittest.TestCase):
             window = Window()
             window.timer.stop()
             window.look_editor.add_row(4)
-            with patch.object(W.QMessageBox, 'question', return_value=W.QMessageBox.Yes), \\
+            with patch('desktopapp.window.ask', return_value=True), \\
                  patch.object(W.QMessageBox, 'warning') as warning, \\
                  patch('desktopapp.window.QtCore.QProcess'):
                 window.launch_look_changes()

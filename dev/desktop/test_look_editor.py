@@ -74,7 +74,7 @@ class LookEditorTests(unittest.TestCase):
         self.assertFalse(hasattr(window,'look_accept'))
         self.assertFalse(window.pages.widget(4).findChildren(W.QPushButton,'action_direct_verify'))
         window.look_editor.add_row(2)
-        with patch.object(W.QMessageBox,'question',return_value=W.QMessageBox.Yes),patch('desktopapp.window.QtCore.QProcess'):
+        with patch('desktopapp.window.ask', return_value=True),patch('desktopapp.window.QtCore.QProcess'):
             window.look_button.click()
         request=json.loads((window.current_job/'request.private.json').read_text())
         self.assertEqual(request['action'],'direct_looks_import')
@@ -82,7 +82,7 @@ class LookEditorTests(unittest.TestCase):
 
     def test_resource_pause_continues_saved_job_without_reselecting_files(self):
         root,state=self.pending('AWAITING_RESOURCE_RELOAD');window=self.window()
-        with patch.object(W.QMessageBox,'question',return_value=W.QMessageBox.Yes),patch('desktopapp.window.QtCore.QProcess'):
+        with patch('desktopapp.window.ask', return_value=True),patch('desktopapp.window.QtCore.QProcess'):
             window.look_button.click()
         request=json.loads((window.current_job/'request.private.json').read_text())
         self.assertEqual(request['action'],'direct_resume_looks')
@@ -103,7 +103,7 @@ class LookEditorTests(unittest.TestCase):
         write_json(root/'direct.private.json',state);before=(root/'direct.private.json').read_bytes()
         window=self.window();self.assertTrue(window.look_editor.isEnabled())
         self.assertIn('上次未写入',window.look_button.text())
-        with patch.object(W.QMessageBox,'question',return_value=W.QMessageBox.Yes),patch('desktopapp.window.QtCore.QProcess'):
+        with patch('desktopapp.window.ask', return_value=True),patch('desktopapp.window.QtCore.QProcess'):
             window.look_button.click()
         request=json.loads((window.current_job/'request.private.json').read_text())
         self.assertEqual(request['action'],'direct_looks_import')
