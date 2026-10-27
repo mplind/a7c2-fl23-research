@@ -1,37 +1,14 @@
 """Film recipe page: preset choice, read-only planning job, review dialog and reviewed write; no USB."""
 import json
 import os
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 import pytest
 from PySide6 import QtWidgets as W
-from desktopapp import i18n, jobs, recipes
+from desktopapp import jobs, recipes
 from desktopapp.actions import recipe as job
-from desktopapp.paths import write_json
-from desktopapp.window import Window
-
-HAN = __import__('re').compile('[㐀-鿿（），：；、。“”]')
-
-
-@pytest.fixture
-def window(tmp_path, monkeypatch):
-    monkeypatch.setenv('A7C2_DESKTOP_DATA', str(tmp_path / 'data'))
-    # No test may start a real worker, even when the code under test is wrong.
-    monkeypatch.setattr('desktopapp.window.QtCore.QProcess', Mock())
-    app = W.QApplication.instance() or W.QApplication([])
-    windows = []
-    def create(language=None, platform=None):
-        if language:
-            write_json(tmp_path / 'data/desktop.json', {'language': language})
-        with patch('desktopapp.window.sys.platform', platform or 'darwin'):
-            result = Window()
-        result.timer.stop(); windows.append(result)
-        return result
-    yield create
-    for result in windows:
-        result.process = None; result.close()
-    i18n.configure('zh_CN')
+from guihelpers import HAN, finish_job as finish
 
 
 def requested(ui):
@@ -51,7 +28,7 @@ def test_the_page_offers_every_preset_with_its_source_and_values(window):
 def test_reading_the_camera_starts_a_read_only_plan_job_with_the_chosen_slot(window):
     ui = window()
     ui.recipe_preset.setCurrentIndex(1); ui.recipe_target.setCurrentIndex(3)
-    with patch('desktopapp.window.QtCore.QProcess'), patch.object(W.QMessageBox, 'question') as asked:
+    with patch.object(W.QMessageBox, 'question') as asked:
         ui.recipe_button.click()
     asked.assert_not_called()  # reading is not a write: no confirmation, no power check
     request = requested(ui)
@@ -64,18 +41,8 @@ def test_reading_the_camera_starts_a_read_only_plan_job_with_the_chosen_slot(win
 def test_the_ptpcamerad_consent_is_passed_only_when_ticked(window):
     ui = window()
     ui.recipe_ptpcamerad.setChecked(True)
-    with patch('desktopapp.window.QtCore.QProcess'):
-        ui.recipe_button.click()
+    ui.recipe_button.click()
     assert requested(ui)['arguments']['stop_ptpcamerad'] is True
-
-
-def finish(ui, action, result=None, error=None):
-    ui.current_job = jobs.new_job(action, {})
-    status = dict(phase='SUCCEEDED', action=action, result=result) if error is None else \
-        dict(phase='FAILED', action=action, error=error)
-    write_json(ui.current_job / 'status.private.json', status)
-    ui.process = Mock()
-    ui.finished(0 if error is None else 2, None)
 
 
 def plan_result(**changes):
@@ -91,8 +58,7 @@ def plan_result(**changes):
 
 def test_a_reviewed_plan_is_written_only_after_yes_with_the_exact_reviewed_steps(window):
     ui = window('en')
-    with patch.object(W.QMessageBox, 'question', return_value=W.QMessageBox.Yes) as asked, \
-            patch('desktopapp.window.QtCore.QProcess'):
+    with patch.object(W.QMessageBox, 'question', return_value=W.QMessageBox.Yes) as asked:
         finish(ui, 'recipe_plan', plan_result())
     title, text = asked.call_args.args[1:3]
     assert title == 'Write recipe (experimental)'

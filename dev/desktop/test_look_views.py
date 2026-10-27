@@ -3,7 +3,7 @@ import json
 import os
 from pathlib import Path
 import time
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 import numpy as np
@@ -13,10 +13,8 @@ from PySide6 import QtWidgets as W
 from desktopapp import i18n, jobs, looklibrary
 from desktopapp.lookeditor import LookEditor
 from desktopapp.lookviews import FilmLibraryDialog, PreviewDialog, fit_text
-from desktopapp.window import Window
+from guihelpers import HAN
 from looksamples import look_file
-
-HAN = __import__('re').compile('[㐀-鿿（），：；、。“”]')
 
 
 @pytest.fixture
@@ -30,19 +28,6 @@ def english():
     i18n.configure('en')
     yield
     i18n.configure('zh_CN')
-
-
-@pytest.fixture
-def window(app, monkeypatch):
-    # No test may start a real worker, even when the code under test is wrong.
-    monkeypatch.setattr('desktopapp.window.QtCore.QProcess', Mock())
-    windows = []
-    def create():
-        result = Window(); result.timer.stop(); windows.append(result)
-        return result
-    yield create
-    for result in windows:
-        result.process = None; result.close()
 
 
 def write_row(editor, path, slot=1):

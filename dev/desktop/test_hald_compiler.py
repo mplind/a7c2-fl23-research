@@ -9,7 +9,6 @@ import tifffile
 from PySide6 import QtWidgets as W
 from desktopapp import i18n
 from desktopapp.actions import look_compiler
-from desktopapp.window import Window
 from looktool import hald
 from looktool.references import Cube
 
@@ -51,15 +50,8 @@ def test_a_tiff_with_grain_is_refused_before_compiling(tmp_path, monkeypatch):
 
 
 @pytest.fixture
-def ui(tmp_path, monkeypatch):
-    monkeypatch.setenv('A7C2_DESKTOP_DATA', str(tmp_path / 'data'))
-    monkeypatch.setattr('desktopapp.window.QtCore.QProcess', Mock())
-    W.QApplication.instance() or W.QApplication([])
-    window = Window(); window.timer.stop()
-    i18n.configure('en')
-    yield window
-    window.process = None; window.close()
-    i18n.configure('zh_CN')
+def ui(window):
+    return window('en')
 
 
 def test_the_compiler_dialog_accepts_tiffs_and_offers_the_hald_tools(ui):

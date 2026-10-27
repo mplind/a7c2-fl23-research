@@ -5,12 +5,10 @@ from PyInstaller.utils.hooks import collect_all
 root = Path(SPECPATH).parents[1]
 sys.path.insert(0,str(root/'dev/desktop'))
 from profilepack import files as profile_files
+import assets_check
 version = {}
 exec((root / 'src/desktopapp/__init__.py').read_text(encoding='utf-8'), version)
-for slot in range(1, 7):
-    path = root / 'desktop-assets/presets/default-six-v1' / ('slot%d.a7look' % slot)
-    if not path.is_file():
-        raise FileNotFoundError('Prepare the six-look distribution pack first: ' + str(path))
+assets_check.require(root)
 datas, binaries, hidden = [], [], ['PySide6.QtCore', 'PySide6.QtGui', 'PySide6.QtWidgets',
                                  'tarfile', 'lzma', 'bz2', 'zlib', 'urllib.request', 'wave', 'plistlib', 'backports.tarfile', 'zipfile', 'filecmp']
 if sys.platform=='darwin':hidden.append('pwd')

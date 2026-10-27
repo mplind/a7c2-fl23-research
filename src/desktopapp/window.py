@@ -566,9 +566,8 @@ class Window(W.QMainWindow):
 
     def setup_looks(self,arguments):
         """The looks a fresh one-click setup would install, the built-in six expanded, read and
-        checked exactly as the worker will; raises on a missing or unreadable file."""
-        from .worker import setup_runtime
-        setup_runtime()
+        checked exactly as the worker will; raises on a missing or unreadable file. Needs
+        setup_runtime() first."""
         from looktool import bundle
         options,_=bundle.documents(presets.resolve(arguments.get('options',{})))
         return options['looks']
@@ -892,9 +891,11 @@ class Window(W.QMainWindow):
         if self.process is not None:
             return
         factory_finished = False
-        from .looklibrary import READ_ERRORS
         fit_looks = []  # looks a fresh write would install, for the fit warning
         if action == 'setup_all' and not Path(arguments['workspace'], 'setup.private.json').is_file():
+            from .worker import setup_runtime
+            setup_runtime()  # looktool becomes importable only here
+            from .looklibrary import READ_ERRORS
             try:
                 fit_looks = self.setup_looks(arguments)
             except READ_ERRORS as exc:  # before any driver, fit, power or administrator prompt
@@ -904,9 +905,10 @@ class Window(W.QMainWindow):
         if action=='direct_looks_import' and arguments.get('failed_workspace'):
             action='direct_resume_looks'
         if action=='direct_looks_import':
+            from .worker import setup_runtime
+            setup_runtime()  # looktool becomes importable only here
+            from .looklibrary import READ_ERRORS
             try:
-                from .worker import setup_runtime
-                setup_runtime()
                 from .lookbatch import options
                 chosen=options(arguments.get('operations',arguments.get('looks',[])))
                 arguments=dict(arguments,operations=chosen['slot_operations'])

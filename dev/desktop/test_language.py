@@ -18,7 +18,7 @@ from desktopapp.en import STRINGS
 from desktopapp.paths import write_json
 from desktopapp.window import Window
 
-HAN = re.compile('[㐀-鿿（），：；、。“”]')
+from guihelpers import HAN  # noqa: E402
 
 
 @pytest.fixture

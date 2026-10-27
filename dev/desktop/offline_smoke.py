@@ -140,6 +140,21 @@ def check_audio_conversion():
                 bundled_ffmpeg='passed')
 
 
+def check_feature_modules():
+    """Import every lazily loaded module of the film looks, preview, HALD capture and recipe
+    writer (as the frozen worker would) and load the bundled film look library."""
+    for name in ('hald', 'lookpreview'):
+        importlib.import_module('looktool.' + name)
+    for name in ('looklibrary', 'lookviews', 'recipes', 'actions.recipe', 'actions.look_compiler'):
+        importlib.import_module('desktopapp.' + name)
+    importlib.import_module('camera_runtime.ptpremote')  # the namespace import actions.recipe uses
+    from desktopapp import looklibrary
+    looks = looklibrary.catalog()
+    assert looks, 'The film look library is missing from this package'
+    assert all(look['source']['licence'] and look['path'].is_file() for look in looks)
+    return dict(film_looks=len(looks))
+
+
 def run():
     import usb.core
     def no_device(*args,**kwargs):
@@ -288,7 +303,8 @@ def run():
         _,forward=nameworker.prepare({n:original for n in nameworker.filenames()},{1:'Smoke'},bytes(16),
             '0123456789abcdef',Path(folder)/'forward',byte_only=True)
         assert forward['stream_install'] and Path(forward['path']).read_bytes()[:4]==b'\x7fELF'
-    return {'camera_io': False, 'project_imports': 'passed', 'bundled_exiftool':exif_result.stdout.strip(), 'assets': 'passed', 'builtin_factory_reference': 'passed',
+    features = check_feature_modules()
+    return {'camera_io': False, 'project_imports': 'passed', **features, 'bundled_exiftool':exif_result.stdout.strip(), 'assets': 'passed', 'builtin_factory_reference': 'passed',
             'native_cross_compile': 'passed', 'native_assembler_disassembler':'passed',
             'one_click_offline_sequence':'passed','look_batch_defaults':'passed','streaming_names_compile':'passed',
             'bundled_six_looks':list(presets.NAMES),'fl23_pr6_movie_routes':'passed',
