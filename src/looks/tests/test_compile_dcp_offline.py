@@ -9,10 +9,10 @@ from looktool import compilelook,lookfile,photoformat,measuredmodel,rawidentity
 from test_photoformat import curve
 
 
-def dcp(path,*,matrix=1,look=True):
-    records=[(50708,2,b'Sony ILCE-7CM2\0'),(50936,2,b'Offline fixture\0'),
-        (50942,2,b'Fixture copyright\0'),(50940,11,struct.pack('<4f',0,0,1,1)),
-        (50721,10,struct.pack('<18i',*([matrix,1]*9)))]
+def dcp(path,*,matrix=1,look=True,copyright=b'Fixture copyright\0'):
+    records=[(50708,2,b'Sony ILCE-7CM2\0'),(50936,2,b'Offline fixture\0')]
+    if copyright:records.append((50942,2,copyright))
+    records.extend([(50940,11,struct.pack('<4f',0,0,1,1)),(50721,10,struct.pack('<18i',*([matrix,1]*9)))])
     if look:records.extend([(50981,4,struct.pack('<3I',1,2,1)),(50982,11,struct.pack('<6f',0,1,1,10,.9,.95))])
     sizes={2:1,4:4,10:8,11:4}
     header=bytearray(b'II'+struct.pack('<HIH',0x4352,8,len(records)))
@@ -50,8 +50,10 @@ def test_tone_only_dcp_is_supported(tmp_path):
     assert np.isfinite(target).all() and report['look_dimensions'] is None
 
 
-def test_offline_compiler_writes_supported_a7look_without_renderer_config(tmp_path):
-    source=dcp(tmp_path/'source.dcp');original=source.read_bytes()
+@pytest.mark.parametrize('copyright,attribution',[(b'Fixture copyright\0','Fixture copyright'),
+                                                   (None,'Owner-provided DCP; original rights apply')])
+def test_offline_compiler_writes_supported_a7look_without_renderer_config(tmp_path,copyright,attribution):
+    source=dcp(tmp_path/'source.dcp',copyright=copyright);original=source.read_bytes()
     calibration=tmp_path/'response.npz';calibration.write_bytes(b'fixture')
     bank=photoformat.PhotoBank(curve(),curve(),bytes(576),bytes(64))
     colors=np.array([[.2,.3,.4],[.5,.6,.7]])
@@ -74,6 +76,7 @@ def test_offline_compiler_writes_supported_a7look_without_renderer_config(tmp_pa
     assert doc['validation']['metrics']['Lightroom_reference_used'] is False
     assert rawidentity.source_bytes(doc['raw_profile'])==original
     assert doc['method']=='builtin-DCP-look-tone-measured-native-four-stage-v1'
+    assert doc['attribution']==attribution  # the profile's own copyright wins over the placeholder
 
 
 def test_unsupported_dcp_fails_without_calling_renderer(tmp_path):

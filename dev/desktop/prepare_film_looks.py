@@ -85,6 +85,10 @@ def prepare(source, target=TARGET):
             raise ValueError('Unsafe look slug %r' % look['slug'])
         name = look['slug'] + '.a7look'
         document = lookfile.read(source / name)
+        # A shared .a7look travels without the notices, so its own attribution must credit the source.
+        credited = document.get('attribution')
+        if not isinstance(credited, str) or not all(look['source'][key] in credited for key in ('author', 'url')):
+            raise ValueError('Film look %r does not credit its source in its attribution field' % look['slug'])
         shutil.copyfile(source / name, staging / name)
         entries.append(entry(look, document, model))
     for name in NOTICES:

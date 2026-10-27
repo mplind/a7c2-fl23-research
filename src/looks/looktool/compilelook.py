@@ -234,7 +234,7 @@ def main(argv=None):
         spatial_lens_correction_fitted=False)
     args.output.parent.mkdir(parents=True,exist_ok=True)
     lookfile.write(args.output,args.name,native.encode(table),method='CUBE-measured-native-four-stage-v1' if cube_input else 'builtin-DCP-look-tone-measured-native-four-stage-v1',
-        attribution=copyright_text or 'Owner-provided DCP; original rights apply',metrics=report,native_photo=delta,
+        attribution=copyright_text or 'Owner-provided %s; original rights apply'%('CUBE' if cube_input else 'DCP'),metrics=report,native_photo=delta,
         raw_profile=raw_profile,
         source_reference=source_reference)
     save(work/'result.json',report)

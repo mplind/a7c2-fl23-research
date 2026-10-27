@@ -80,10 +80,17 @@ def test_a_missing_library_is_empty(tmp_path):
     assert looklibrary.catalog(tmp_path / 'absent') == []
 
 
+def credit(source):
+    """An attribution that names the look's source the way the looks pipeline's credit does."""
+    return 'derived from %s by %s, %s' % (source['project'], source['author'], source['url'])
+
+
 def test_prepare_copies_kept_looks_licences_and_builds_the_catalog(tmp_path):
     source = tmp_path / 'looks'; source.mkdir()
     for slug in ('portra400', 'rejected'):
-        look_file(source / (slug + '.a7look'), mae=3.0, p95=9.0, name=slug)
+        look_file(source / (slug + '.a7look'), mae=3.0, p95=9.0, name=slug,
+                  attribution=credit({'project': 'spektrafilm', 'author': 'Andrea Volpato',
+                                      'url': 'https://github.com/andreavolpato/spektrafilm'}))
     for name in prepare_film_looks.NOTICES:
         (source / name).write_text('notice ' + name)
     metrics = {'looks': [
@@ -118,11 +125,14 @@ def test_catalog_rejects_a_plain_http_source(tmp_path):
         looklibrary.catalog(folder)
 
 
-def prepared_source(tmp_path, looks):
-    source = tmp_path / 'looks'; source.mkdir()
+def prepared_source(tmp_path, looks, folder='looks', attribution=None):
+    """A looks folder as the looks pipeline leaves it; each look credits its source unless
+    attribution replaces that credit."""
+    source = tmp_path / folder; source.mkdir()
     for look in looks:
         if look['kept'] and prepare_film_looks.SLUG.match(look['slug']):
-            look_file(source / (look['slug'] + '.a7look'), mae=3.0, p95=9.0)
+            look_file(source / (look['slug'] + '.a7look'), mae=3.0, p95=9.0,
+                      attribution=attribution or credit(look['source']))
     for name in prepare_film_looks.NOTICES:
         (source / name).write_text(name)
     (source / 'metrics.json').write_text(json.dumps({'looks': looks}))
@@ -131,7 +141,8 @@ def prepared_source(tmp_path, looks):
 
 def kept(slug, licence='CC BY-SA 4.0', **extra):
     return dict({'slug': slug, 'camera_name': slug.title(), 'kind': 'slide', 'kept': True,
-                 'source': {'project': 'p', 'author': 'a', 'url': 'https://example.org', 'licence': licence}}, **extra)
+                 'source': {'project': 'p', 'author': 'Ada Lovelace', 'url': 'https://example.org/looks',
+                            'licence': licence}}, **extra)
 
 
 def test_prepare_marks_only_open_licences_shareable_and_records_caveats(tmp_path):
@@ -154,6 +165,20 @@ def test_prepare_rejects_an_unsafe_slug_and_leaves_the_old_library(tmp_path):
     assert [look['id'] for look in looklibrary.catalog(target)] == ['portra400']
 
 
+@pytest.mark.parametrize('attribution', [
+    'Owner-provided CUBE; original rights apply',   # the compiler's placeholder
+    'derived from p by Ada Lovelace',                # no source address
+    'https://example.org/looks',                     # no author
+])
+def test_prepare_refuses_a_look_that_does_not_credit_its_source_and_keeps_the_old_library(tmp_path, attribution):
+    target = tmp_path / 'film-looks-v1'
+    prepare_film_looks.prepare(prepared_source(tmp_path, [kept('portra400')]), target)
+    other = prepared_source(tmp_path, [kept('velvia100')], folder='other', attribution=attribution)
+    with pytest.raises(ValueError, match='credit'):
+        prepare_film_looks.prepare(other, target)
+    assert [look['id'] for look in looklibrary.catalog(target)] == ['portra400']
+
+
 def test_prepare_refuses_to_replace_a_folder_that_is_not_a_library(tmp_path):
     target = tmp_path / 'film-looks-v1'; target.mkdir()
     (target / 'keep.txt').write_text('mine')
@@ -165,11 +190,7 @@ def test_prepare_refuses_to_replace_a_folder_that_is_not_a_library(tmp_path):
 def test_prepare_keeps_the_old_library_when_the_new_catalog_is_invalid(tmp_path):
     target = tmp_path / 'film-looks-v1'
     prepare_film_looks.prepare(prepared_source(tmp_path, [kept('portra400')]), target)
-    broken = tmp_path / 'broken'; broken.mkdir()
-    look_file(broken / 'mystery.a7look', mae=3.0, p95=9.0)
-    for name in prepare_film_looks.NOTICES:
-        (broken / name).write_text(name)
-    (broken / 'metrics.json').write_text(json.dumps({'looks': [kept('mystery', kind='mystery')]}))
+    broken = prepared_source(tmp_path, [kept('mystery', kind='mystery')], folder='broken')
     with pytest.raises(ValueError, match='kind'):
         prepare_film_looks.prepare(broken, target)
     assert [look['id'] for look in looklibrary.catalog(target)] == ['portra400']
@@ -268,12 +289,12 @@ def test_prepare_records_each_looks_camera_rendering_of_the_reference_colours(tm
     import numpy as np
     from looktool import lookpreview
     source = tmp_path / 'looks'; source.mkdir()
-    look_file(source / 'portra400.a7look', mae=3.0, p95=9.0)
-    look_file(source / 'nofit.a7look', mae=3.0, p95=9.0, controls=False)
-    for name in prepare_film_looks.NOTICES:
-        (source / name).write_text('notice')
     origin = {'project': 'spektrafilm', 'author': 'Andrea Volpato', 'url': 'https://github.com/andreavolpato/spektrafilm',
               'licence': 'CC BY-SA 4.0'}
+    look_file(source / 'portra400.a7look', mae=3.0, p95=9.0, attribution=credit(origin))
+    look_file(source / 'nofit.a7look', mae=3.0, p95=9.0, controls=False, attribution=credit(origin))
+    for name in prepare_film_looks.NOTICES:
+        (source / name).write_text('notice')
     (source / 'metrics.json').write_text(json.dumps({'looks': [
         {'slug': slug, 'camera_name': slug, 'kind': 'negative', 'kept': True, 'source': origin}
         for slug in ('portra400', 'nofit')]}))
