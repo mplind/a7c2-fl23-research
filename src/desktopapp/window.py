@@ -821,13 +821,17 @@ class Window(W.QMainWindow):
         dialog.setWindowTitle(tr('生成 A7Look'))
         dialog.resize(760, 370)
         layout = W.QVBoxLayout(dialog)
-        hint = W.QLabel(tr('CUBE：输入必须是 Sony ST / sRGB，输出 sRGB；不能直接使用 S-Log3 / S-Gamut3.Cine 或其他 Log LUT。\nDCP：内置离线解析与拟合，不需要 Lightroom、插件或联网。转换 LookTable／色调曲线，机内效果为拟合近似。此工具只生成 .a7look，不写相机。'))
+        hint = W.QLabel(tr('CUBE：输入必须是 Sony ST / sRGB，输出 sRGB；不能直接使用 S-Log3 / S-Gamut3.Cine 或其他 Log LUT。\nDCP：内置离线解析与拟合，不需要 Lightroom、插件或联网。转换 LookTable／色调曲线，机内效果为拟合近似。\nTIFF：在 DxO PhotoLab／FilmPack 等软件中处理过的 HALD 图像（用下方按钮生成和检查）。此工具只生成 .a7look，不写相机。'))
         hint.setWordWrap(True)
         layout.addWidget(hint)
         help_button=W.QPushButton(tr('支持哪些格式和色彩空间？查看完整说明…'))
         help_button.clicked.connect(self.show_look_format_guide);layout.addWidget(help_button)
+        halds=W.QHBoxLayout();layout.addLayout(halds)
+        for name,title,callback in (('hald_identity',tr('保存用于 DxO 的 HALD 图像…'),self.save_hald_identity),
+                                    ('hald_check',tr('检查 HALD 导出…'),self.check_hald_export)):
+            button=W.QPushButton(title);button.setObjectName(name);button.clicked.connect(callback);halds.addWidget(button)
         form = self.box(layout, tr('源文件与输出'))
-        self.field(form, 'compile_source', 'DCP / CUBE', kind='file', filter=tr('Reference (*.dcp *.cube)'))
+        self.field(form, 'compile_source', 'DCP / CUBE / TIFF', kind='file', filter=tr('Reference (*.dcp *.cube *.tif *.tiff)'))
         self.field(form, 'compile_name', tr('外观名称'))
         self.field(form, 'compile_output', tr('输出 A7Look'), kind='save', filter='A7Look (*.a7look)')
         self.field(form, 'compile_model', tr('响应文件'), kind='file', filter=tr('Response (*.npz)'),
@@ -838,7 +842,32 @@ class Window(W.QMainWindow):
             'output': self.text('compile_output'), 'model': self.text('compile_model'),
             'input_space': 'sony-st-srgb', 'passes': 3})))
         layout.addWidget(run)
+        dialog.resize(760, max(370, dialog.sizeHint().height()))  # long translations need more height
         dialog.exec()
+
+    def save_hald_identity(self):
+        from looktool import hald
+        path=W.QFileDialog.getSaveFileName(self,tr('保存 HALD 图像'),'a7c2-hald.tif','TIFF (*.tif)')[0]
+        if not path:return
+        try:hald.write_identity(path)
+        except (OSError,ValueError) as exc:
+            W.QMessageBox.warning(self,tr('保存失败'),str(exc));return
+        W.QMessageBox.information(self,tr('HALD 图像已保存'),
+            tr('在 DxO PhotoLab 中打开此图像，先应用“无校正”预设，再只应用 FilmPack 胶片渲染；不要加颗粒、暗角、锐化或其他效果。以原尺寸导出为未压缩的 16 位 TIFF（sRGB），再把导出的 TIFF 选为这里的源文件。'))
+
+    def check_hald_export(self):
+        from looktool import hald
+        path=W.QFileDialog.getOpenFileName(self,tr('选择导出的 HALD'),'',tr('TIFF (*.tif *.tiff)'))[0]
+        if not path:return
+        try:
+            image=hald.read(path);hald.to_cube(image);report=hald.check(image)
+        except ValueError as exc:
+            W.QMessageBox.warning(self,tr('HALD 导出有问题'),str(exc));return
+        if report['identity_error_max']<=hald.CLEAN:
+            text=tr('导出与原始 HALD 一致（最大差 %.2f 级）：没有开启任何自动校正。用同样的设置导出胶片外观。')%report['identity_error_max']
+        else:
+            text=tr('两份副本一致，没有颗粒或暗角。导出与原始 HALD 最多相差 %.1f 级（已应用外观时属正常）。')%report['identity_error_max']
+        W.QMessageBox.information(self,tr('HALD 检查结果'),text)
 
     def plugin_dialog(self):
         self.launch('plugin_install', {})

@@ -15,3 +15,12 @@ def legacy_chinese_interface(monkeypatch):
     monkeypatch.setattr(i18n, '_language', 'zh_CN')
     original = window.load_settings
     monkeypatch.setattr(window, 'load_settings', lambda: {'language': 'zh_CN', **original()})
+
+
+@pytest.fixture(autouse=True)
+def no_real_worker(monkeypatch):
+    """No test may start a real worker: a worker can reach the camera or stop macOS camera services."""
+    from PySide6 import QtCore
+    def forbidden(self, *args, **kwargs):
+        raise AssertionError('Starting a real worker process is forbidden in tests; patch QtCore.QProcess')
+    monkeypatch.setattr(QtCore.QProcess, 'start', forbidden)
