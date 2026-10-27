@@ -8,6 +8,7 @@ import pytest
 from PySide6 import QtWidgets as W
 from desktopapp import jobs,reloadguide
 from desktopapp.window import Window
+from dev.desktop.startup_state_smoke import PAGES
 
 
 @pytest.fixture
@@ -125,7 +126,12 @@ def test_existing_recovery_startup_uses_real_app_entry_without_pytest_module_pat
     import sys
     from desktopapp.paths import ROOT
     result=run([sys.executable,str(ROOT/'desktop.py')],cases=('factory_connection_failed',))
-    assert result['cases']['factory_connection_failed']['pages']==7
+    assert result['cases']['factory_connection_failed']['pages']==PAGES
+
+
+def test_startup_smoke_expects_every_page_the_window_has(pending_window):
+    window,_,_=pending_window
+    assert window.pages.count()==window.nav.count()==PAGES
 
 
 def temporary_conflict_state():
