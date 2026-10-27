@@ -155,6 +155,21 @@ def test_prepare_marks_only_open_licences_shareable_and_records_caveats(tmp_path
     assert all(e['modification'][0].isupper() for e in entries.values())
 
 
+def test_a_darktable_style_look_points_to_its_licence_notice_not_the_spektrafilm_changelog(tmp_path):
+    style = kept('cinestill800t', licence='MIT', kind='style', chosen_variant='hald')
+    style['source'] = dict(style['source'], project='t3mujinpack', style='t3mujinpack - Color Negative|CineStill 800T')
+    negative = kept('portra400', kind='negative', chosen_variant='composed')
+    negative['source'] = dict(negative['source'], project='spektrafilm', process='printed on kodak_portra_endura')
+    entries = {e['id']: e for e in prepare_film_looks.prepare(prepared_source(tmp_path, [style, negative]),
+                                                              tmp_path / 'film-looks-v1')}
+    text = entries['cinestill800t']['modification']
+    assert 'darktable style' in text and 'LICENSE-NOTICE.txt' in text and 'CHANGELOG' not in text
+    assert entries['cinestill800t']['shareable']
+    assert entries['portra400']['modification'] == ('Printed on kodak_portra_endura; baked to a 33^3 cube through a '
+                                                    'Sony ST to ACEScct bridge and fitted to the A7C II look table '
+                                                    '(see CHANGELOG.txt)')
+
+
 def test_prepare_rejects_an_unsafe_slug_and_leaves_the_old_library(tmp_path):
     target = tmp_path / 'film-looks-v1'
     prepare_film_looks.prepare(prepared_source(tmp_path, [kept('portra400')]), target)

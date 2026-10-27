@@ -32,8 +32,13 @@ CAVEATS = {
 def modification(look):
     source = look['source']
     bridged = ' through a Sony ST to ACEScct bridge' if look.get('chosen_variant') == 'composed' else ''
-    stage = (source.get('process') + '; ') if source.get('process') else ''
-    text = '%sbaked to a 33^3 cube%s and fitted to the A7C II look table (see CHANGELOG.txt)' % (stage, bridged)
+    if source.get('style'):
+        stage = 'rendered from its darktable style on a HaldCLUT; '
+    else:
+        stage = (source.get('process') + '; ') if source.get('process') else ''
+    # spektrafilm's licence asks for a change log; other sources state their changes in the notice.
+    notice = 'CHANGELOG.txt' if source.get('project') == 'spektrafilm' else 'LICENSE-NOTICE.txt'
+    text = '%sbaked to a 33^3 cube%s and fitted to the A7C II look table (see %s)' % (stage, bridged, notice)
     return text[0].upper() + text[1:]
 
 
