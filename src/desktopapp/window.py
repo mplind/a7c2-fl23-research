@@ -2,6 +2,7 @@
 from .i18n import configure, translate_qt, tr
 from datetime import datetime
 import json
+import os
 from pathlib import Path
 import sys
 import html
@@ -131,7 +132,8 @@ class Window(W.QMainWindow):
     def restyle(self, *_):
         """The system appearance changed: restyle the app and everything drawn from tokens."""
         theme.apply(W.QApplication.instance())
-        self.status_area.banner.refresh()
+        for banner in self.findChildren(shell.Banner):
+            banner.refresh()
         self.nav.viewport().update()
         for dialog in self.findChildren(W.QDialog):
             if hasattr(dialog, 'restyle'):
@@ -139,9 +141,10 @@ class Window(W.QMainWindow):
 
     def set_state(self, kind):
         """The status banner's kind: '' (idle), info (running), success, warning or danger.
-        The progress bar shows only while a task runs; a failure opens the log."""
+        The progress bar shows while a task runs and when one stopped partway (a restart is
+        needed before it can go on); a failure opens the log."""
         self.status_area.banner.set_kind(kind)
-        self.progress.setVisible(kind == 'info')
+        self.progress.setVisible(kind == 'info' or (kind == 'warning' and 0 < self.progress.value() < 100))
         self.stop.setVisible(kind == 'info')
         if kind == 'danger':
             self.status_area.show_log(True)
@@ -459,7 +462,8 @@ class Window(W.QMainWindow):
         layout = self.page(tr('连接与驱动'), tr('相机开机并选择“海量存储／Mass Storage”，使用可传数据的 USB 线。一次只连接一台相机。'))
         guide = shell.Banner()
         guide.set_kind('info')
-        guide.text.setText(tr('相机显示“请检查所连接的设备”是正常现象，以本工具的结果为准。相机操作开始后，不要关机或拔线。'))
+        guide.text.setText(tr('相机显示“请检查所连接的设备”是正常现象，以本工具的结果为准。相机操作开始后，不要关机或拔线。') +
+                           (tr('相机操作会打开终端窗口，请在其中输入 Mac 登录密码；程序不读取也不保存密码。') if sys.platform == 'darwin' else ''))
         read = W.QPushButton(tr('连接相机前须知…'))
         read.setProperty('quiet', True)
         read.clicked.connect(self.show_connection_notice)
@@ -842,15 +846,24 @@ class Window(W.QMainWindow):
         self.show_sound_credit()
 
     def preset_index(self, path):
-        """Index of the preset whose bundled file is path; 0 ('Your own file') for any other path."""
-        return next((i for i in range(1, self.sound_preset.count())
-                     if str(self.sound_preset.itemData(i)['path']) == path.strip()), 0)
+        """Index of the preset whose bundled clip path names, however the path is written and from
+        whichever copy of the app it was saved (the disk image, Applications); 0 for any other file."""
+        chosen = Path(os.path.normpath(path.strip())) if path.strip() else None
+        for index in range(1, self.sound_preset.count()):
+            bundled = self.sound_preset.itemData(index)['path']
+            if chosen is not None and (chosen.parent.name, chosen.name) == (bundled.parent.name, bundled.name):
+                return index
+        return 0
 
     def match_sound_preset(self, path):
-        """Typing or choosing a file selects its preset, or 'Your own file'."""
+        """Typing or choosing a file selects its preset, or 'Your own file'. A preset's clip saved
+        from another copy of the app is pointed at this copy's."""
+        index = self.preset_index(path)
         self.sound_preset.blockSignals(True)
-        self.sound_preset.setCurrentIndex(self.preset_index(path))
+        self.sound_preset.setCurrentIndex(index)
         self.sound_preset.blockSignals(False)
+        if index and path != str(self.sound_preset.itemData(index)['path']):
+            self.fields['sound_source'].setText(str(self.sound_preset.itemData(index)['path']))
         self.show_sound_credit()
 
     def show_sound_credit(self):
@@ -860,7 +873,8 @@ class Window(W.QMainWindow):
         if sound is None:
             self.sound_credit.setText(tr('预设按摄影师的喜爱程度排序。选择一款即可自动填入下方的文件、起点和长度。'))
             return
-        source = {key: html.escape(value, quote=True) for key, value in sound['source'].items()}
+        from .shuttersounds import SOURCE
+        source = {key: html.escape(sound['source'][key], quote=True) for key in SOURCE}
         self.sound_credit.setText(tr('“%(title)s”，作者 %(author)s，%(licence)s，来自 <a href="%(url)s">Freesound</a>。') % source)
 
     def recipe_page(self):
@@ -1013,7 +1027,17 @@ class Window(W.QMainWindow):
             'input_space': 'sony-st-srgb', 'passes': 3})))
         actions.addWidget(run)
         dialog.resize(760, max(420, dialog.sizeHint().height()))  # long translations need more height
-        shell.modal(dialog)
+        try:
+            shell.modal(dialog)
+        finally:
+            self.release_fields(dialog)
+
+    def release_fields(self, dialog):
+        """Keep a closing dialog's field values in the settings and forget its fields: the dialog is
+        deleted, and the window reads every field it knows whenever a task starts or ends."""
+        for key in [key for key, field in self.fields.items() if dialog.isAncestorOf(field)]:
+            self.settings[key] = self.fields.pop(key).text()
+        save_settings(self.settings)
 
     def save_hald_identity(self):
         from looktool import hald

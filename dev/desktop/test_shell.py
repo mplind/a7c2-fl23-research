@@ -47,8 +47,25 @@ def test_ask_is_a_sheet_with_a_verb_button_and_no_default(app):
     assert box.icon() == W.QMessageBox.Warning
     assert (box.text(), box.informativeText(), box.detailedText()) == ('Write to the camera?', 'Body text', 'raw log')
     assert verb_button(box).text() == 'Write to Camera'
-    assert box.defaultButton() is None  # Return must not confirm a camera write by reflex
+    assert box.defaultButton() is box.button(W.QMessageBox.Cancel)  # Return must not confirm a write
+    assert not verb_button(box).autoDefault()
     assert box.escapeButton() is box.button(W.QMessageBox.Cancel)
+
+
+def test_return_cancels_a_confirmation_rather_than_writing(app):
+    from PySide6 import QtTest
+    parent = W.QWidget()
+    parent.show()
+
+    def press_return(box):
+        box.show()
+        QtTest.QTest.keyClick(box, QtCore.Qt.Key_Return)
+        return 0
+    try:
+        with patch.object(W.QMessageBox, 'exec', autospec=True, side_effect=press_return):
+            assert shell.ask(parent, 'Write to the camera?', 'Custom 3', 'Write to Camera') is False
+    finally:
+        parent.close()
 
 
 def test_ask_disposes_of_each_answered_sheet(app):

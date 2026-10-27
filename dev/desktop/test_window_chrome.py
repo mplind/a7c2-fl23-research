@@ -186,3 +186,64 @@ def test_ask_and_modal_release_their_dialogs(window):
         ui.ask_drivers_first()
     W.QApplication.sendPostedEvents(None, QtCore.QEvent.DeferredDelete)
     assert ui.findChildren(W.QMessageBox) == []
+
+
+def test_the_window_keeps_working_after_the_compiler_dialog_closes(window):
+    # Its fields belong to the dialog, which is deleted on close: the window must not keep them.
+    from desktopapp.paths import load_settings
+    ui = window('en')
+
+    def type_and_close(dialog):
+        ui.fields['compile_name'].setText('My film look')
+        return 0
+    with patch.object(W.QDialog, 'exec', autospec=True, side_effect=type_and_close):
+        ui.compiler_dialog()
+    W.QApplication.sendPostedEvents(None, QtCore.QEvent.DeferredDelete)
+    assert not any(key.startswith('compile_') for key in ui.fields)
+    assert load_settings()['compile_name'] == 'My film look'  # kept for the next opening
+    ui.findChild(W.QPushButton, 'action_sound_import').click()  # launch() reads every field
+    assert ui.current_job is not None
+    shown = []
+    with patch.object(W.QDialog, 'exec', autospec=True, side_effect=lambda dialog: shown.append(
+            ui.fields['compile_name'].text()) or 0):
+        ui.compiler_dialog()
+    assert shown == ['My film look']  # the next opening starts from the saved value
+
+
+@pytest.mark.parametrize('kind', ['info', 'warning'])
+def test_every_banner_follows_an_appearance_change(window, kind):
+    ui = window('en')
+    app = W.QApplication.instance()
+    banners = [banner for banner in ui.findChildren(shell.Banner) if banner.kind == kind]
+    assert banners
+    try:
+        with patch.object(theme, 'mode', return_value='dark'):
+            ui.restyle()
+            wanted = QtGui.QColor(theme.color(kind))
+        for banner in banners:
+            image = banner.glyph.pixmap().toImage()
+            inked = [image.pixelColor(x, y) for x in range(image.width()) for y in range(image.height())
+                     if image.pixelColor(x, y).alpha() > 200]
+            assert inked and all(abs(c.red() - wanted.red()) < 8 and abs(c.blue() - wanted.blue()) < 8 for c in inked)
+    finally:
+        app.setProperty('a7c2_theme', None)
+        theme.apply(app)
+
+
+def test_a_task_that_stops_partway_keeps_its_progress_on_screen(window):
+    ui = window()
+    ui.progress.setValue(70)
+    ui.set_state('warning')
+    assert not ui.progress.isHidden()
+    ui.progress.setValue(100)
+    ui.set_state('warning')
+    assert ui.progress.isHidden()
+    ui.progress.setValue(70)
+    ui.set_state('success')
+    assert ui.progress.isHidden()
+
+
+def test_the_macos_connection_page_says_terminal_asks_for_the_password(window):
+    texts = lambda ui: ' '.join(b.text.text() for b in ui.findChildren(shell.Banner))
+    assert 'Terminal' in texts(window('en', platform='darwin'))
+    assert 'Terminal' not in texts(window('en', platform='win32'))

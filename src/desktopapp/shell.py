@@ -46,8 +46,9 @@ def modal(dialog):
 
 
 def ask(parent, title, text, verb, *, details=None):
-    """A camera-write confirmation: a window-modal sheet with Cancel and a verb button and no
-    default button, so Return cannot confirm by reflex and Escape cancels. True for the verb."""
+    """A camera-write confirmation: a window-modal sheet with Cancel and a verb button. Cancel is the
+    default button, so Return cannot confirm a write by reflex, and Escape cancels too. True for
+    the verb."""
     box = W.QMessageBox(parent)
     box.setIcon(W.QMessageBox.Warning)
     box.setWindowTitle(title)
@@ -56,9 +57,10 @@ def ask(parent, title, text, verb, *, details=None):
     if details:
         box.setDetailedText(details)
     go = box.addButton(verb, W.QMessageBox.AcceptRole)
-    box.addButton(W.QMessageBox.Cancel)
-    box.setDefaultButton(None)
-    box.setEscapeButton(W.QMessageBox.Cancel)
+    go.setAutoDefault(False)  # shown, a dialog makes its first auto-default button the default
+    cancel = box.addButton(W.QMessageBox.Cancel)
+    box.setDefaultButton(cancel)
+    box.setEscapeButton(cancel)
     box.setWindowModality(QtCore.Qt.WindowModal)
     modal(box)
     return box.clickedButton() is go

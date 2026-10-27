@@ -178,3 +178,13 @@ def test_prepare_refuses_to_replace_a_folder_that_is_not_a_sound_library(tmp_pat
     with pytest.raises(RuntimeError):
         prepare_shutter_sounds.prepare(folder, target)
     assert (target / 'precious.txt').read_text() == 'keep me'
+
+
+def test_a_wav_header_with_no_sample_rate_is_rejected(tmp_path):
+    folder = write_catalog(tmp_path / 'sounds', [entry()], wav=False)
+    path = write_wav(folder / 'leica-m3.wav')
+    data = bytearray(path.read_bytes())
+    data[24:28] = (0).to_bytes(4, 'little')  # the fmt chunk's sample rate
+    path.write_bytes(bytes(data))
+    with pytest.raises(ValueError):
+        shuttersounds.catalog(folder)

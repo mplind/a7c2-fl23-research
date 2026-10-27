@@ -178,6 +178,7 @@ STRINGS = {
     '桌面开发版': 'Desktop development build',
     '版本': 'Version',
     '自己的文件': 'Your own file',
+    '相机操作会打开终端窗口，请在其中输入 Mac 登录密码；程序不读取也不保存密码。': ' Camera tasks open a Terminal window: enter your Mac login password there. The app never reads or stores it.',
     '%s（%s）': '%s (%s)',
     '%s，作者 %s': '%s by %s',
     '“%(title)s”，作者 %(author)s，%(licence)s，来自 <a href="%(url)s">Freesound</a>。': '"%(title)s" by %(author)s, %(licence)s, from <a href="%(url)s">Freesound</a>.',

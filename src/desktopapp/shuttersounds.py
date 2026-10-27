@@ -3,6 +3,7 @@ Reads only the catalog and WAV headers; never converts audio or opens a camera."
 import json
 from pathlib import Path
 import re
+import struct
 import wave
 from .paths import ROOT
 
@@ -31,8 +32,10 @@ def seconds(path):
     try:
         with wave.open(str(path), 'rb') as clip:
             frames, rate = clip.getnframes(), clip.getframerate()
-    except (wave.Error, EOFError) as exc:
+    except (wave.Error, EOFError, struct.error) as exc:
         raise ValueError('%s is not a PCM WAV file: %s' % (path, exc)) from exc
+    if rate <= 0:
+        raise ValueError('%s has no sample rate' % path)
     return round(frames / rate, 3)
 
 

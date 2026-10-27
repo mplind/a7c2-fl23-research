@@ -162,3 +162,22 @@ def test_repolish_applies_a_changed_role(app):
     label.setProperty('role', 'title1')
     theme.repolish(label)
     assert label.font().pixelSize() == 22
+
+
+def test_tinted_icons_live_in_one_stable_folder_that_comes_back_if_removed(app, tmp_path, monkeypatch):
+    import shutil
+    monkeypatch.setenv('A7C2_DESKTOP_DATA', str(tmp_path / 'data'))
+    first = theme.Path(theme.tinted('chevron-down.svg', '#123456'))
+    assert first.is_relative_to(tmp_path / 'data')  # not a new temporary folder per launch
+    shutil.rmtree(first.parent)  # a cleaner removed it mid-session
+    again = theme.Path(theme.tinted('chevron-down.svg', '#123456'))
+    assert again.is_file() and again == first
+
+
+def test_a_failed_style_sheet_leaves_the_appearance_to_be_applied_again(restore_theme):
+    app = restore_theme
+    app.setProperty('a7c2_theme', None)
+    with patch.object(theme, 'mode', return_value='dark'), \
+            patch.object(theme, 'stylesheet', side_effect=FileNotFoundError('icon')), pytest.raises(FileNotFoundError):
+        theme.apply(app)
+    assert app.property('a7c2_theme') is None

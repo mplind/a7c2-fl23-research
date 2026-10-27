@@ -6,12 +6,12 @@ where Apple and Material Design disagree, Apple wins on every platform. Widgets 
 role through dynamic properties (role, kind, banner, badge, group) and never carry their
 own style sheet, so one sheet and one palette restyle the whole app, light or dark.
 """
+import hashlib
 from pathlib import Path
 import sys
-import tempfile
 from string import Template
 from PySide6 import QtCore, QtGui, QtWidgets as W
-from .paths import ROOT
+from .paths import ROOT, data_root
 
 # Light and dark tokens. Apple system colours; the few deviations (text2, accent_fill and the
 # darkened status colours) keep every text pair at WCAG AA contrast.
@@ -49,7 +49,6 @@ TYPE = dict(title1=(22, 700), title2=(17, 700), title3=(15, 600), headline=(13, 
 CONTROL_HEIGHT = 28
 SIDEBAR_WIDTH = 220
 ASSETS = ROOT / 'src/desktopapp/assets'
-_ICON_FOLDER = None  # per-process folder of colour-tinted copies of the SVG assets
 
 
 def mode(app=None):
@@ -80,13 +79,15 @@ def mono_families():
 
 
 def tinted(name, colour):
-    """Path of an SVG asset with its stroke recoloured, for style sheet url(); one file per colour."""
-    global _ICON_FOLDER
-    if _ICON_FOLDER is None:
-        _ICON_FOLDER = Path(tempfile.mkdtemp(prefix='a7c2-theme-'))
-    target = _ICON_FOLDER / ('%s-%s.svg' % (Path(name).stem, colour.lstrip('#').lower()))
+    """Path of an SVG asset with its stroke recoloured, for style sheet url(). The copies live in
+    one folder under the app's data, named by asset, colour and content, so launches reuse them
+    and a folder removed mid-session is simply recreated."""
+    source = (ASSETS / name).read_text(encoding='utf-8')
+    digest = hashlib.sha1(source.encode('utf-8')).hexdigest()[:8]
+    folder = data_root() / 'cache/theme'
+    folder.mkdir(parents=True, exist_ok=True)
+    target = folder / ('%s-%s-%s.svg' % (Path(name).stem, colour.lstrip('#').lower(), digest))
     if not target.is_file():
-        source = (ASSETS / name).read_text(encoding='utf-8')
         target.write_text(source.replace('#5d6a7e', colour), encoding='utf-8')
     return target.as_posix()
 
@@ -220,7 +221,7 @@ def apply(app):
     scheme, previous = mode(app), app.property('a7c2_theme')
     if previous == scheme:
         return scheme
-    app.setProperty('a7c2_theme', scheme)
+    sheet = stylesheet(scheme)  # built first: if it fails, nothing has changed and the next call retries
     if previous is None:
         # Fusion is predictable under style sheets on every platform. Set it only once: with a
         # style sheet applied, app.style() is Qt's style sheet wrapper and no longer says 'fusion'.
@@ -230,7 +231,8 @@ def apply(app):
     font.setPixelSize(TYPE['body'][0])
     app.setFont(font)
     app.setPalette(palette(scheme))
-    app.setStyleSheet(stylesheet(scheme))
+    app.setStyleSheet(sheet)
+    app.setProperty('a7c2_theme', scheme)
     return scheme
 
 

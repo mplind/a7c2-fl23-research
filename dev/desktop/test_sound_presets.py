@@ -106,3 +106,29 @@ def test_going_back_to_your_own_file_clears_only_a_bundled_clip(window, library)
     ui.fields['sound_source'].setText('/Users/me/my shutter.wav')
     preset(ui).setCurrentIndex(0)
     assert ui.fields['sound_source'].text() == '/Users/me/my shutter.wav'
+
+
+def test_a_bundled_clip_is_recognised_however_its_path_is_written(window, library):
+    ui = window('en')
+    ui.fields['sound_source'].setText(str(library / 'leica-m3.wav').replace('/', '//'))
+    assert preset(ui).currentIndex() == 1
+
+
+def test_a_preset_saved_from_an_older_copy_of_the_app_points_at_this_copy(window, library):
+    # Picked while running from the disk image, then the app moved to Applications.
+    from desktopapp.paths import load_settings, save_settings
+    window('en')
+    save_settings(dict(load_settings(), sound_source='/Volumes/A7C2Tools/A7C2Tools.app/Contents/Resources/'
+                                                      'desktop-assets/shutter-sounds-v1/pentax-6x7.wav'))
+    ui = window()
+    assert preset(ui).currentIndex() == 3
+    assert ui.fields['sound_source'].text() == str(library / 'pentax-6x7.wav')
+
+
+def test_a_credit_shows_only_the_source_fields(window, library):
+    ui = window('en')
+    sound = dict(preset(ui).itemData(1))
+    sound['source'] = dict(sound['source'], extra=7)  # catalog fields beyond the credit are ignored
+    preset(ui).setItemData(1, sound)
+    preset(ui).setCurrentIndex(1)
+    assert 'petrich0r' in ui.sound_credit.text()
