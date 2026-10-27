@@ -297,7 +297,8 @@ def run(action, args, job):
         if action == 'look_prepare' and state.get('initial_checkpoint'):
             register_backup(state['initial_checkpoint'])
         return {'workspace': work, 'phase': state['phase']}
-    if action in ('recipe_plan', 'recipe_apply'):
+    from .actions.catalog import RECIPE_ACTIONS
+    if action in RECIPE_ACTIONS:
         from .actions import recipe
         return recipe.run(action, args)
     if action == 'compile_look':

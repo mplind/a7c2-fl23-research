@@ -80,40 +80,30 @@ class ContainerTests(unittest.TestCase):
 
 
 class OperationGateTests(unittest.TestCase):
-    ADVERTISED = frozenset({0x1001, 0x1002, 0x1003, 0x9201, 0x9202, 0x9205, 0x9207, 0x9209, 0x100B, 0x9251})
+    ADVERTISED = frozenset({0x1001, 0x1002, 0x1003, 0x9201, 0x9202, 0x9205, 0x9207, 0x9209, 0x9216, 0x100B, 0x9251})
 
-    def check(self, opcode, params=(), operations=ADVERTISED, controls=frozenset({0xD306})):
-        ptp.check_operation(opcode, params, operations, controls)
+    def check(self, opcode, operations=ADVERTISED):
+        ptp.check_operation(opcode, operations)
 
     def test_allow_listed_and_advertised_operations_pass(self):
         for opcode in (0x1001, 0x1002, 0x1003, 0x9201, 0x9202, 0x9205, 0x9209, 0x9251):
             with self.subTest(hex(opcode)):
                 self.check(opcode)
 
-    def test_advertised_but_not_allow_listed_operation_is_refused(self):
-        with self.assertRaisesRegex(ptp.OperationRefused, '0x100B'):
-            self.check(0x100B)  # DeleteObject
+    def test_advertised_but_not_allow_listed_operations_are_refused(self):
+        # DeleteObject; ControlDevice (e.g. Reset Creative Look) and GetVendorCodeVersion, which nothing here sends
+        for opcode in (0x100B, 0x9207, 0x9216):
+            with self.subTest(hex(opcode)), self.assertRaisesRegex(ptp.OperationRefused, '0x%04X' % opcode):
+                self.check(opcode)
 
     def test_allow_listed_but_unadvertised_operation_is_refused(self):
         with self.assertRaisesRegex(ptp.OperationRefused, 'did not advertise'):
-            self.check(0x9216)
+            self.check(0x9251, self.ADVERTISED - {0x9251})
 
     def test_only_get_device_info_is_possible_before_the_device_list_is_known(self):
-        ptp.check_operation(0x1001, (), None, None)
+        ptp.check_operation(0x1001, None)
         with self.assertRaises(ptp.OperationRefused):
-            ptp.check_operation(0x1002, (1,), None, None)
-
-    def test_control_device_only_for_reset_creative_look(self):
-        self.check(0x9207, (0xD306,))
-        for params in ((0xD2C1,), (), (0xD305,)):
-            with self.subTest(params), self.assertRaises(ptp.OperationRefused):
-                self.check(0x9207, params)
-
-    def test_control_device_needs_the_control_advertised(self):
-        with self.assertRaises(ptp.OperationRefused):
-            self.check(0x9207, (0xD306,), controls=frozenset())
-        with self.assertRaises(ptp.OperationRefused):
-            self.check(0x9207, (0xD306,), controls=None)
+            ptp.check_operation(0x1002, None)
 
 
 # Contrast 0xD0FB, INT8, settable, enabled, default 0, current -2, Range -9..+9 step 1 (p.121, p.309).
@@ -540,11 +530,12 @@ class ChokePointTests(unittest.TestCase):
                 session._transact(opcode, (1,))
         self.assertEqual(camera.commands, [])
 
-    def test_control_device_other_than_reset_look_sends_nothing(self):
+    def test_control_device_is_never_sent(self):
         camera = FakeCamera([contrast()])
         session, _ = connected(camera)
-        with self.assertRaises(ptp.OperationRefused):
-            session._transact(0x9207, (0xD2C1,), b'\x02\x00')
+        for params in ((0xD306,), (0xD2C1,)):  # not even Reset Creative Look
+            with self.subTest(params), self.assertRaises(ptp.OperationRefused):
+                session._transact(0x9207, params, b'\x02\x00')
         self.assertEqual(camera.commands, [])
 
 
@@ -1050,3 +1041,59 @@ class SessionEdgeTests(unittest.TestCase):
                    dict(readback_interval=0)):
             with self.subTest(kw), self.assertRaises(ValueError):
                 ptp.RemoteSession(FakeCamera(), **kw)
+
+
+class WriteOutcomeTests(unittest.TestCase):
+    """What set_property reports when the fresh read before a write fails."""
+
+    def test_a_failed_read_before_any_write_reports_that_nothing_was_sent(self):
+        for code, error in ((0x2019, ptp.DeviceBusy), (0x2006, ptp.ParameterNotSupported)):
+            with self.subTest(hex(code)):
+                camera = FakeCamera([contrast(0)])
+                session, _ = connected(camera)
+                camera.respond[0x9251] = [code] * 5
+                with self.assertRaises(error) as raised:
+                    session.set_property(0xD0FB, -2)
+                self.assertEqual((raised.exception.outcome, camera.writes()), ('not_sent', []))
+
+    def test_a_failed_reread_after_a_busy_write_reports_a_refused_write(self):
+        camera = FakeCamera([contrast(0)])
+        session, _ = connected(camera)
+        camera.respond[0x9205] = [0x2019]
+        session._sleep = lambda seconds: camera.respond.__setitem__(0x9251, [0x2006])
+        with self.assertRaises(ptp.ParameterNotSupported) as raised:
+            session.set_property(0xD0FB, -2)
+        self.assertEqual((raised.exception.outcome, len(camera.writes())), ('rejected', 1))
+
+    def test_a_busy_write_that_the_reread_finds_applied_counts_as_sent(self):
+        camera = FakeCamera([contrast(0)])
+        session, _ = connected(camera)
+        camera.respond[0x9205] = [0x2019]
+        session._sleep = lambda seconds: setattr(camera.props[0xD0FB], 'current', -2)
+        result = session.set_property(0xD0FB, -2)
+        self.assertEqual((result.sent, result.after.current, len(camera.writes())), (True, -2, 1))
+
+
+class SessionExitTests(unittest.TestCase):
+    """Leaving `with RemoteSession(...)` must never replace the outcome the caller needs to see."""
+
+    def unplugged(self):
+        camera = FakeCamera([contrast(0)])
+        def release():
+            raise OSError(19, 'No such device')
+        camera.close = release
+        return ptp.RemoteSession(camera, clock=FakeClock().time, sleep=lambda seconds: None)
+
+    def test_a_release_error_never_hides_the_error_being_raised(self):
+        with self.assertRaisesRegex(RuntimeError, 'the real failure'):
+            with self.unplugged():
+                raise RuntimeError('the real failure')
+
+    def test_a_release_error_after_a_finished_session_is_logged_not_raised(self):
+        import contextlib, io
+        log = io.StringIO()
+        with contextlib.redirect_stderr(log):
+            with self.unplugged() as camera:
+                snapshot = camera.read_all()
+        self.assertIn(0xD0FB, snapshot.properties)
+        self.assertIn('No such device', log.getvalue())

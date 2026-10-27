@@ -220,6 +220,11 @@ def preset(name):
     raise KeyError(name)
 
 
+def change_text(label, before, after):
+    """'Label: before → after', or 'Label: after' when the value before is unknown."""
+    return '%s: %s' % (label, after) if before is None else '%s: %s → %s' % (label, before, after)
+
+
 # ---------------------------------------------------------------- planning
 @dataclass(frozen=True)
 class Write:
@@ -234,8 +239,8 @@ class Write:
     def describe(self):
         target = display_value(self.code, self.value)
         if self.provisional:
-            return '%s: %s (checked again after re-reading the camera)' % (self.label, target)
-        return '%s: %s -> %s' % (self.label, display_value(self.code, self.current), target)
+            return change_text(self.label, None, target) + ' (checked again after re-reading the camera)'
+        return change_text(self.label, display_value(self.code, self.current), target)
 
 
 @dataclass(frozen=True)
@@ -458,8 +463,11 @@ def changed_settings(before, after):
     return changed
 
 
-def apply(session, planned):
+def apply(session, planned, baseline=None):
     """Execute a plan the user reviewed, verifying each write and the end state.
+
+    `baseline` is a snapshot the caller has just read from this session; without one
+    the camera is read first.
 
     Refuses (sending nothing) when the plan has blockers or the camera no longer
     matches it. Each write goes through session.set_property (fresh read, one
@@ -478,7 +486,8 @@ def apply(session, planned):
         except Exception as exc:
             raise ApplyError('%s failed: %s.' % (context, exc), completed=completed) from exc
 
-    baseline = read('Reading the camera before writing')
+    if baseline is None:
+        baseline = read('Reading the camera before writing')
     current = plan(planned.recipe, baseline)
     if not current.ok or current.steps != planned.steps:
         raise ApplyError('The camera settings changed since this plan was made; nothing was sent. Plan again.',

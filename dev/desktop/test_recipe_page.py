@@ -83,7 +83,7 @@ def plan_result(**changes):
                                  ['write', 0xD0FB, -2, True]],
                  writes=[dict(label='Creative Look', before='ST', after='FL', provisional=False),
                          dict(label='Contrast', before=None, after='-2', provisional=True)],
-                 problems=[dict(label='Position Key', reason='not offered', blocking=False)], unchanged=[],
+                 problems=[dict(label='Position Key', reason='not offered', blocking=False)],
                  recipe=job.recipe_args(recipes.PRESETS[0]), stop_ptpcamerad=True, camera_io='read_only')
     value.update(changes)
     return value
@@ -140,10 +140,14 @@ def test_a_finished_write_lists_what_was_verified(window):
     assert ui.status.text() == 'Recipe written and read back.'
 
 
-def test_a_failed_write_shows_the_worker_error(window):
-    ui = window('en')
-    finish(ui, 'recipe_apply', error='Stopped at Contrast: timeout. The camera may or may not have applied the last write.')
-    assert 'may or may not have applied' in ui.status.text()
+@pytest.mark.parametrize('language,expected', [
+    ('en', 'The camera may or may not have applied the last write'),
+    ('zh_CN', '相机可能已执行、也可能未执行最后一次写入'),
+])
+def test_a_failed_write_shows_its_safety_hint_in_the_interface_language(window, language, expected):
+    ui = window(language)
+    finish(ui, 'recipe_apply', error='Stopped at Contrast: timeout. ' + job.OUTCOME_HINTS['unknown'])
+    assert 'Stopped at Contrast: timeout.' in ui.status.text() and expected in ui.status.text()
 
 
 def test_windows_explains_the_missing_driver_and_disables_reading(window):

@@ -242,7 +242,7 @@ class PlanTests(unittest.TestCase):
         self.assertFalse(writes[0xD0FA].provisional or writes[0x5005].provisional or writes[0xD201].provisional)
         self.assertEqual((writes[0x5005].value, writes[0xD21C].value, writes[0xD210].value, writes[0xD201].value),
                          (0x8011, 0xC4, 0xC4, 0x1F))
-        self.assertEqual(writes[0xD0FA].describe(), 'Creative Look: ST -> Custom Look 2')
+        self.assertEqual(writes[0xD0FA].describe(), 'Creative Look: ST → Custom Look 2')
 
     def test_base_look_target_selects_the_look_without_a_style(self):
         planned = recipes.plan(recipes.preset('Retro Negative'), snapshot_of(Body()))
@@ -258,7 +258,7 @@ class PlanTests(unittest.TestCase):
         self.assertEqual(step_codes(planned), [0xD0FF, 0xD210])  # saturation +2, shift M0.25
         self.assertEqual({code for code, _ in planned.unchanged},
                          {0xD25A, 0xD0FA, 0xD0FB, 0xD0FC, 0xD0FD, 0xD0FE, 0xD100, 0xD101, 0xD102, 0xD21C})
-        self.assertEqual(planned.writes[0].describe(), 'Saturation: 0 -> +2')
+        self.assertEqual(planned.writes[0].describe(), 'Saturation: 0 → +2')
 
     def test_colour_temperature_only_with_c_temp(self):
         ctemp = dataclasses.replace(recipes.preset('Sunny FL Film'), white_balance='C.Temp', kelvin=5600)

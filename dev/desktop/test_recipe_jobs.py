@@ -31,6 +31,7 @@ def test_plan_reads_the_camera_and_writes_nothing():
     assert dict(label='Contrast', before=None, after='-2', provisional=True) in result['writes']
     assert result['recipe'] == request()['recipe'] and result['stop_ptpcamerad'] is False
     assert ['reread', 'Creative Look selection changed'] in result['steps']
+    assert 'unchanged' not in result
 
 
 def test_plan_reports_blockers_without_writing():
@@ -67,20 +68,41 @@ def test_apply_needs_a_reviewed_plan():
         job.run('recipe_apply', request(), open_session=opener(Body()))
 
 
-@pytest.mark.parametrize('outcome,hint', [
-    ('unknown', 'may or may not have applied'),
-    ('not_applied', 'did not apply'),
-    ('rejected', 'refused'),
-])
-def test_a_stopped_apply_explains_what_the_last_write_did(monkeypatch, outcome, hint):
+@pytest.mark.parametrize('outcome', ['unknown', 'not_applied', 'rejected', 'not_sent'])
+def test_a_stopped_apply_explains_what_the_last_write_did(monkeypatch, outcome):
     body = Body()
     reviewed = job.run('recipe_plan', request(), open_session=opener(body))
-    def stopped(session, planned):
-        raise recipes.ApplyError('Stopped at Contrast: 0 -> -2: timeout.', outcome=outcome)
+    def stopped(session, planned, baseline=None):
+        raise recipes.ApplyError('Stopped at Contrast: 0 → -2: timeout.', outcome=outcome)
     monkeypatch.setattr(recipes, 'apply', stopped)
-    with pytest.raises(RuntimeError, match=hint) as raised:
+    with pytest.raises(RuntimeError) as raised:
         job.run('recipe_apply', dict(request(), reviewed=reviewed['steps']), open_session=opener(body))
-    assert 'Stopped at Contrast' in str(raised.value)
+    assert 'Stopped at Contrast' in str(raised.value) and job.OUTCOME_HINTS[outcome] in str(raised.value)
+
+
+def test_every_outcome_hint_has_an_english_entry():
+    from desktopapp.en import STRINGS
+    assert all(hint in STRINGS for hint in job.OUTCOME_HINTS.values())
+    assert job.localized('x ' + job.OUTCOME_HINTS['unknown'], lambda text: STRINGS.get(text, text)) == \
+        'x ' + STRINGS[job.OUTCOME_HINTS['unknown']]
+
+
+def test_apply_reads_the_whole_camera_once_before_its_first_write():
+    body = Body()
+    reviewed = job.run('recipe_plan', request(), open_session=opener(body))
+    body.camera.commands.clear()
+    job.run('recipe_apply', dict(request(), reviewed=reviewed['steps']), open_session=opener(body))
+    opcodes = body.camera.opcodes
+    assert opcodes[:opcodes.index(0x9205)].count(0x9209) == 1
+
+
+@pytest.mark.parametrize('value', ['false', 'no', 1, 'yes'])
+def test_only_a_real_true_counts_as_consent_to_stop_ptpcamerad(value):
+    ptp = SimpleNamespace(PyUsbTransport=SimpleNamespace(open=Mock(return_value='transport')),
+                          claim_after_stopping_ptpcamerad=Mock(), RemoteSession=Mock())
+    job.open_session(dict(stop_ptpcamerad=value), ptp=ptp)
+    ptp.claim_after_stopping_ptpcamerad.assert_not_called()
+    ptp.PyUsbTransport.open.assert_called_once_with()
 
 
 def test_the_default_opener_stops_ptpcamerad_only_with_consent():
@@ -100,9 +122,10 @@ def test_recipe_jobs_never_ask_for_administrator_rights_or_power_confirmation():
         assert action not in jobs.CAMERA_ACTIONS and action not in jobs.POWER_ACTIONS
 
 
-def test_the_worker_dispatches_recipe_jobs(monkeypatch, tmp_path):
+def test_the_worker_dispatches_every_recipe_job(monkeypatch, tmp_path):
     from desktopapp import worker
     seen = []
     monkeypatch.setattr(job, 'run', lambda action, args: seen.append((action, args)) or {'ok': True})
-    assert worker.run('recipe_plan', {'recipe': {}}, tmp_path) == {'ok': True}
-    assert seen == [('recipe_plan', {'recipe': {}})]
+    for action in job.ACTIONS:
+        assert worker.run(action, {'recipe': {}}, tmp_path) == {'ok': True}
+    assert [action for action, _ in seen] == list(job.ACTIONS) == ['recipe_plan', 'recipe_apply']

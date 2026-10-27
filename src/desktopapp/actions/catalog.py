@@ -19,4 +19,5 @@ CAMERA_ACTIONS.add('review_failed_names')
 CAMERA_ACTIONS.add('usb_stability')
 # PC Remote recipe jobs: camera I/O through the user-space PTP interface, so no
 # administrator worker and no power confirmation (settings only, no firmware).
-REMOTE_ACTIONS = {'recipe_plan', 'recipe_apply'}
+RECIPE_ACTIONS = ('recipe_plan', 'recipe_apply')
+REMOTE_ACTIONS = set(RECIPE_ACTIONS)

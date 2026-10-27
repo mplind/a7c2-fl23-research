@@ -777,10 +777,15 @@ class Window(W.QMainWindow):
 
     @staticmethod
     def recipe_change(row):
-        return '%s: %s → %s'%(row['label'],row['before'],row['after']) if row['before'] is not None else '%s: %s'%(row['label'],row['after'])
+        from .recipes import change_text
+        return change_text(row['label'],None if row['provisional'] else row['before'],row['after'])
+
+    @staticmethod
+    def bullets(rows):
+        return '\n'.join('• '+row for row in rows)
 
     def review_recipe_plan(self,result):
-        def lines(rows):return '\n'.join('• '+row for row in rows)
+        lines=self.bullets
         notes=['%s: %s'%(p['label'],p['reason']) for p in result['problems'] if not p['blocking']]
         if not result['ok']:
             blockers=['%s: %s'%(p['label'],p['reason']) for p in result['problems'] if p['blocking']]
@@ -1092,7 +1097,7 @@ class Window(W.QMainWindow):
                            tr('名称与只读挂载已确认；程序尚未安装，请点首页“继续安装”。') if resource_ready and status.get('action')=='setup_all' else
                            tr('名称与只读挂载已确认；程序尚未安装，请点自定义外观页“继续槽位更改”。') if resource_ready else
                            tr('完成。请按日志提示进行下一步。') if success else
-                           tr('操作停止：') + (tr(status['error']) if 'error' in status else tr('进程异常退出，退出码 ') + str(code)) + tr('。请导出诊断包。'))
+                           tr('操作停止：') + (tr(self.error_text(status)) if 'error' in status else tr('进程异常退出，退出码 ') + str(code)) + tr('。请导出诊断包。'))
         if success and status.get('action')=='recipe_apply':self.status.setText(tr('配方已写入并读回核对。'))
         if not success and sys.platform == 'win32' and self.driver_step_failed(status.get('action')):
             self.status.setText(self.status.text() + tr(DRIVER_HINT))
@@ -1126,7 +1131,7 @@ class Window(W.QMainWindow):
         elif success and status.get('action')=='recipe_plan':
             self.review_recipe_plan(status['result'])
         elif success and status.get('action')=='recipe_apply':
-            W.QMessageBox.information(self,tr('配方已写入'),tr('已写入并读回核对：\n')+'\n'.join('• '+self.recipe_change(row) for row in status['result']['written']))
+            W.QMessageBox.information(self,tr('配方已写入'),tr('已写入并读回核对：\n')+self.bullets(self.recipe_change(row) for row in status['result']['written']))
         elif status.get('action')=='usb_stability':
             if success:
                 result=status['result']
@@ -1145,6 +1150,15 @@ class Window(W.QMainWindow):
             self.setup_result_button.setVisible(True)
             for box in (self.setup_presets,self.setup_fl23,self.setup_sound,self.setup_vertical,self.setup_plugin):box.setEnabled(True)
             self.show_setup_result()
+
+    @staticmethod
+    def error_text(status):
+        """The worker's error; a recipe job's outcome hint is shown in the interface language."""
+        from .actions.catalog import RECIPE_ACTIONS
+        if status.get('action') in RECIPE_ACTIONS:
+            from .actions.recipe import localized
+            return localized(status['error'],tr)
+        return status['error']
 
     def process_error(self, error):
         if self.process and error == QtCore.QProcess.FailedToStart:

@@ -9,7 +9,9 @@ Rules enforced here, not by callers:
 - Every command passes one choke point (`check_operation`): the opcode must be on
   ALLOWED_OPERATIONS and advertised by the device's GetDeviceInfo. Sony bodies
   stall the bulk pipe on operations they do not implement.
-- 0x9207 (ControlDevice) only ever for control 0xD306; this module never sends it.
+- Nothing outside the settings subset is allow-listed: not ControlDevice 0x9207 (which
+  could reset a Creative Look), not GetVendorCodeVersion 0x9216, nothing that touches
+  firmware, files or capture.
 - A write whose outcome is unknown (timeout, disconnect, malformed reply) marks the
   session unusable; nothing is sent afterwards. A write is never re-sent without a
   fresh read of the property first.
@@ -35,19 +37,15 @@ CLOSE_SESSION = 0x1003
 SDIO_CONNECT = 0x9201
 SDIO_GET_EXT_DEVICE_INFO = 0x9202
 SDIO_SET_EXT_DEVICE_PROP_VALUE = 0x9205
-SDIO_CONTROL_DEVICE = 0x9207
 SDIO_GET_ALL_EXT_DEVICE_PROP_INFO = 0x9209
-SDIO_GET_VENDOR_CODE_VERSION = 0x9216
 SDIO_GET_EXT_DEVICE_PROP = 0x9251
 ALLOWED_OPERATIONS = frozenset({
     GET_DEVICE_INFO, OPEN_SESSION, CLOSE_SESSION, SDIO_CONNECT, SDIO_GET_EXT_DEVICE_INFO,
-    SDIO_SET_EXT_DEVICE_PROP_VALUE, SDIO_CONTROL_DEVICE, SDIO_GET_ALL_EXT_DEVICE_PROP_INFO,
-    SDIO_GET_VENDOR_CODE_VERSION, SDIO_GET_EXT_DEVICE_PROP})
-RESET_CREATIVE_LOOK = 0xD306  # the only control code 0x9207 may carry
+    SDIO_SET_EXT_DEVICE_PROP_VALUE, SDIO_GET_ALL_EXT_DEVICE_PROP_INFO, SDIO_GET_EXT_DEVICE_PROP})
 # Without these the body is not in PC Remote mode (or is not a PC Remote body).
 REQUIRED_OPERATIONS = frozenset({OPEN_SESSION, CLOSE_SESSION, SDIO_CONNECT, SDIO_GET_EXT_DEVICE_INFO,
                                  SDIO_SET_EXT_DEVICE_PROP_VALUE, SDIO_GET_ALL_EXT_DEVICE_PROP_INFO})
-MUTATING_OPERATIONS = frozenset({SDIO_SET_EXT_DEVICE_PROP_VALUE, SDIO_CONTROL_DEVICE})
+MUTATING_OPERATIONS = frozenset({SDIO_SET_EXT_DEVICE_PROP_VALUE})
 INITIATOR_VERSION = 0x012C  # 3.00; the camera must answer the same extension version
 SESSION_ID = 1
 MANUFACTURER = 'Sony Corporation'
@@ -411,8 +409,7 @@ def parse_all_properties(data, control_codes=frozenset(), property_codes=frozens
         if row.code in properties or row.code in controls:
             raise DatasetError('Property 0x%04X appears twice' % row.code)
         (controls if code in control_codes else properties)[row.code] = row
-    if reader.remaining:
-        raise DatasetError('%d unexpected bytes after %d records' % (reader.remaining, count))
+    reader.finish('%d records' % count)
     return properties, controls
 
 
@@ -420,8 +417,7 @@ def parse_property(data):
     """Parse one SDIDevicePropInfo dataset (0x9251 data phase) exactly to its end."""
     reader = _Reader(data)
     row = _read_property(reader)
-    if reader.remaining:
-        raise DatasetError('%d unexpected bytes after property 0x%04X' % (reader.remaining, row.code))
+    reader.finish('property 0x%04X' % row.code)
     return row
 
 
@@ -462,11 +458,10 @@ def unpack_container(data):
     return Container(kind, code, tid, payload)
 
 
-def check_operation(opcode, params, operations, controls):
+def check_operation(opcode, operations):
     """The single gate every command passes. Raises OperationRefused; sends nothing.
 
-    `operations`/`controls` are what the device advertised (GetDeviceInfo and
-    GetExtDeviceInfo); None means not yet known.
+    `operations` is what the device advertised in GetDeviceInfo; None means not yet known.
     """
     if opcode not in ALLOWED_OPERATIONS:
         raise OperationRefused('Operation 0x%04X is not on the PC Remote allow-list' % opcode)
@@ -476,11 +471,6 @@ def check_operation(opcode, params, operations, controls):
         return
     if opcode not in operations:
         raise OperationRefused('The camera did not advertise operation 0x%04X' % opcode)
-    if opcode == SDIO_CONTROL_DEVICE:
-        if not params or params[0] != RESET_CREATIVE_LOOK:
-            raise OperationRefused('ControlDevice 0x9207 is permitted only for control 0xD306')
-        if not controls or RESET_CREATIVE_LOOK not in controls:
-            raise OperationRefused('The camera did not advertise control 0xD306')
 
 
 @dataclass(frozen=True)
@@ -565,26 +555,32 @@ class RemoteSession:
     raises SessionUnusable without sending.
     """
 
-    def __init__(self, transport, *, model=MODEL, clock=time.monotonic, sleep=time.sleep, io_timeout=10.0,
+    def __init__(self, transport, *, clock=time.monotonic, sleep=time.sleep, io_timeout=10.0,
                  busy_attempts=5, busy_delay=0.1, ext_info_attempts=20, ext_info_delay=0.1,
                  readback_timeout=4.0, readback_interval=0.2):
         if busy_attempts < 1 or ext_info_attempts < 1 or readback_timeout <= 0 or readback_interval <= 0:
             raise ValueError('Retry counts and read-back timing must allow at least one attempt')
-        self.transport, self.model = transport, model
+        self.transport = transport
         self._clock, self._sleep, self.io_timeout = clock, sleep, io_timeout
         self.busy_attempts, self.busy_delay = busy_attempts, busy_delay
         self.ext_info_attempts, self.ext_info_delay = ext_info_attempts, ext_info_delay
         self.readback_timeout, self.readback_interval = readback_timeout, readback_interval
         self.usable, self.connected, self.info = True, False, None
-        self._operations = self._controls = None
+        self._operations = None
         self._session_open, self._tid, self._started, self._closed = False, 1, False, False
 
     def __enter__(self):
         self.connect()
         return self
 
-    def __exit__(self, *exc):
-        self.close()
+    def __exit__(self, kind, error, traceback):
+        try:
+            self.close()
+        except Exception as exc:
+            # Releasing a just-unplugged camera can fail. That must neither hide the error being
+            # raised (an unknown write outcome) nor fail a finished, verified job; the worker
+            # process exits next, which frees the interface anyway.
+            print('Releasing the camera interface failed: %s' % exc, file=sys.stderr, flush=True)
 
     # ------------------------------------------------------------ transactions
     def _take_tid(self, opcode):
@@ -595,7 +591,7 @@ class RemoteSession:
 
     def _transact(self, opcode, params=(), data_out=None):
         """The choke point: gate, then exactly one PTP transaction."""
-        check_operation(opcode, params, self._operations, self._controls)
+        check_operation(opcode, self._operations)
         if not self.usable:
             raise SessionUnusable('An earlier failure left the camera session unusable; nothing was sent')
         tid = self._take_tid(opcode)
@@ -632,9 +628,15 @@ class RemoteSession:
             try:
                 return self._transact(opcode, params)
             except DeviceBusy:
-                if attempt == self.busy_attempts:
+                if not self._back_off(attempt):
                     raise
-                self._sleep(self.busy_delay * 2 ** (attempt - 1))
+
+    def _back_off(self, attempt):
+        """Wait before retrying after Device Busy; False once the attempts are used up."""
+        if attempt == self.busy_attempts:
+            return False
+        self._sleep(self.busy_delay * 2 ** (attempt - 1))
+        return True
 
     def _parse(self, parser, *args):
         try:
@@ -651,9 +653,9 @@ class RemoteSession:
         self._started = True
         try:
             device = self._parse(parse_device_info, self._request(GET_DEVICE_INFO).data or b'')
-            if device.manufacturer != MANUFACTURER or device.model != self.model:
+            if device.manufacturer != MANUFACTURER or device.model != MODEL:
                 raise ConnectError('Connected device is %s %s, not %s %s in PC Remote mode' % (
-                    device.manufacturer, device.model, MANUFACTURER, self.model))
+                    device.manufacturer, device.model, MANUFACTURER, MODEL))
             missing = REQUIRED_OPERATIONS - device.operations
             if missing:
                 raise ConnectError('Camera does not offer PC Remote operations %s; set USB Connection Mode '
@@ -663,7 +665,6 @@ class RemoteSession:
             self._sdio_connect(1)
             self._sdio_connect(2)
             ext = self._ext_device_info()
-            self._controls = ext.controls
             self._sdio_connect(3)
         except BaseException:
             try:
@@ -750,19 +751,25 @@ class RemoteSession:
         self._require_connected()
         if code not in self.info.ext.properties:
             raise ValidationError(code, value, 'the camera did not advertise this property')
+        sent = False  # an earlier attempt's 0x9205 went out and was answered Device Busy
         for attempt in range(1, self.busy_attempts + 1):
-            before = self.read_property(code)
+            try:
+                before = self.read_property(code)
+            except PtpError as exc:
+                # Nothing of this attempt was written: the write was refused (Busy) or never sent.
+                exc.outcome = 'rejected' if sent else 'not_sent'
+                raise
             reason = before.refusal(value)
             if reason:
                 raise ValidationError(code, value, reason)
             if before.current == value:
-                return SetResult(code, value, before, before, False)
+                return SetResult(code, value, before, before, sent)
             try:
                 self._transact(SDIO_SET_EXT_DEVICE_PROP_VALUE, (code,), _INTEGERS[before.datatype].pack(value))
             except DeviceBusy:
-                if attempt == self.busy_attempts:
+                sent = True
+                if not self._back_off(attempt):
                     raise
-                self._sleep(self.busy_delay * 2 ** (attempt - 1))
                 continue
             try:
                 after = self._await_value(code, value, before)
@@ -894,18 +901,18 @@ def _enumerate_sony():
 class PyUsbTransport:
     """Bulk-pipe PTP transport over pyusb/libusb. Event (interrupt) packets are not read."""
 
-    def __init__(self, device, interface_number, bulk_out, bulk_in, *, clock=time.monotonic, release=None):
+    def __init__(self, device, interface_number, bulk_out, bulk_in, *, clock=time.monotonic, release=_release_pyusb):
         self.device, self.interface_number = device, interface_number
         self._out, self._in, self._clock = bulk_out, bulk_in, clock
-        self._release = release or _release_pyusb
+        self._release = release
         self._closed = False
 
     @classmethod
-    def open(cls, *, devices=None, claim=None, release=None):
+    def open(cls, *, devices=None, claim=None, release=_release_pyusb):
         """Enumerate (only here), select the camera and claim its interface; no PTP command is sent."""
         import usb.core
         device, interface, bulk_out, bulk_in = select_camera(_enumerate_sony() if devices is None else devices)
-        number, release = interface.bInterfaceNumber, release or _release_pyusb
+        number = interface.bInterfaceNumber
         try:
             (claim or _claim_pyusb)(device, number)
         except usb.core.USBError as exc:
