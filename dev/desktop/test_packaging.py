@@ -1,7 +1,11 @@
 """Native archive composition without PyInstaller, signing tools or USB."""
 import importlib.util
 import io
+import json
 from pathlib import Path
+import platform
+import shutil
+import subprocess
 from unittest.mock import patch
 import zipfile
 import pytest
@@ -130,113 +134,99 @@ def test_dmg_has_fresh_staging_and_arch_specific_filename(tmp_path):
     assert run.call_args.args[0]==['hdiutil','verify',str(result)]
 
 
-import struct
-posix_symlinks=pytest.mark.skipif(sys.platform=='win32',reason='macOS bundle layout needs POSIX symlinks')
+posix_only=pytest.mark.skipif(sys.platform=='win32',reason='needs a POSIX shell and symlinks')
+intel_mac=pytest.mark.skipif(sys.platform!='darwin' or platform.machine()!='x86_64',reason='Intel macOS Zig only')
+# Stand-ins for the bundled compiler: find the -o argument, then write an ELF header there.
+OUTPUT_ARG='out=\nwhile [ $# -gt 0 ]; do [ "$1" = -o ] && out=$2; shift; done\n'
+AARCH64_ELF=OUTPUT_ARG+"printf '\\177ELF\\002\\001\\001\\000\\000\\000\\000\\000\\000\\000\\000\\000\\003\\000\\267\\000' > \"$out\"\n"
+X86_64_ELF=AARCH64_ELF.replace('\\267','\\076')
 
 
-def macho(path,room,signed=False):
-    """Minimal x86_64 Mach-O: __TEXT/__text starts `room` bytes after the load commands."""
-    size=72+80+(16 if signed else 0)
-    text=32+size+room
-    section=struct.pack('<16s16sQQ8I',b'__text',b'__TEXT',0x100000000+text,8,text,0,0,0,0,0,0,0)
-    commands=struct.pack('<II16sQQQQiiII',0x19,72+80,b'__TEXT',0x100000000,0x1000,0,0x1000,5,5,1,0)+section
-    if signed:commands+=struct.pack('<4I',0x1d,16,0x2000,0x100)
-    header=struct.pack('<8I',0xfeedfacf,0x01000007,3,2,2 if signed else 1,size,0x200085,0)
-    path.write_bytes(header+commands+bytes(room)+b'UAWAVAUA')
-    return path
+def app_with_fake_zig(root,script):
+    zig=root/'A7C2Tools.app/Contents/Frameworks/ziglang/zig'
+    zig.parent.mkdir(parents=True)
+    zig.write_text('#!/bin/sh\n'+script);zig.chmod(0o755)
+    return root/'A7C2Tools.app'
 
 
-def test_unsigned_zig_without_signature_room_needs_upstream_copy(tmp_path):
-    # Zig 0.13.0 for Intel macOS: load commands end at 2360, __text starts at 2368.
-    assert build.needs_unsigned_copy(macho(tmp_path/'zig',room=8)) is True
+def app_with_zig_package(root,package):
+    """The layout PyInstaller builds for unsigned Zig: Frameworks/ziglang links to the package."""
+    framework=root/'A7C2Tools.app/Contents/Frameworks';framework.mkdir(parents=True)
+    (framework/'ziglang').symlink_to(package,target_is_directory=True)
+    return root/'A7C2Tools.app'
 
 
-def test_room_for_a_signature_is_left_to_pyinstaller(tmp_path):
-    assert build.needs_unsigned_copy(macho(tmp_path/'zig',room=16)) is False
+@posix_only
+def test_zig_check_accepts_an_aarch64_library(tmp_path):
+    build.check_bundled_zig(app_with_fake_zig(tmp_path,AARCH64_ELF))
 
 
-def test_already_signed_zig_is_left_to_pyinstaller(tmp_path):
-    # Apple Silicon Zig is linker-signed; re-signing replaces that command in place.
-    assert build.needs_unsigned_copy(macho(tmp_path/'zig',room=8,signed=True)) is False
+@posix_only
+@pytest.mark.parametrize('script',[X86_64_ELF,'exit 0\n'],ids=['x86_64-output','no-output'])
+def test_zig_check_rejects_output_that_is_not_an_aarch64_library(tmp_path,script):
+    with pytest.raises(RuntimeError,match='AArch64'):build.check_bundled_zig(app_with_fake_zig(tmp_path,script))
 
 
-def test_non_macho_compiler_is_rejected(tmp_path):
-    path=tmp_path/'zig';path.write_bytes(b'\x7fELF'+bytes(60))
-    with pytest.raises(ValueError,match='Mach-O'):build.needs_unsigned_copy(path)
+@posix_only
+def test_zig_check_reports_a_crashing_compiler(tmp_path):
+    app=app_with_fake_zig(tmp_path,'echo "Segmentation fault: 11" >&2\nexit 139\n')
+    with pytest.raises(RuntimeError,match='exit 139.*Segmentation fault'):build.check_bundled_zig(app)
 
 
-@pytest.mark.skipif(sys.platform!='darwin' or build.platform.machine()!='x86_64',reason='Intel macOS Zig wheel only')
-def test_installed_intel_zig_0_13_has_no_signature_room():
-    import ziglang
-    zig=Path(ziglang.__file__).resolve().parent/'zig'
-    if not zig.is_file():pytest.skip('ziglang executable not installed')
-    assert build.needs_unsigned_copy(zig) is True
+@pytest.mark.skipif(sys.platform!='darwin',reason='macOS bundle layout')
+def test_zig_check_compiles_with_the_real_zig(tmp_path):
+    package=Path(pytest.importorskip('ziglang').__file__).resolve().parent
+    build.check_bundled_zig(app_with_zig_package(tmp_path,package))
 
 
-def pyinstaller_app(root):
-    """PyInstaller's macOS layout: signed Zig in Frameworks, Resources links to it."""
-    app=root/'A7C2Tools.app'
-    framework=app/'Contents/Frameworks/ziglang/zig';framework.parent.mkdir(parents=True)
-    framework.write_bytes(b'signature overwrote code');framework.chmod(0o755)
-    resource=app/'Contents/Resources/ziglang/zig';resource.parent.mkdir(parents=True)
-    resource.symlink_to('../../Frameworks/ziglang/zig')
-    return app
+@intel_mac
+def test_zig_check_catches_zig_corrupted_by_codesign(tmp_path):
+    package=Path(pytest.importorskip('ziglang').__file__).resolve().parent
+    copy=tmp_path/'ziglang';copy.mkdir()
+    (copy/'lib').symlink_to(package/'lib',target_is_directory=True)
+    shutil.copyfile(package/'zig',copy/'zig');(copy/'zig').chmod(0o755)
+    subprocess.run(['codesign','--sign','-',str(copy/'zig')],check=True,capture_output=True)
+    with pytest.raises(RuntimeError,match='cannot compile'):
+        build.check_bundled_zig(app_with_zig_package(tmp_path/'build',copy))
 
 
-@posix_symlinks
-def test_keep_upstream_zig_seals_original_bytes_and_resigns_app(tmp_path):
-    app=pyinstaller_app(tmp_path);upstream=macho(tmp_path/'upstream-zig',room=8);upstream.chmod(0o755)
-    with patch.object(build.subprocess,'run') as run:build.keep_upstream_zig(app,upstream)
-    resource=app/'Contents/Resources/ziglang/zig';framework=app/'Contents/Frameworks/ziglang/zig'
-    assert not resource.is_symlink() and resource.read_bytes()==upstream.read_bytes()
-    assert resource.stat().st_mode&0o111
-    assert framework.is_symlink() and framework.resolve()==resource.resolve()
-    run.assert_called_once_with(['codesign','--force','--sign','-',str(app)],check=True)
-
-
-def fake_mac_toolchain(calls):
-    """PyInstaller creates the app; codesign/hdiutil succeed without touching the host."""
+def fake_toolchain(events):
+    """PyInstaller creates both outputs; codesign/hdiutil succeed without touching the host."""
     def command(args,**kwargs):
-        calls.append(list(args))
         if args[1:3]==['-m','PyInstaller']:
-            pyinstaller_app(Path(args[args.index('--distpath')+1]))
-        elif args[:2]==['hdiutil','create']:Path(args[-1]).write_bytes(b'dmg')
+            events.append('PyInstaller')
+            dist=Path(args[args.index('--distpath')+1])
+            (dist/'A7C2Tools.app').mkdir(parents=True);(dist/'A7C2Tools').mkdir()
+        else:
+            events.append(args[0])
+            if args[:2]==['hdiutil','create']:Path(args[-1]).write_bytes(b'dmg')
     return command
 
 
-def run_mac_main(tmp_path,upstream,calls):
-    output=tmp_path/'dist'
-    with patch.object(build.sys,'platform','darwin'), \
+def run_main(tmp_path,host):
+    events=[];output=tmp_path/'dist'
+    with patch.object(build.sys,'platform',host), \
             patch.object(build.platform,'machine',return_value='x86_64'), \
             patch.object(build.sys,'argv',['build.py','--output',str(output)]), \
             patch.object(build,'profile_files',return_value={}), \
-            patch.object(build,'upstream_zig',return_value=upstream), \
-            patch.object(build.subprocess,'run',side_effect=fake_mac_toolchain(calls)):
+            patch.object(build,'check_bundled_zig',side_effect=lambda app:events.append(('zig check',app))), \
+            patch.object(build.subprocess,'run',side_effect=fake_toolchain(events)):
         build.main()
-    return output
+    return output,events
 
 
-@posix_symlinks
-def test_main_packages_intel_mac_with_x86_64_dmg_and_upstream_zig(tmp_path,capsys):
-    calls=[];upstream=macho(tmp_path/'upstream-zig',room=8)
-    output=run_mac_main(tmp_path,upstream,calls)
-    import json
-    printed=json.loads(capsys.readouterr().out)
-    assert Path(printed['artifact'])==output/'A7C2Tools-macOS-x86_64.dmg'
-    assert printed['camera_io'] is False
-    assert calls[0][1:3]==['-m','PyInstaller'] and calls[0][-1].endswith('desktop.spec')
-    assert (output/'A7C2Tools.app/Contents/Resources/ziglang/zig').read_bytes()==upstream.read_bytes()
-    # Re-seal the bundle before the DMG step verifies it.
-    assert calls.index(['codesign','--force','--sign','-',str(output/'A7C2Tools.app')])<calls.index(
-        ['codesign','--verify','--deep','--strict',str(output/'A7C2Tools.app')])
+@posix_only
+def test_main_checks_bundled_zig_before_making_the_intel_dmg(tmp_path,capsys):
+    output,events=run_main(tmp_path,'darwin')
+    assert Path(json.loads(capsys.readouterr().out)['artifact'])==output/'A7C2Tools-macOS-x86_64.dmg'
+    assert events[0]=='PyInstaller'
+    assert events.index(('zig check',output/'A7C2Tools.app'))<events.index('hdiutil')
 
 
-@posix_symlinks
-def test_main_keeps_pyinstaller_zig_when_signature_fits(tmp_path,capsys):
-    calls=[];output=run_mac_main(tmp_path,macho(tmp_path/'upstream-zig',room=8,signed=True),calls)
-    framework=output/'A7C2Tools.app/Contents/Frameworks/ziglang/zig'
-    assert not framework.is_symlink() and framework.read_bytes()==b'signature overwrote code'
-    assert ['codesign','--force','--sign','-',str(output/'A7C2Tools.app')] not in calls
+def test_main_on_windows_makes_the_zip_without_a_zig_check(tmp_path,capsys):
+    output,events=run_main(tmp_path,'win32')
+    assert Path(json.loads(capsys.readouterr().out)['artifact'])==output/'A7C2Tools-Windows-x64.zip'
+    assert events==['PyInstaller']
 
 
 def test_main_still_refuses_hosts_other_than_windows_and_macos(tmp_path):

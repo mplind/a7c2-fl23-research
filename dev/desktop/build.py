@@ -1,10 +1,10 @@
 """Build on the native host; Windows output paths remain unchanged."""
 import argparse
 import json
+import os
 from pathlib import Path
 import platform
 import shutil
-import struct
 import subprocess
 import sys
 import tempfile
@@ -12,50 +12,34 @@ import zipfile
 from profilepack import files as profile_files
 
 ROOT = Path(__file__).resolve().parents[2]
-LC_SEGMENT_64,LC_CODE_SIGNATURE=0x19,0x1d
+APP_NAME = 'A7C2Tools.app'
+EM_AARCH64 = 183
 
 
-def upstream_zig():
-    import ziglang
-    return Path(ziglang.__file__).resolve().parent/'zig'
+def check_bundled_zig(app):
+    """Compile a tiny AArch64 library with the app's own Zig before packaging it.
 
-
-def needs_unsigned_copy(path):
-    """True when codesign cannot add a signature without overwriting code.
-
-    Zig 0.13.0 for Intel macOS leaves 8 bytes between its load commands and
-    __text. The 16-byte LC_CODE_SIGNATURE then overwrites machine code and every
-    clang compile segfaults. A binary that is already signed is re-signed in place.
+    codesign can leave Zig valid on disk yet broken (on Intel it overwrote code),
+    and only a real compile shows that.
     """
-    with open(path,'rb') as stream:
-        magic,_,_,_,count,size,_,_=struct.unpack('<8I',stream.read(32))
-        if magic!=0xfeedfacf:raise ValueError('Not a 64-bit little-endian Mach-O: '+str(path))
-        commands=stream.read(size)
-    first=None;offset=0
-    for _ in range(count):
-        command,length=struct.unpack_from('<II',commands,offset)
-        if command==LC_CODE_SIGNATURE:return False
-        if command==LC_SEGMENT_64:
-            for index in range(struct.unpack_from('<I',commands,offset+64)[0]):
-                start=struct.unpack_from('<I',commands,offset+72+80*index+48)[0]
-                if start and (first is None or start<first):first=start
-        offset+=length
-    return first is not None and first-(32+size)<16
-
-
-def keep_upstream_zig(app,upstream):
-    """Seal the unsigned upstream Zig as a resource; Frameworks links to it."""
-    framework=app/'Contents/Frameworks/ziglang/zig'
-    resource=app/'Contents/Resources/ziglang/zig'
-    resource.unlink()
-    shutil.copy2(upstream,resource)
-    framework.unlink();framework.symlink_to('../../Resources/ziglang/zig')
-    subprocess.run(['codesign','--force','--sign','-',str(app)],check=True)
+    zig=Path(app)/'Contents/Frameworks/ziglang/zig'
+    with tempfile.TemporaryDirectory(prefix='a7c2-zig-check-') as temporary:
+        work=Path(temporary);source=work/'check.c';library=work/'check.so'
+        source.write_text('int check(int x){return x+1;}\n',encoding='ascii')
+        environment=dict(os.environ,ZIG_GLOBAL_CACHE_DIR=str(work/'cache'),ZIG_LOCAL_CACHE_DIR=str(work/'cache'))
+        result=subprocess.run([str(zig),'cc','-target','aarch64-linux-gnu','-shared','-fPIC','-nostdlib',
+                               '-o',str(library),str(source)],env=environment,capture_output=True,
+                              text=True,encoding='utf-8',errors='replace',timeout=180)
+        if result.returncode:
+            raise RuntimeError('Bundled Zig cannot compile camera code (exit %d): %s'%(result.returncode,result.stderr[-2000:]))
+        header=library.read_bytes()[:20] if library.is_file() else b''
+        if header[:4]!=b'\x7fELF' or int.from_bytes(header[18:20],'little')!=EM_AARCH64:
+            raise RuntimeError('Bundled Zig did not produce an AArch64 ELF library: '+str(zig))
 
 
 def make_dmg(output):
     output=Path(output).resolve()
-    app=output/'A7C2Tools.app'
+    app=output/APP_NAME
     if not app.is_dir():raise FileNotFoundError(app)
     target=output/('A7C2Tools-macOS-'+platform.machine()+'.dmg')
     # Temporary staging prevents files from older builds leaking into the DMG.
@@ -102,9 +86,10 @@ def main():
     subprocess.run([sys.executable,'-m','PyInstaller','--noconfirm',
                     '--distpath',str(output),'--workpath',str(ROOT/'build/desktop'),
                     str(ROOT/'dev/desktop/desktop.spec')],cwd=ROOT,check=True)
-    zig=upstream_zig() if sys.platform=='darwin' else None
-    if zig and needs_unsigned_copy(zig):keep_upstream_zig(output/'A7C2Tools.app',zig)
-    target=make_dmg(output) if sys.platform=='darwin' else make_windows_zip(output)
+    if sys.platform=='darwin':
+        check_bundled_zig(output/APP_NAME)
+        target=make_dmg(output)
+    else:target=make_windows_zip(output)
     print(json.dumps(dict(artifact=str(target),bytes=target.stat().st_size,camera_io=False)))
 
 

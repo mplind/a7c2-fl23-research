@@ -48,6 +48,10 @@ for name in ('desktop.py', 'LICENSE', 'README.md', 'README.zh-CN.md', 'desktop-r
 a = Analysis([str(root / 'dev/desktop/frozen_entry.py')], pathex=[],
              binaries=binaries, datas=datas, hiddenimports=hidden,
              excludes=['tkinter', 'matplotlib', 'pandas', 'IPython', 'pytest'])
+if sys.platform == 'darwin':
+    # Signing would overwrite Intel Zig's code; collect it unsigned (see machosign.py).
+    from machosign import keep_unsigned
+    a.binaries, a.datas = keep_unsigned(a.binaries, a.datas)
 pyz = PYZ(a.pure)
 exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name='A7C2Tools',
           console=False, disable_windowed_traceback=False)
