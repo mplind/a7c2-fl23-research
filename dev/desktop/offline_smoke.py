@@ -141,18 +141,21 @@ def check_audio_conversion():
 
 
 def check_feature_modules():
-    """Import every lazily loaded module of the film looks, preview, HALD capture and recipe
-    writer (as the frozen worker would) and load the bundled film look library."""
+    """Import every lazily loaded module of the film looks, preview, HALD capture, recipe writer
+    and shutter sound presets (as the frozen worker would) and load the bundled libraries."""
     for name in ('hald', 'lookpreview'):
         importlib.import_module('looktool.' + name)
-    for name in ('looklibrary', 'lookviews', 'recipes', 'actions.recipe', 'actions.look_compiler'):
+    for name in ('looklibrary', 'lookviews', 'recipes', 'actions.recipe', 'actions.look_compiler', 'shuttersounds'):
         importlib.import_module('desktopapp.' + name)
     importlib.import_module('camera_runtime.ptpremote')  # the namespace import actions.recipe uses
-    from desktopapp import looklibrary
+    from desktopapp import looklibrary, shuttersounds
     looks = looklibrary.catalog()
     assert looks, 'The film look library is missing from this package'
     assert all(look['source']['licence'] and look['path'].is_file() for look in looks)
-    return dict(film_looks=len(looks))
+    sounds = shuttersounds.catalog()
+    assert sounds, 'The shutter sound library is missing from this package'
+    assert (shuttersounds.location() / 'CREDITS.txt').is_file(), 'The shutter sound credits are missing'
+    return dict(film_looks=len(looks), shutter_sounds=len(sounds))
 
 
 def run():

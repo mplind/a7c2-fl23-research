@@ -4,6 +4,7 @@ from datetime import datetime
 import json
 from pathlib import Path
 import sys
+import html
 import uuid
 from PySide6 import QtCore, QtGui, QtWidgets as W
 from . import VERSION
@@ -767,6 +768,19 @@ class Window(W.QMainWindow):
         self.act(switch, tr('开启电子快门声'), tr('使用电子快门拍摄时播放快门声。'), tr('开启'), 'sound_on', args)
         self.act(switch, tr('关闭电子快门声'), tr('电子快门拍摄时保持静音。'), tr('停用'), 'sound_off', args)
         media = self.box(layout, tr('导入音频／视频片段'))
+        presets = self.sound_presets()
+        if presets:
+            self.sound_preset = W.QComboBox()
+            self.sound_preset.setObjectName('sound_preset')
+            self.sound_preset.addItem(tr('自己的文件'), None)
+            for sound in presets:
+                self.sound_preset.addItem(sound['name'], sound)
+            media.addRow(tr('预设声音'), self.sound_preset)
+            self.sound_credit = shell.text_label('', 'callout')
+            self.sound_credit.setTextFormat(QtCore.Qt.RichText)
+            self.sound_credit.setTextInteractionFlags(QtCore.Qt.TextBrowserInteraction)
+            self.sound_credit.setOpenExternalLinks(True)
+            media.addRow(self.sound_credit)
         self.field(media, 'sound_source', tr('声音文件'), kind='file', filter=tr('Audio / video (*.wav *.mp3 *.mp4 *.m4a *.flac *.ogg);;All files (*)'))
         self.sound_start = W.QDoubleSpinBox()
         self.sound_start.setRange(0, 86400)
@@ -777,6 +791,10 @@ class Window(W.QMainWindow):
         self.sound_duration.setDecimals(3)
         self.sound_duration.setValue(.5)
         media.addRow(tr('长度（秒）'), self.sound_duration)
+        if presets:
+            self.sound_preset.currentIndexChanged.connect(self.choose_sound_preset)
+            self.fields['sound_source'].textChanged.connect(self.match_sound_preset)
+            self.match_sound_preset(self.text('sound_source'))
         custom = shell.section(layout, tr('自定义快门声'))
         self.act(custom, tr('转换所选片段'), tr('只在电脑上处理音频，不连接相机。'), tr('转换'), 'sound_import',
                  lambda: dict(args(), source=self.text('sound_source'), start=self.sound_start.value(),
@@ -801,6 +819,49 @@ class Window(W.QMainWindow):
         self.field(form, 'sound_work', tr('工作目录'), kind='folder', value=str(data_root() / 'sound'))
         self.field(form, 'sound_backup', tr('第二份备份'), kind='folder', value=str(data_root() / 'sound-backup'))
         layout.addStretch()
+
+    def sound_presets(self):
+        """The bundled shutter sounds, most loved first; none (with a log line) if the library is unreadable."""
+        from . import shuttersounds
+        try:
+            return shuttersounds.catalog()
+        except (OSError, ValueError) as exc:
+            self.log.appendPlainText(tr('内置快门声库无法读取，已隐藏预设：') + str(exc))
+            return []
+
+    def choose_sound_preset(self, index):
+        """A preset fills the clip fields: the bundled file, from its start, for its full length.
+        'Your own file' clears a bundled file from the field so the menu and the field agree."""
+        sound, source = self.sound_preset.itemData(index), self.fields['sound_source']
+        if sound:
+            source.setText(str(sound['path']))
+            self.sound_start.setValue(0)
+            self.sound_duration.setValue(sound['seconds'])
+        elif self.preset_index(source.text()):
+            source.clear()
+        self.show_sound_credit()
+
+    def preset_index(self, path):
+        """Index of the preset whose bundled file is path; 0 ('Your own file') for any other path."""
+        return next((i for i in range(1, self.sound_preset.count())
+                     if str(self.sound_preset.itemData(i)['path']) == path.strip()), 0)
+
+    def match_sound_preset(self, path):
+        """Typing or choosing a file selects its preset, or 'Your own file'."""
+        self.sound_preset.blockSignals(True)
+        self.sound_preset.setCurrentIndex(self.preset_index(path))
+        self.sound_preset.blockSignals(False)
+        self.show_sound_credit()
+
+    def show_sound_credit(self):
+        """The selected preset's author, licence and source link (the formal attribution with the
+        changes made is in the library's CREDITS.txt), or how the presets work."""
+        sound = self.sound_preset.currentData()
+        if sound is None:
+            self.sound_credit.setText(tr('预设按摄影师的喜爱程度排序。选择一款即可自动填入下方的文件、起点和长度。'))
+            return
+        source = {key: html.escape(value, quote=True) for key, value in sound['source'].items()}
+        self.sound_credit.setText(tr('“%(title)s”，作者 %(author)s，%(licence)s，来自 <a href="%(url)s">Freesound</a>。') % source)
 
     def recipe_page(self):
         from . import recipes
