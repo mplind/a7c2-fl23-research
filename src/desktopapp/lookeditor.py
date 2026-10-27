@@ -82,7 +82,7 @@ class Operation(W.QFrame):
         fit=file_fit(path)
         self.fit.setText(fit_text(fit));self.fit.setProperty('warning',fit['rating'] in CONCERNS)
         self.fit.style().unpolish(self.fit);self.fit.style().polish(self.fit);self.fit.show()
-        self.preview.setEnabled(fit['rating']!='invalid');self.changed.emit()
+        self.preview.setEnabled(fit['preview']);self.changed.emit()
 
     def value(self):
         value=dict(slot=self.slot.currentData(),action='restore' if self.action.currentIndex()==0 else 'write')

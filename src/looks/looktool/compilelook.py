@@ -7,6 +7,10 @@ import shutil
 import sys
 
 
+# The bundled measured response every compile and preview uses unless told otherwise.
+DEFAULT_CALIBRATION = Path(__file__).resolve().parents[3] / 'calibration/a7c2-2.01.virtual.npz'
+
+
 def save(path, value):
     path.write_text(json.dumps(value,ensure_ascii=False,indent=2,allow_nan=False)+'\n',encoding='utf-8')
 
@@ -156,7 +160,7 @@ def main(argv=None):
     root=Path(__file__).resolve().parents[3]
     config_path=args.config or root/'a7look-compiler.local.json'
     config=json.loads(config_path.read_text(encoding='utf-8')) if config_path.exists() else {}
-    calibration=args.calibration or Path(config.get('calibration',root/'calibration/a7c2-2.01.virtual.npz'))
+    calibration=args.calibration or Path(config.get('calibration',DEFAULT_CALIBRATION))
     if not args.calibration and not calibration.is_absolute():calibration=config_path.parent/calibration
     if not calibration.is_file():parser.error('The measured A7C2 response snapshot is missing')
     if len(args.name.encode('utf-8'))>63 or not args.name or any(ord(c)<32 for c in args.name):parser.error('Name must use 1..63 UTF-8 bytes')

@@ -49,11 +49,12 @@ def document_fit(document):
 
 
 def file_fit(path):
+    """document_fit of the file plus whether it can be previewed (it carries the fitted native controls)."""
     try:
         document = lookfile.read(path)
     except (OSError, ValueError) as exc:
-        return {'rating': 'invalid', 'mae': None, 'p95': None, 'error': str(exc)}
-    return document_fit(document)
+        return {'rating': 'invalid', 'mae': None, 'p95': None, 'error': str(exc), 'preview': False}
+    return dict(document_fit(document), preview=lookfile.native_controls(document) is not None)
 
 
 def text(value):
@@ -81,7 +82,9 @@ def checked(entry, root):
     path = Path(root) / name
     if not path.is_file():
         raise FileNotFoundError('Film look %r file is missing: %s' % (label, path))
-    return dict(entry, notes=entry.get('notes', ''), path=path, fit=document_fit(lookfile.read(path)))
+    document = lookfile.read(path)
+    return dict(entry, notes=entry.get('notes', ''), path=path, fit=document_fit(document),
+                preview=lookfile.native_controls(document) is not None)
 
 
 def catalog(root=None):

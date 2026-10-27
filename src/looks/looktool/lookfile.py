@@ -5,6 +5,7 @@ an unsupported native photo stage or fit a supplied look again.
 """
 import base64
 import json
+import math
 from pathlib import Path
 from . import native
 
@@ -34,6 +35,22 @@ def validate(document):
         from .rawidentity import source_bytes
         source_bytes(document['raw_profile'])
     return table
+
+
+def metrics(document):
+    """The compiler's fit metrics; {} when the file carries none or the block is malformed."""
+    validation = document.get('validation')
+    value = validation.get('metrics') if isinstance(validation, dict) else None
+    return value if isinstance(value, dict) else {}
+
+
+def native_controls(document):
+    """The 17 fitted native controls a preview needs, or None when the file lacks them."""
+    controls = metrics(document).get('native_controls')
+    if isinstance(controls, list) and len(controls) == 17 and all(
+            isinstance(c, (int, float)) and not isinstance(c, bool) and math.isfinite(c) for c in controls):
+        return controls
+    return None
 
 
 def read(path):

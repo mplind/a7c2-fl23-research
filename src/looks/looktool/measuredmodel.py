@@ -4,6 +4,7 @@ No photographs, executable firmware, USB code or Python pickle is loaded.
 The snapshot is a measured approximation scoped to its acquisition WB/range.
 """
 import json
+from pathlib import Path
 import numpy as np
 from scipy.interpolate import RBFInterpolator
 from . import coupledfit
@@ -36,6 +37,7 @@ class Base:
 
 class Response:
     def __init__(self, path):
+        self.path=Path(path)
         with np.load(path,allow_pickle=False) as file:
             self.arrays={key:file[key] for key in file.files}
         self.metadata=json.loads(str(self.arrays['metadata']))

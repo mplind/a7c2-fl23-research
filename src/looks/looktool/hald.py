@@ -31,10 +31,9 @@ CLEAN = 1.0
 
 
 def lattice(level):
-    size = level ** 2
-    axis = np.linspace(0, 1, size)
-    blue, green, red = np.meshgrid(axis, axis, axis, indexing='ij')
-    return np.stack([red.ravel(), green.ravel(), blue.ravel()], 1)
+    """The (level^2)^3 colours of a HALD block, red varying fastest."""
+    from .references import lattice as cube_lattice
+    return cube_lattice(level ** 2)
 
 
 def identity(level=LEVEL):

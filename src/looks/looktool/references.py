@@ -14,6 +14,14 @@ from scipy.interpolate import CubicSpline
 from .color import rows, rgb_to_hsv, hsv_to_rgb, srgb_encode, srgb_decode, prophoto_to_srgb
 
 
+def lattice(size):
+    """Every colour of a size^3 cube lattice, red varying fastest, so lattice(n).reshape(n, n, n, 3)
+    lines up with Cube.values[b, g, r]."""
+    axis = np.linspace(0, 1, size)
+    blue, green, red = np.meshgrid(axis, axis, axis, indexing="ij")
+    return np.stack([red.ravel(), green.ravel(), blue.ravel()], 1)
+
+
 def fingerprint(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 

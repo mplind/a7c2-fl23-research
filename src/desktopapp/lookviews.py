@@ -31,6 +31,15 @@ def fit_help():
     return tr('MAE／P95：留出颜色上的 8 位 RGB 误差。良好＝不差于内置配对库的中位数；一般＝不差于其中最差的已收录外观；较差＝超出该范围。')
 
 
+def colour_note(colour):
+    """How the photo's colours were handled, as a sentence to append to the status (or '')."""
+    if colour is None:
+        return ''
+    if colour['kind'] == 'converted':
+        return ' ' + tr('照片已从 %s 转换为 sRGB。') % colour['profile']
+    return ' ' + tr('照片标记为非 sRGB（可能是 Adobe RGB）但没有内嵌配置文件，已按 sRGB 处理，颜色会有偏差。')
+
+
 class FilmLibraryDialog(W.QDialog):
     add_requested = QtCore.Signal(object, int)
     preview_requested = QtCore.Signal(str)
@@ -65,16 +74,24 @@ class FilmLibraryDialog(W.QDialog):
             licences.clicked.connect(lambda: QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(str(notices))))
             actions.addWidget(licences)
         close = W.QPushButton(tr('关闭')); close.clicked.connect(self.accept); actions.addWidget(close)
-        self.add.clicked.connect(lambda: self.add_requested.emit(self.selected(), self.slot.currentData()))
-        self.preview.clicked.connect(lambda: self.preview_requested.emit(str(self.selected()['path'])))
+        # Bound methods, not lambdas: a lambda capturing self keeps a closed dialog alive.
+        self.add.clicked.connect(self.request_add)
+        self.preview.clicked.connect(self.request_preview)
         self.list.currentRowChanged.connect(self.show_details)
         self.list.setCurrentRow(0)
 
     def selected(self):
         return self.looks[self.list.currentRow()]
 
+    def request_add(self):
+        self.add_requested.emit(self.selected(), self.slot.currentData())
+
+    def request_preview(self):
+        self.preview_requested.emit(str(self.selected()['path']))
+
     def show_details(self, row):
         look = self.looks[row]; source = look['source']; fit = look['fit']
+        self.preview.setEnabled(look['preview'])
         rows = [(tr('来源'), '%s · %s' % (html.escape(source['project']), html.escape(source['author']))),
                 (tr('网址'), '<a href="%s">%s</a>' % (html.escape(source['url'], quote=True), html.escape(source['url']))),
                 (tr('许可'), html.escape(source['licence'])),
@@ -119,8 +136,28 @@ class Panel(W.QWidget):
         self.fit()
 
 
+class RenderJob:
+    """One preview render on a daemon thread. It holds no Qt object: a dialog closed mid-render
+    is released on the GUI thread, and the render finishes on its own with its result dropped."""
+
+    def __init__(self, render, document, photo, output, cache):
+        self.result = None
+        self.thread = threading.Thread(target=self.run, args=(render, document, photo, output, cache),
+                                       name='a7c2-preview', daemon=True)
+        self.thread.start()
+
+    def run(self, render, document, photo, output, cache):
+        try:
+            self.result = ('done', render(document, photo, output, cache=cache))
+        except Exception as exc:  # reported in the dialog; the GUI must survive any render failure
+            self.result = ('failed', exc)
+
+    def done(self):
+        return not self.thread.is_alive()
+
+
 class PreviewDialog(W.QDialog):
-    """Renders on a background thread; the model work cannot be cancelled, so a closed dialog just drops the result."""
+    """Renders through a RenderJob; the model work cannot be cancelled, so a closed dialog just drops the result."""
 
     def __init__(self, look, *, cache, parent=None, render=None):
         super().__init__(parent)
@@ -130,7 +167,7 @@ class PreviewDialog(W.QDialog):
         self.render = render
         self.workspace = tempfile.TemporaryDirectory(prefix='a7c2-preview-')
         self.output = Path(self.workspace.name) / 'preview.png'
-        self.thread = None; self.result = None
+        self.job = None
         self.setWindowTitle(tr('预览：') + self.document['name'])
         self.resize(980, 520)
         box = W.QVBoxLayout(self)
@@ -153,7 +190,7 @@ class PreviewDialog(W.QDialog):
         self.timer = QtCore.QTimer(self); self.timer.setInterval(100); self.timer.timeout.connect(self.poll)
 
     def busy(self):
-        return self.thread is not None
+        return self.job is not None
 
     def choose_photo(self):
         path = W.QFileDialog.getOpenFileName(self, tr('选择照片'), '', tr('照片 (*.jpg *.jpeg *.png *.tif *.tiff)'))[0]
@@ -167,33 +204,30 @@ class PreviewDialog(W.QDialog):
         if render is None:
             from looktool import lookpreview
             render = lookpreview.render
-        cache = self.cache
-        def work():
-            try:
-                self.result = ('done', render(self.document, photo, self.output, cache=cache))
-            except Exception as exc:  # reported in the dialog; the GUI must survive any render failure
-                self.result = ('failed', exc)
-        self.result = None
         self.choose.setEnabled(False); self.save.setEnabled(False); self.progress.show()
         self.status.setText(tr('正在生成预览……每款外观首次预览约需一分钟，之后很快。'))
-        self.thread = threading.Thread(target=work, name='a7c2-preview', daemon=True)
-        self.thread.start(); self.timer.start()
+        self.job = RenderJob(render, self.document, photo, self.output, self.cache)
+        self.timer.start()
 
     def poll(self):
-        if self.thread is None or self.thread.is_alive():
+        if self.job is None or not self.job.done():
             return
-        self.timer.stop(); self.thread = None
+        outcome, value = self.job.result
+        self.timer.stop(); self.job = None
         self.progress.hide(); self.choose.setEnabled(True)
-        outcome, value = self.result
         if outcome == 'failed':
             self.status.setText(tr('预览失败：') + str(value))
             return
-        roles = {panel['role']: panel['pixels'] for panel in value['panels']}
+        panels = {panel['role']: panel for panel in value['panels']}
         for role, panel in self.panels.items():
-            panel.setVisible(role in roles)
-            if role in roles:
-                panel.show_pixels(roles[role])
-        self.status.setText(tr('预览完成。') if 'source' in roles else tr('预览完成。此外观没有内嵌原始 LUT，只显示机内预测。'))
+            panel.setVisible(role in panels)
+            if role in panels:
+                panel.show_pixels(panels[role]['pixels'])
+        if 'source' in panels:
+            self.panels['source'].caption.setText(
+                tr('原外观（DCP）') if panels['source'].get('kind') == 'dcp' else tr('原外观（直接套用 LUT）'))
+        text = tr('预览完成。') if 'source' in panels else tr('预览完成。此外观没有内嵌原始 LUT，只显示机内预测。')
+        self.status.setText(text + colour_note(value.get('colour')))
         self.save.setEnabled(True)
 
     def save_image(self):

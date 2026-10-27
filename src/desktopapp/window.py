@@ -578,8 +578,9 @@ class Window(W.QMainWindow):
         concerns=fit_concerns(looks)
         if not concerns:return True
         lines=[tr('自订 %s：%s（拟合%s）')%(c['slot'],c.get('name') or Path(c['path']).stem,rating_word(c['fit']['rating'])) for c in concerns]
+        advice=tr('\n可以预览的外观，建议先预览。') if any(c['fit'].get('preview') for c in concerns) else ''
         answer=W.QMessageBox.question(self,tr('拟合提醒'),
-            tr('以下外观在机内的拟合较差或未知，相机效果可能与原外观明显不同。建议先预览。\n')+'\n'.join(lines)+tr('\n仍要继续？'),
+            tr('以下外观在机内的拟合较差或未知，相机效果可能与原外观明显不同。\n')+'\n'.join(lines)+advice+tr('\n仍要继续？'),
             W.QMessageBox.Yes|W.QMessageBox.Cancel,W.QMessageBox.Cancel)
         return answer==W.QMessageBox.Yes
 
@@ -817,6 +818,7 @@ class Window(W.QMainWindow):
         dialog.exec()
 
     def compiler_dialog(self):
+        from looktool.compilelook import DEFAULT_CALIBRATION
         dialog = W.QDialog(self)
         dialog.setWindowTitle(tr('生成 A7Look'))
         dialog.resize(760, 370)
@@ -835,7 +837,7 @@ class Window(W.QMainWindow):
         self.field(form, 'compile_name', tr('外观名称'))
         self.field(form, 'compile_output', tr('输出 A7Look'), kind='save', filter='A7Look (*.a7look)')
         self.field(form, 'compile_model', tr('响应文件'), kind='file', filter=tr('Response (*.npz)'),
-                   value=str(ROOT / 'calibration/a7c2-2.01.virtual.npz'))
+                   value=str(DEFAULT_CALIBRATION))
         run = W.QPushButton(tr('开始生成'))
         run.clicked.connect(lambda: (dialog.accept(), self.launch('compile_look', {
             'source': self.text('compile_source'), 'name': self.text('compile_name'),

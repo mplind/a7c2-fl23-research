@@ -298,5 +298,88 @@ def test_restore_rows_are_not_fit_checked(window, tmp_path):
         ui.look_button.click()
     tr = i18n.tr
     assert asked.call_args.args[1:3] == (tr('拟合提醒'),
-        tr('以下外观在机内的拟合较差或未知，相机效果可能与原外观明显不同。建议先预览。\n') +
-        tr('自订 %s：%s（拟合%s）') % (2, 'Weak', tr('较差')) + tr('\n仍要继续？'))
+        tr('以下外观在机内的拟合较差或未知，相机效果可能与原外观明显不同。\n') +
+        tr('自订 %s：%s（拟合%s）') % (2, 'Weak', tr('较差')) + tr('\n可以预览的外观，建议先预览。') + tr('\n仍要继续？'))
+
+
+def test_preview_needs_the_fitted_native_controls(app, tmp_path):
+    editor = LookEditor()
+    without = write_row(editor, look_file(tmp_path / 'old.a7look', mae=2.0, p95=7.0, controls=False), 1)
+    unknown = write_row(editor, look_file(tmp_path / 'unknown.a7look'), 2)
+    assert not without.preview.isEnabled() and unknown.preview.isEnabled()
+
+
+def test_the_fit_warning_suggests_a_preview_only_when_one_is_possible(window, tmp_path):
+    ui = window()
+    write_row(ui.look_editor, look_file(tmp_path / 'old.a7look', controls=False), 3)
+    with patch.object(W.QMessageBox, 'question', return_value=W.QMessageBox.Cancel) as asked, \
+            patch.object(jobs, 'new_job'):
+        ui.look_button.click()
+    assert asked.call_args.args[1] == i18n.tr('拟合提醒')
+    assert i18n.tr('\n可以预览的外观，建议先预览。') not in asked.call_args.args[2]
+
+
+def test_library_preview_follows_the_selected_look(app, tmp_path):
+    looks = library(tmp_path)
+    looks[1] = dict(looks[1], preview=False)
+    dialog = FilmLibraryDialog(looks)
+    dialog.list.setCurrentRow(0)
+    assert dialog.preview.isEnabled()
+    dialog.list.setCurrentRow(1)
+    assert not dialog.preview.isEnabled()
+
+
+def test_a_closed_library_dialog_is_released(app, tmp_path):
+    import gc, weakref
+    dialog = FilmLibraryDialog(library(tmp_path))
+    ref = weakref.ref(dialog)
+    del dialog
+    gc.collect()
+    assert ref() is None
+
+
+def test_a_preview_closed_mid_render_is_released_on_the_gui_thread(app, tmp_path):
+    # Closing during a render used to leave the render thread holding the dialog's last
+    # reference, so Qt destroyed the dialog and its timer on that thread and crashed.
+    import gc, threading, weakref
+    started, release = threading.Event(), threading.Event()
+    def slow(document, image, output, **_):
+        started.set()
+        release.wait(10)
+        return fake_render(document, image, output)
+    dialog = PreviewDialog(look_file(tmp_path / 'look.a7look', mae=2.0, p95=7.0), cache=tmp_path / 'cache', render=slow)
+    dialog.start(photo(tmp_path / 'shot.png'))
+    assert started.wait(5)
+    thread = next(t for t in threading.enumerate() if t.name == 'a7c2-preview')
+    ref = weakref.ref(dialog)
+    del dialog
+    gc.collect()
+    kept = ref()
+    try:
+        assert kept is None
+    finally:
+        release.set()
+        thread.join(5)
+        del kept  # if the render thread kept it, drop it here on the GUI thread, never there
+
+
+def test_a_dcp_source_panel_is_captioned_as_a_dcp(app, english, tmp_path):
+    def dcp_render(document, image, output, **_):
+        result = fake_render(document, image, output)
+        result['panels'].insert(1, dict(role='source', kind='dcp', pixels=result['panels'][0]['pixels']))
+        return result
+    dialog = PreviewDialog(look_file(tmp_path / 'look.a7look'), cache=tmp_path / 'cache', render=dcp_render)
+    dialog.start(photo(tmp_path / 'shot.png')); wait(dialog)
+    assert dialog.panels['source'].caption.text() == 'Original look (DCP)'
+
+
+@pytest.mark.parametrize('colour,expected', [
+    (dict(kind='converted', profile='Adobe RGB (1998)'), 'converted from Adobe RGB (1998) to sRGB'),
+    (dict(kind='uncalibrated'), 'treated as sRGB'),
+])
+def test_the_preview_reports_how_the_photo_colours_were_handled(app, english, tmp_path, colour, expected):
+    def coloured(document, image, output, **_):
+        return dict(fake_render(document, image, output), colour=colour)
+    dialog = PreviewDialog(look_file(tmp_path / 'look.a7look'), cache=tmp_path / 'cache', render=coloured)
+    dialog.start(photo(tmp_path / 'shot.png')); wait(dialog)
+    assert expected in dialog.status.text()
