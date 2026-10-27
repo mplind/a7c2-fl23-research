@@ -138,7 +138,8 @@ class IntegrationTests(unittest.TestCase):
     def test_unknown_sony_pid_is_reported_without_driver_replacement(self):
         row={'id':r'USB\VID_054C&PID_0D68\private-instance','name':'USB Input Device',
              'description':'Unknown Sony interface','status':'OK','service':'HidUsb'}
-        with patch.object(drivers,'scan',return_value={'devices':[row],'errors':[]}), \
+        with patch('desktopapp.platforms.usb_drivers.sys.platform', 'win32'), \
+             patch.object(drivers,'scan',return_value={'devices':[row],'errors':[]}), \
              patch.object(drivers,'installer') as installer:
             with self.assertRaisesRegex(RuntimeError,'PID_0D68'):
                 drivers.install({'pid':'0e8a'},self.root)

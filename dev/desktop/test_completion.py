@@ -120,7 +120,8 @@ class CompletionTests(unittest.TestCase):
         self.state['previous_errors'] = [dict(error='historic EBUSY')]
         self.state['private_evidence'] = str(self.setup / 'failed')
         job = jobs.new_job('setup_all', {})
-        with patch.object(worker, 'run', return_value=self.state):
+        with patch.object(worker, 'run', return_value=self.state), \
+                patch('desktopapp.platforms.macos_authorization.required', return_value=False):
             self.assertEqual(worker.execute_request(job / 'request.private.json'), 0)
         log = (job / 'worker.log').read_text(encoding='utf-8')
         self.assertNotIn('historic EBUSY', log)
