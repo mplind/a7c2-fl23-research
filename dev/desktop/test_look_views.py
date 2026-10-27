@@ -383,3 +383,69 @@ def test_the_preview_reports_how_the_photo_colours_were_handled(app, english, tm
     dialog = PreviewDialog(look_file(tmp_path / 'look.a7look'), cache=tmp_path / 'cache', render=coloured)
     dialog.start(photo(tmp_path / 'shot.png')); wait(dialog)
     assert expected in dialog.status.text()
+
+
+def unreadable(tmp_path):
+    from test_looklibrary import malformed_look
+    return malformed_look(tmp_path / 'bad.a7look', lambda d: d.update(raw_profile='x'))
+
+
+def test_choosing_an_unreadable_look_updates_the_whole_row(app, english, tmp_path):
+    editor = LookEditor()
+    row = write_row(editor, look_file(tmp_path / 'good.a7look', mae=2.0, p95=7.0))
+    changes = []
+    editor.changed.connect(lambda: changes.append(True))
+    row.set_file(str(unreadable(tmp_path)))
+    assert row.fit.text().startswith('Cannot read this A7Look: ') and row.fit.property('warning')
+    assert not row.preview.isEnabled() and row.file.text() == 'bad.a7look' and changes
+
+
+def test_a_long_fit_message_is_shortened_with_the_full_text_in_its_tooltip(app, tmp_path):
+    editor = LookEditor()
+    row = write_row(editor, tmp_path / ('missing-' + 'x' * 200 + '.a7look'))
+    assert len(row.fit.text()) <= 120 and row.fit.text().endswith('…')
+    assert ('x' * 200) in row.fit.toolTip()
+
+
+def test_previewing_an_unreadable_look_warns_instead_of_raising(window, tmp_path):
+    ui = window()
+    with patch.object(W.QMessageBox, 'warning') as warned, patch('desktopapp.lookviews.PreviewDialog.exec') as shown:
+        ui.preview_look(str(unreadable(tmp_path)))
+    warned.assert_called_once(); shown.assert_not_called()
+
+
+def test_a_library_look_replaces_the_slots_custom_name(window, tmp_path):
+    ui = window()
+    first, second = library(tmp_path)
+    row = ui.look_editor.add_row(4)
+    row.action.setCurrentIndex(1); row.set_file(str(first['path'])); row.name.setText('Mine')
+    assert ui.add_library_look(second, 4)
+    assert ui.look_editor.values() == [dict(slot=4, action='write', path=str(second['path']), name='')]
+
+
+def test_one_click_setup_refuses_an_unreadable_look_before_any_prompt(window, tmp_path):
+    ui = window()
+    ui.setup_presets.setChecked(False)
+    ui.fields['setup_look_2'].setText(str(tmp_path / 'moved-away.a7look'))
+    with patch.object(ui, 'drivers_first', side_effect=AssertionError('driver prompt shown')), \
+            patch.object(W.QMessageBox, 'question') as asked, patch.object(W.QMessageBox, 'warning') as warned, \
+            patch.object(jobs, 'new_job') as new:
+        ui.launch('setup_all', ui.setup_args())
+    asked.assert_not_called(); new.assert_not_called()
+    warned.assert_called_once()
+    assert 'moved-away.a7look' in warned.call_args.args[2]
+
+
+PRESETS = Path(__file__).resolve().parents[2] / 'desktop-assets/presets/default-six-v1'
+
+
+@pytest.mark.skipif(not PRESETS.is_dir(), reason='the built-in six are a distribution asset')
+def test_one_click_setup_fit_checks_the_built_in_six(window):
+    ui = window()
+    ui.setup_presets.setChecked(True)
+    checked = []
+    with patch('desktopapp.looklibrary.fit_concerns', side_effect=lambda looks: checked.extend(looks) or []), \
+            patch.object(ui, 'drivers_first', return_value=True), \
+            patch.object(W.QMessageBox, 'question', return_value=W.QMessageBox.Cancel), patch.object(jobs, 'new_job'):
+        ui.launch('setup_all', ui.setup_args())
+    assert sorted(look['slot'] for look in checked) == [1, 2, 3, 4, 5, 6]

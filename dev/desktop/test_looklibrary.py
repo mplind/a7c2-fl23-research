@@ -4,6 +4,7 @@ from pathlib import Path
 import sys
 import pytest
 from desktopapp import looklibrary
+from looktool import rawidentity
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'dev/desktop'))
@@ -12,9 +13,9 @@ from looksamples import look_file
 
 
 @pytest.mark.parametrize('mae,p95,rating', [
-    (2.39, 8.02, 'good'),      # the bundled library's median look
+    (2.39, 8.03, 'good'),      # the bundled library's median look, rounded outward
     (2.40, 8.00, 'fair'),
-    (2.00, 8.03, 'fair'),
+    (2.00, 8.04, 'fair'),
     (4.82, 14.76, 'fair'),     # the worst accepted bundled look (Classic Negative)
     (4.83, 10.00, 'poor'),
     (3.00, 14.77, 'poor'),
@@ -182,3 +183,55 @@ def test_fit_concerns_name_only_poor_unknown_and_unreadable_looks(tmp_path):
     concerns = looklibrary.fit_concerns([dict(slot=n, path=str(p)) for n, p in
                                          enumerate((good, fair, poor, unknown, tmp_path / 'missing.a7look'), 1)])
     assert [(c['slot'], c['fit']['rating']) for c in concerns] == [(3, 'poor'), (4, 'unknown'), (5, 'invalid')]
+
+
+def malformed_look(path, change):
+    look_file(path, mae=2.0, p95=7.0)
+    document = json.loads(path.read_text())
+    change(document)
+    path.write_text(json.dumps(document))
+    return path
+
+
+@pytest.mark.parametrize('change', [
+    lambda d: d.update(raw_profile='x'),                                          # AttributeError
+    lambda d: d.update(raw_profile={'schema': rawidentity.SCHEMA, 'id': 'a' * 32}),  # KeyError
+    lambda d: d.update(raw_profile={'schema': rawidentity.SCHEMA, 'id': 'a' * 32, 'dcp_base64': 5}),  # TypeError
+])
+def test_any_unreadable_look_is_rated_invalid_rather_than_raising(tmp_path, change):
+    result = looklibrary.file_fit(malformed_look(tmp_path / 'bad.a7look', change))
+    assert result['rating'] == 'invalid' and result['error'] and result['preview'] is False
+
+
+@pytest.mark.parametrize('value', [True, float('nan'), float('inf'), -1, 10 ** 400, '2.0', None])
+def test_a_metric_that_is_not_a_finite_non_negative_number_counts_as_unknown(tmp_path, value):
+    path = malformed_look(tmp_path / 'odd.a7look',
+                          lambda d: d['validation']['metrics']['virtual_heldout_validation_replica'].update(RGB_MAE_8bit=value))
+    assert looklibrary.file_fit(path)['rating'] == 'unknown'
+
+
+@pytest.mark.parametrize('broken', [
+    {k: v for k, v in entry().items() if k != 'modification'},
+    entry(name='  '),
+    entry(shareable='yes'),
+    entry(notes=5),
+])
+def test_catalog_rejects_incomplete_or_mistyped_entries(tmp_path, broken):
+    folder = write_catalog(tmp_path / 'library', [broken])
+    look_file(folder / 'portra400.a7look', mae=3.0, p95=9.0)
+    with pytest.raises(ValueError):
+        looklibrary.catalog(folder)
+
+
+PROFILE_LIBRARY = ROOT / 'desktop-assets/profile-library-v1'
+
+
+@pytest.mark.skipif(not PROFILE_LIBRARY.is_dir(), reason='the paired profile library is a distribution asset')
+def test_the_thresholds_rate_the_libraries_own_median_good_and_its_worst_fair():
+    fits = [looklibrary.file_fit(path) for path in sorted(PROFILE_LIBRARY.rglob('*.a7look'))]
+    mae = sorted(fit['mae'] for fit in fits); p95 = sorted(fit['p95'] for fit in fits)
+    median = (mae[len(mae) // 2], p95[len(p95) // 2])
+    assert looklibrary.rating(*median) == 'good'
+    assert looklibrary.rating(mae[-1], p95[-1]) == 'fair'
+    assert all(fit['rating'] in ('good', 'fair') for fit in fits)
+    assert looklibrary.GOOD[0] - median[0] < .01 and looklibrary.GOOD[1] - median[1] < .01

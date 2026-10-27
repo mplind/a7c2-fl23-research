@@ -5,6 +5,8 @@ from PySide6 import QtCore, QtGui, QtWidgets as W
 from .lookviews import fit_help, fit_text
 from .theme import COLORS, EDITOR as STYLE
 
+FIT_CHARS = 120  # two lines of the fit label at the window's minimum width; the tooltip has the rest
+
 
 def label(text, *, muted=False):
     result=W.QLabel(text)
@@ -57,7 +59,7 @@ class Operation(W.QFrame):
         self.name=W.QLineEdit();self.name.setPlaceholderText(tr('留空沿用文件内名称'))
         files=W.QHBoxLayout();files.setSpacing(6);files.addWidget(self.browse);files.addWidget(self.preview)
         grid.addWidget(self.file,1,0);grid.addLayout(files,1,1);grid.addWidget(self.name,1,2)
-        self.fit=label('',muted=True);self.fit.setWordWrap(True);self.fit.setToolTip(fit_help());self.fit.hide()
+        self.fit=label('',muted=True);self.fit.setWordWrap(True);self.fit.hide()
         grid.addWidget(self.fit,2,0,1,3)
         grid.setColumnStretch(0,3);grid.setColumnStretch(2,2);self.details.addWidget(write)
         self.action.currentIndexChanged.connect(self.update_mode)
@@ -78,9 +80,10 @@ class Operation(W.QFrame):
 
     def set_file(self,path):
         from .looklibrary import file_fit,CONCERNS
+        fit=file_fit(path);text=fit_text(fit)  # never raises, so the whole row updates together
         self.file_path=str(path);self.file.setText(Path(path).name);self.file.setToolTip(str(path))
-        fit=file_fit(path)
-        self.fit.setText(fit_text(fit));self.fit.setProperty('warning',fit['rating'] in CONCERNS)
+        self.fit.setText(text if len(text)<=FIT_CHARS else text[:FIT_CHARS-1]+'…')
+        self.fit.setToolTip(text+'\n\n'+fit_help());self.fit.setProperty('warning',fit['rating'] in CONCERNS)
         self.fit.style().unpolish(self.fit);self.fit.style().polish(self.fit);self.fit.show()
         self.preview.setEnabled(fit['preview']);self.changed.emit()
 

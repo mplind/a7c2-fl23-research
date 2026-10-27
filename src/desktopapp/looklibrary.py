@@ -10,11 +10,16 @@ KINDS = ('negative', 'slide', 'cine', 'style')
 REQUIRED = ('id', 'name', 'kind', 'file', 'source', 'modification', 'shareable')
 SOURCE = ('project', 'author', 'url', 'licence')
 # Held-out fit (8-bit RGB levels) of the accepted paired library bundled with the
-# app, 15 colour looks: median MAE 2.39 / P95 8.02; worst accepted (Classic
-# Negative) 4.82 / 14.76. A look at or inside the median is good, at or inside the
-# worst accepted look is fair, anything beyond it is poor.
-GOOD = (2.39, 8.02)
+# app, 15 colour looks: median MAE 2.387 / P95 8.023; worst accepted (Classic
+# Negative) 4.819 / 14.760. A look at or inside the median is good, at or inside the
+# worst accepted look is fair, anything beyond it is poor. Rounded outward, so the
+# library's own median rates good and its worst fair; a test checks this against the
+# library whenever it is present.
+GOOD = (2.39, 8.03)
 ACCEPTED = (4.82, 14.76)
+# What reading a look can raise: lookfile.validate trips KeyError, TypeError or
+# AttributeError on a malformed embedded profile, besides ValueError and OSError.
+READ_ERRORS = (OSError, ValueError, KeyError, TypeError, AttributeError)
 
 
 def location():
@@ -37,7 +42,12 @@ def held_out(document):
 
 
 def measurement(value):
-    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and value >= 0
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return False
+    try:
+        return math.isfinite(value) and value >= 0
+    except OverflowError:  # an integer too large for a float
+        return False
 
 
 def document_fit(document):
@@ -52,8 +62,8 @@ def file_fit(path):
     """document_fit of the file plus whether it can be previewed (it carries the fitted native controls)."""
     try:
         document = lookfile.read(path)
-    except (OSError, ValueError) as exc:
-        return {'rating': 'invalid', 'mae': None, 'p95': None, 'error': str(exc), 'preview': False}
+    except READ_ERRORS as exc:
+        return {'rating': 'invalid', 'mae': None, 'p95': None, 'error': str(exc) or type(exc).__name__, 'preview': False}
     return dict(document_fit(document), preview=lookfile.native_controls(document) is not None)
 
 

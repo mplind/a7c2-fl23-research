@@ -537,7 +537,7 @@ class Window(W.QMainWindow):
         from .lookviews import FilmLibraryDialog
         try:
             looks=looklibrary.catalog()
-        except (OSError,ValueError) as exc:
+        except looklibrary.READ_ERRORS as exc:
             W.QMessageBox.warning(self,tr('胶片外观库无法读取'),str(exc));return
         if not looks:
             W.QMessageBox.information(self,tr('胶片外观库'),tr('此安装没有附带胶片外观库。'));return
@@ -550,27 +550,28 @@ class Window(W.QMainWindow):
         """Write the library look to slot: update that slot's row, or add one."""
         if not self.look_editor.isEnabled():
             W.QMessageBox.information(self,tr('清单已锁定'),tr('上次操作尚未完成或正在运行，暂时不能修改清单。'));return False
+        # A slot without a row is always free, so add_row cannot run out of slots here.
         row=next((r for r in self.look_editor.rows if r.slot.currentData()==slot),None) or self.look_editor.add_row(slot)
-        if row is None:
-            W.QMessageBox.information(self,tr('清单已满'),tr('六个槽位都已在清单中，请先移除一项。'));return False
-        row.action.setCurrentIndex(1);row.set_file(look['path'])
+        row.action.setCurrentIndex(1);row.set_file(look['path']);row.name.clear()  # the old file's custom name does not apply
         return True
 
     def preview_look(self,path):
+        from .looklibrary import READ_ERRORS
         from .lookviews import PreviewDialog
         try:
             dialog=PreviewDialog(path,cache=data_root()/'preview-cache',parent=self)
-        except (OSError,ValueError) as exc:
+        except READ_ERRORS as exc:
             W.QMessageBox.warning(self,tr('无法预览此外观'),str(exc));return
         dialog.exec()
 
-    def fit_checked_looks(self,action,arguments):
-        """The looks a fresh write would install (slot, path, name), for the fit warning."""
-        if action=='direct_looks_import':
-            return [r for r in arguments.get('operations',[]) if r.get('action')=='write']
-        if action=='setup_all' and not Path(arguments['workspace'],'setup.private.json').is_file():
-            return arguments.get('options',{}).get('looks',[])
-        return []
+    def setup_looks(self,arguments):
+        """The looks a fresh one-click setup would install, the built-in six expanded, read and
+        checked exactly as the worker will; raises on a missing or unreadable file."""
+        from .worker import setup_runtime
+        setup_runtime()
+        from looktool import bundle
+        options,_=bundle.documents(presets.resolve(arguments.get('options',{})))
+        return options['looks']
 
     def confirm_fit(self,looks):
         from .looklibrary import fit_concerns
@@ -891,6 +892,13 @@ class Window(W.QMainWindow):
         if self.process is not None:
             return
         factory_finished = False
+        from .looklibrary import READ_ERRORS
+        fit_looks = []  # looks a fresh write would install, for the fit warning
+        if action == 'setup_all' and not Path(arguments['workspace'], 'setup.private.json').is_file():
+            try:
+                fit_looks = self.setup_looks(arguments)
+            except READ_ERRORS as exc:  # before any driver, fit, power or administrator prompt
+                W.QMessageBox.warning(self, tr('请检查所选外观'), str(exc)); return
         if action == 'setup_all' and not self.drivers_first(arguments):
             return
         if action=='direct_looks_import' and arguments.get('failed_workspace'):
@@ -902,7 +910,8 @@ class Window(W.QMainWindow):
                 from .lookbatch import options
                 chosen=options(arguments.get('operations',arguments.get('looks',[])))
                 arguments=dict(arguments,operations=chosen['slot_operations'])
-            except (ValueError,OSError,KeyError,TypeError) as exc:
+                fit_looks=[r for r in arguments['operations'] if r['action']=='write']
+            except READ_ERRORS as exc:
                 W.QMessageBox.warning(self,tr('请检查操作清单'),str(exc));return
         if action == 'sound_audition':
             from .actions.sound import has_conversion
@@ -947,7 +956,7 @@ class Window(W.QMainWindow):
                 W.QMessageBox.Yes | W.QMessageBox.Cancel, W.QMessageBox.Cancel)
             if answer != W.QMessageBox.Yes:
                 return
-        if not self.confirm_fit(self.fit_checked_looks(action, arguments)):
+        if fit_looks and not self.confirm_fit(fit_looks):
             return
         writing = action in jobs.POWER_ACTIONS
         if writing:
