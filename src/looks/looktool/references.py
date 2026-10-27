@@ -58,6 +58,17 @@ class Cube:
         self.values = values.reshape(size, size, size, 3)  # red varies fastest in .cube
         self.sha256 = fingerprint(path)
 
+    @classmethod
+    def from_values(cls, values):
+        """An in-memory cube over the 0..1 domain; values[b, g, r] like a parsed .cube."""
+        values = np.asarray(values, dtype=float)
+        if values.ndim != 4 or values.shape[3] != 3 or not values.shape[0] == values.shape[1] == values.shape[2] >= 2:
+            raise ValueError("Cube values must have shape (n, n, n, 3) with n >= 2")
+        cube = cls.__new__(cls)
+        cube.minimum, cube.maximum = np.zeros(3), np.ones(3)
+        cube.values, cube.sha256 = values, None
+        return cube
+
     def sample(self, rgb):
         a = rows(rgb)
         n = len(self.values)
