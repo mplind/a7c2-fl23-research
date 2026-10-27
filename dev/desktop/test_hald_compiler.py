@@ -37,6 +37,7 @@ def test_a_tiff_source_is_converted_to_a_cube_and_compiled_as_st_srgb(tmp_path, 
     assert argv[0].endswith('Kodak Gold.cube') and argv[argv.index('--input-space') + 1] == 'sony-st-srgb'
     assert np.allclose(seen['cube'].reshape(-1, 3), hald.lattice(LEVEL) ** 1.2, atol=1e-5)
     assert result['hald']['size'] == LEVEL ** 2 and result['output'] == str(tmp_path / 'gold.a7look')
+    assert 'output' not in result['hald']  # the intermediate cube is gone once run() returns
     assert not os.path.exists(argv[0])  # the intermediate cube lives only for the compile
 
 
@@ -107,3 +108,51 @@ def test_the_compiler_dialog_is_tall_enough_for_its_contents(ui):
         ui.compiler_dialog()
     dialog = ui.findChildren(W.QDialog)[-1]
     assert dialog.height() >= dialog.sizeHint().height()
+
+
+def test_a_look_name_starting_with_a_dash_is_a_name_not_an_option(tmp_path, capsys):
+    (tmp_path / 'identity.cube').write_text('LUT_3D_SIZE 2\n' + ''.join(
+        '%d %d %d\n' % (r, g, b) for b in (0, 1) for g in (0, 1) for r in (0, 1)))
+    (tmp_path / 'exists.a7look').write_text('{}')  # stops compilelook right after its argument checks
+    with pytest.raises(SystemExit):
+        look_compiler.run(dict(source=str(tmp_path / 'identity.cube'), name='-Film',
+                               output=str(tmp_path / 'exists.a7look'), model='model.npz'))
+    error = capsys.readouterr().err
+    assert 'Output already exists' in error and 'expected one argument' not in error
+
+
+def test_stopping_a_hald_compile_removes_its_temporary_cube(tmp_path, monkeypatch):
+    import os, signal, tempfile
+    class Stopped(Exception):
+        pass
+    def fallback(signum, frame):  # only reached if run() installs no handler of its own
+        raise Stopped()
+    previous = signal.signal(signal.SIGTERM, fallback)
+    folders = []
+    def compile_main(argv):
+        folders.append(os.path.dirname(argv[0]))
+        os.kill(os.getpid(), signal.SIGTERM)  # what the window's Stop button sends the worker
+        return 0
+    monkeypatch.setattr('looktool.compilelook.main', compile_main)
+    try:
+        with pytest.raises(SystemExit):
+            look_compiler.run(dict(source=str(export(tmp_path / 'look.tif')), name='Gold',
+                                   output=str(tmp_path / 'gold.a7look'), model='model.npz'))
+        assert signal.getsignal(signal.SIGTERM) is fallback  # restored afterwards
+    finally:
+        signal.signal(signal.SIGTERM, previous)
+    assert folders and not os.path.exists(folders[0])
+
+
+def test_the_hald_check_shows_two_decimals_either_side_of_the_threshold(ui, tmp_path):
+    path = export(tmp_path / 'export.tif', lambda rgb: np.clip(rgb + 1.04 / 255, 0, 1))
+    with patch.object(W.QFileDialog, 'getOpenFileName', return_value=(str(path), '')), \
+            patch.object(W.QMessageBox, 'information') as told:
+        ui.check_hald_export()
+    assert '1.04' in told.call_args.args[2] or '1.03' in told.call_args.args[2]
+
+
+def test_the_format_guide_describes_hald_capture(ui):
+    from desktopapp.lookguide import TEXT
+    english = i18n.tr(TEXT)
+    assert 'HALD' in TEXT and 'HALD' in english and 'or images' not in english

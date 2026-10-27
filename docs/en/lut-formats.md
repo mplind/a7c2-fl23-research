@@ -13,7 +13,8 @@
 | S-Log2, HLG, Rec.2020, ACES, DaVinci Wide Gamut | Requires the appropriate color transforms first |
 | A CUBE labelled only “Sony”, “cinematic” or “Rec.709” | Ask its author for input/output primaries and transfer functions |
 | Standalone Adobe `.dcp` camera profile | Built-in offline DCP evaluation; no Lightroom required |
-| `.3dl`, `.look`, `.xmp` presets, images, 1D LUTs | Not direct inputs |
+| An identity HALD TIFF processed in DxO PhotoLab / FilmPack or another editor | Converted to a cube, then compiled ([see below](#capturing-a-look-with-a-hald-image)) |
+| `.3dl`, `.look`, `.xmp` presets, ordinary images, 1D LUTs | Not direct inputs |
 | A supported compiled `.a7look` | Select it directly on the import page |
 
 ST means the camera's Standard Creative Look used as the fitting basis, described here in sRGB RGB values. It is not S-Log3. A Log-to-Rec.709 LUT still expects Log input, even when its output looks normal. Applied to ST it can produce incorrect exposure, contrast and colors.
@@ -25,6 +26,12 @@ The CUBE extension does not reliably declare color spaces. The program cannot in
 Prefer an sRGB photo version from its author. Alternatively, export a complete **Sony ST / sRGB → required input transform → original LUT / desired look → required output transform → sRGB** chain from grading software. Ensure the transforms are actually included in the exported 3D LUT; renaming a file, changing a header or relabelling the export does not convert its colors. Spatial, temporal and masking operations cannot be represented by an ordinary 3D LUT.
 
 The advanced CLI compiler supports `--input-space "space name" --bridge "ST-to-input.cube"`. The bridge must actually map ST / sRGB values into the target LUT's input, and final output must remain sRGB. **The current GUI does not offer a Log bridge field.** A bridge does not guarantee reproduction of Sony's native Log processing or recovery of dynamic range already lost in a photo rendering.
+
+## Capturing a look with a HALD image
+
+Editors such as DxO PhotoLab with FilmPack can apply a film rendering but cannot export it as a LUT. In the converter, click **Save a HALD image for DxO…**, open that TIFF in the editor, apply the "No correction" preset and then only the film rendering (no grain, vignetting or sharpening), and export it at full size as an uncompressed 16-bit sRGB TIFF. Choose the exported TIFF as the converter's source.
+
+The image holds every colour of a 36³ lattice twice, one copy below the other. A pure colour transform gives both copies the same values, so grain, vignetting or any other position-dependent effect is detected and the export refused, as is an export that is not RGB or not sRGB. **Check a HALD export…** compares an export with the original: with no look applied it should match within about one 8-bit level, which confirms no automatic correction is switched on.
 
 ## CUBE structure
 

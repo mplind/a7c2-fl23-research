@@ -868,13 +868,13 @@ class Window(W.QMainWindow):
         path=W.QFileDialog.getOpenFileName(self,tr('选择导出的 HALD'),'',tr('TIFF (*.tif *.tiff)'))[0]
         if not path:return
         try:
-            image=hald.read(path);hald.to_cube(image);report=hald.check(image)
+            _,report=hald.accept(hald.read(path))
         except ValueError as exc:
             W.QMessageBox.warning(self,tr('HALD 导出有问题'),str(exc));return
         if report['identity_error_max']<=hald.CLEAN:
             text=tr('导出与原始 HALD 一致（最大差 %.2f 级）：没有开启任何自动校正。用同样的设置导出胶片外观。')%report['identity_error_max']
         else:
-            text=tr('两份副本一致，没有颗粒或暗角。导出与原始 HALD 最多相差 %.1f 级（已应用外观时属正常）。')%report['identity_error_max']
+            text=tr('两份副本一致，没有颗粒或暗角。导出与原始 HALD 最多相差 %.2f 级（已应用外观时属正常）。')%report['identity_error_max']
         W.QMessageBox.information(self,tr('HALD 检查结果'),text)
 
     def plugin_dialog(self):

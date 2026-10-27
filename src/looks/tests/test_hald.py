@@ -127,6 +127,49 @@ class HaldTests(unittest.TestCase):
             self.assertEqual(hald.main(['check', str(self.folder / 'id.tif')]), 0)
         self.assertLess(json.loads(checked.getvalue())['identity_error_max'], .01)
 
+    def test_a_planar_tiff_is_read_with_its_channels_last(self):
+        image = processed(hald.identity(LEVEL))
+        planar = np.ascontiguousarray(np.moveaxis(image, -1, 0))  # (3, H, W) per-channel planes
+        tifffile.imwrite(self.folder / 'planar.tif', planar, photometric='rgb', planarconfig='separate',
+                         metadata=None)
+        values = hald.to_cube(hald.read(self.folder / 'planar.tif'))
+        self.assertTrue(np.allclose(values.reshape(-1, 3), look(lattice()), atol=1e-4))
+
+    def test_a_tiff_that_is_not_rgb_is_refused(self):
+        cmyk = np.zeros((2 * LEVEL ** 3, LEVEL ** 3, 4), np.uint16)
+        tifffile.imwrite(self.folder / 'cmyk.tif', cmyk, photometric='separated')
+        with self.assertRaisesRegex(ValueError, 'RGB'):
+            hald.read(self.folder / 'cmyk.tif')
+
+    def test_an_export_in_another_colour_space_is_refused(self):
+        adobe = Path('/System/Library/ColorSync/Profiles/AdobeRGB1998.icc')
+        if not adobe.is_file():
+            self.skipTest('needs the macOS Adobe RGB profile')
+        tifffile.imwrite(self.folder / 'adobe.tif', processed(hald.identity(LEVEL)), photometric='rgb',
+                         iccprofile=adobe.read_bytes())
+        with self.assertRaisesRegex(ValueError, 'Adobe RGB.*sRGB'):
+            hald.read(self.folder / 'adobe.tif')
+        hald.write_identity(self.folder / 'srgb.tif', LEVEL)  # tagged sRGB is fine
+        self.assertEqual(hald.read(self.folder / 'srgb.tif').shape, (2 * LEVEL ** 3, LEVEL ** 3, 3))
+
+    def test_a_wrong_size_is_refused_from_the_header_before_the_pixels_are_converted(self):
+        tifffile.imwrite(self.folder / 'photo.tif', np.zeros((60, 40, 3), np.uint16), photometric='rgb')
+        with self.assertRaisesRegex(ValueError, 'resized or cropped'):
+            hald.read(self.folder / 'photo.tif')
+
+    def test_accept_returns_the_cube_with_the_report_it_was_checked_by(self):
+        values, report = hald.accept(processed(hald.identity(LEVEL)) / 65535.0)
+        self.assertEqual((values.shape, report['size'], report['copy_difference_max']), ((N, N, N, 3), N, 0))
+
+    def test_a_title_ending_in_a_backslash_still_parses(self):
+        hald.write_cube(self.folder / 'look.cube', hald.to_cube(hald.identity(LEVEL) / 65535.0), 'Film\\')
+        self.assertEqual(Cube(self.folder / 'look.cube').values.shape, (N, N, N, 3))
+
+    def test_the_conversion_report_names_no_intermediate_file(self):
+        tifffile.imwrite(self.folder / 'look.tif', processed(hald.identity(LEVEL)), photometric='rgb')
+        report = hald.convert(self.folder / 'look.tif', self.folder / 'look.cube')
+        self.assertNotIn('output', report)
+
 
 if __name__ == '__main__':
     unittest.main()
