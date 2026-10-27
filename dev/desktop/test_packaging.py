@@ -235,3 +235,17 @@ def test_main_still_refuses_hosts_other_than_windows_and_macos(tmp_path):
             patch.object(build.subprocess,'run') as run:
         with pytest.raises(RuntimeError,match='native Windows or macOS'):build.main()
     run.assert_not_called()
+
+
+def test_the_spec_bundles_every_qt_module_the_source_imports():
+    # The app's source ships as data, so PyInstaller never sees its imports: a Qt module
+    # missing here imports fine from the source tree and fails only in the packaged app.
+    import re
+    used = set()
+    for path in (ROOT / 'src').rglob('*.py'):
+        text = path.read_text(encoding='utf-8')
+        for names in re.findall(r'from PySide6 import ([^\n]+)', text):
+            used |= {name.split(' as ')[0].strip() for name in names.split(',')}
+        used |= set(re.findall(r'PySide6\.(Qt\w+)', text))
+    spec = (ROOT / 'dev/desktop/desktop.spec').read_text(encoding='utf-8')
+    assert sorted(used - set(re.findall(r"'PySide6\.(Qt\w+)'", spec))) == []

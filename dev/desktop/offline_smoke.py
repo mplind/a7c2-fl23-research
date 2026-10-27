@@ -141,11 +141,14 @@ def check_audio_conversion():
 
 
 def check_feature_modules():
-    """Import every lazily loaded module of the film looks, preview, HALD capture, recipe writer
-    and shutter sound presets (as the frozen worker would) and load the bundled libraries."""
+    """Import the window with its theme and chrome, and every lazily loaded module of the film
+    looks, preview, HALD capture, recipe writer and shutter sound presets (as the frozen app and
+    worker would; the source ships as data, so PyInstaller cannot see a missing Qt module), then
+    load the bundled libraries."""
     for name in ('hald', 'lookpreview'):
         importlib.import_module('looktool.' + name)
-    for name in ('looklibrary', 'lookviews', 'recipes', 'actions.recipe', 'actions.look_compiler', 'shuttersounds'):
+    for name in ('theme', 'shell', 'window', 'looklibrary', 'lookviews', 'recipes', 'actions.recipe',
+                 'actions.look_compiler', 'shuttersounds'):
         importlib.import_module('desktopapp.' + name)
     importlib.import_module('camera_runtime.ptpremote')  # the namespace import actions.recipe uses
     from desktopapp import looklibrary, shuttersounds

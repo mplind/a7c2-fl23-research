@@ -62,3 +62,18 @@ def test_the_packaged_self_test_imports_every_new_module_and_loads_the_film_libr
     monkeypatch.setattr(looklibrary, 'location', lambda: tmp_path / 'absent')
     with pytest.raises(AssertionError, match='film look library'):
         smoke.check_feature_modules()
+
+
+def test_the_packaged_self_test_imports_the_window_and_its_chrome(monkeypatch):
+    import importlib, importlib.util
+    spec = importlib.util.spec_from_file_location('offline_smoke_imports', ROOT / 'dev/desktop/offline_smoke.py')
+    smoke = importlib.util.module_from_spec(spec); spec.loader.exec_module(smoke)
+    imported = []
+    real = importlib.import_module
+    monkeypatch.setattr(smoke.importlib, 'import_module', lambda name, *a: imported.append(name) or real(name, *a))
+    try:
+        smoke.check_feature_modules()
+    except AssertionError:
+        pass  # a checkout without the bundled libraries still imports everything first
+    for name in ('desktopapp.theme', 'desktopapp.shell', 'desktopapp.window'):
+        assert name in imported
