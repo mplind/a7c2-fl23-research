@@ -33,7 +33,8 @@ def modification(look):
     source = look['source']
     bridged = ' through a Sony ST to ACEScct bridge' if look.get('chosen_variant') == 'composed' else ''
     stage = (source.get('process') + '; ') if source.get('process') else ''
-    return '%sbaked to a 33^3 cube%s and fitted to the A7C II look table (see CHANGELOG.txt)' % (stage, bridged)
+    text = '%sbaked to a 33^3 cube%s and fitted to the A7C II look table (see CHANGELOG.txt)' % (stage, bridged)
+    return text[0].upper() + text[1:]
 
 
 def notes(look):

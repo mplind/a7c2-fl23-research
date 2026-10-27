@@ -2,6 +2,7 @@
 from .i18n import tr
 from pathlib import Path
 from PySide6 import QtCore, QtGui, QtWidgets as W
+from .lookviews import fit_help, fit_text
 from .theme import COLORS, EDITOR as STYLE
 
 
@@ -23,6 +24,7 @@ class Choice(W.QComboBox):
 class Operation(W.QFrame):
     changed=QtCore.Signal()
     remove_requested=QtCore.Signal(object)
+    preview_requested=QtCore.Signal(str)
 
     def __init__(self,slot):
         super().__init__()
@@ -33,7 +35,7 @@ class Operation(W.QFrame):
         top.addWidget(label(tr('目标槽位'),muted=True))
         self.slot=Choice()
         for number in range(1,7):self.slot.addItem(tr('自订 %d') % number,number)
-        self.slot.setCurrentIndex(slot-1);self.slot.setFixedWidth(115)
+        self.slot.setCurrentIndex(slot-1);self.slot.setFixedWidth(130)
         top.addWidget(self.slot);top.addSpacing(18)
         top.addWidget(label(tr('本次操作'),muted=True))
         self.action=Choice();self.action.addItems([tr('恢复 ST 默认'),tr('写入 A7Look')])
@@ -50,8 +52,13 @@ class Operation(W.QFrame):
         grid.addWidget(label(tr('机内显示名称'),muted=True),0,2)
         self.file=W.QLineEdit();self.file.setReadOnly(True);self.file.setPlaceholderText(tr('请选择 .a7look 文件'))
         self.browse=W.QPushButton(tr('选择文件…'));self.browse.clicked.connect(self.choose_file)
+        self.preview=W.QPushButton(tr('预览…'));self.preview.setEnabled(False)
+        self.preview.clicked.connect(lambda:self.preview_requested.emit(self.file_path))
         self.name=W.QLineEdit();self.name.setPlaceholderText(tr('留空沿用文件内名称'))
-        grid.addWidget(self.file,1,0);grid.addWidget(self.browse,1,1);grid.addWidget(self.name,1,2)
+        files=W.QHBoxLayout();files.setSpacing(6);files.addWidget(self.browse);files.addWidget(self.preview)
+        grid.addWidget(self.file,1,0);grid.addLayout(files,1,1);grid.addWidget(self.name,1,2)
+        self.fit=label('',muted=True);self.fit.setWordWrap(True);self.fit.setToolTip(fit_help());self.fit.hide()
+        grid.addWidget(self.fit,2,0,1,3)
         grid.setColumnStretch(0,3);grid.setColumnStretch(2,2);self.details.addWidget(write)
         self.action.currentIndexChanged.connect(self.update_mode)
         self.slot.currentIndexChanged.connect(self.changed)
@@ -60,8 +67,8 @@ class Operation(W.QFrame):
 
     def update_mode(self):
         self.details.setCurrentIndex(self.action.currentIndex())
-        self.details.setFixedHeight(36 if self.action.currentIndex()==0 else 74)
-        self.setFixedHeight(115 if self.action.currentIndex()==0 else 153)
+        self.details.setFixedHeight(36 if self.action.currentIndex()==0 else 100)
+        self.setFixedHeight(115 if self.action.currentIndex()==0 else 179)
         self.changed.emit()
 
     def choose_file(self):
@@ -70,7 +77,12 @@ class Operation(W.QFrame):
         if path:self.set_file(path)
 
     def set_file(self,path):
-        self.file_path=str(path);self.file.setText(Path(path).name);self.file.setToolTip(str(path));self.changed.emit()
+        from .looklibrary import file_fit,CONCERNS
+        self.file_path=str(path);self.file.setText(Path(path).name);self.file.setToolTip(str(path))
+        fit=file_fit(path)
+        self.fit.setText(fit_text(fit));self.fit.setProperty('warning',fit['rating'] in CONCERNS)
+        self.fit.style().unpolish(self.fit);self.fit.style().polish(self.fit);self.fit.show()
+        self.preview.setEnabled(fit['rating']!='invalid');self.changed.emit()
 
     def value(self):
         value=dict(slot=self.slot.currentData(),action='restore' if self.action.currentIndex()==0 else 'write')
@@ -80,12 +92,16 @@ class Operation(W.QFrame):
 
 class LookEditor(W.QWidget):
     changed=QtCore.Signal()
+    preview_requested=QtCore.Signal(str)
+    library_requested=QtCore.Signal()
 
     def __init__(self):
         super().__init__();self.rows=[];self._loading=False;self.setStyleSheet(STYLE)
         box=W.QVBoxLayout(self);box.setContentsMargins(0,0,0,0);box.setSpacing(12)
         top=W.QHBoxLayout();self.add=W.QPushButton(tr('+ 添加操作项'))
         self.add.clicked.connect(lambda:self.add_row());top.addWidget(self.add)
+        self.library=W.QPushButton(tr('从胶片外观库添加…'))
+        self.library.clicked.connect(self.library_requested);top.addWidget(self.library)
         top.addWidget(label(tr('新增项默认“恢复 ST 默认”，可切换为写入。'),muted=True));top.addStretch();box.addLayout(top)
         self.row_box=W.QVBoxLayout();self.row_box.setSpacing(12);box.addLayout(self.row_box)
         self.empty=W.QFrame();self.empty.setProperty('card',True)
@@ -107,6 +123,7 @@ class LookEditor(W.QWidget):
         if not free:return None
         row=Operation(slot if slot is not None else free[0]);self.rows.append(row)
         row.changed.connect(self.update_summary);row.remove_requested.connect(self.remove_row)
+        row.preview_requested.connect(self.preview_requested)
         self.row_box.addWidget(row);self.update_summary();return row
 
     def remove_row(self,row):

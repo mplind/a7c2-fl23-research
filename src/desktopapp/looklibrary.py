@@ -100,3 +100,16 @@ def catalog(root=None):
         seen.add(look['id'])
         looks.append(look)
     return looks
+
+
+CONCERNS = ('poor', 'unknown', 'invalid')
+
+
+def fit_concerns(looks):
+    """The looks (dicts with a path) whose camera fit is poor, unknown or unreadable, each with its fit."""
+    concerns = []
+    for look in looks:
+        fit = file_fit(look['path'])
+        if fit['rating'] in CONCERNS:
+            concerns.append(dict(look, fit=fit))
+    return concerns

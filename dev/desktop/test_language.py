@@ -206,7 +206,7 @@ def test_english_entries_keep_format_specifiers_and_file_extensions():
 def test_every_translated_display_literal_has_an_english_entry():
     root = Path(__file__).resolve().parents[2] / 'src/desktopapp'
     missing = []
-    for name in ('window.py', 'lookeditor.py', 'reloadguide.py', 'completion.py'):
+    for name in ('window.py', 'lookeditor.py', 'lookviews.py', 'reloadguide.py', 'completion.py'):
         tree = ast.parse((root / name).read_text(encoding='utf-8'))
         for node in ast.walk(tree):
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == 'tr':

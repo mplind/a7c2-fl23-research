@@ -2,20 +2,13 @@
 import json
 from pathlib import Path
 import sys
-import numpy as np
 import pytest
-from looktool import lookfile, native
 from desktopapp import looklibrary
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'dev/desktop'))
 import prepare_film_looks
-
-
-def look_file(path, *, mae=None, p95=None, name='Fixture'):
-    metrics = {} if mae is None else {'virtual_heldout_validation_replica': {'RGB_MAE_8bit': mae, 'RGB_P95_8bit': p95}}
-    lookfile.write(path, name, native.encode(np.zeros((405, 3), int)), method='fixture', attribution='test', metrics=metrics)
-    return path
+from looksamples import look_file
 
 
 @pytest.mark.parametrize('mae,p95,rating', [
@@ -147,6 +140,7 @@ def test_prepare_marks_only_open_licences_shareable_and_records_caveats(tmp_path
     assert prepare_film_looks.STEEP in entries['velvia100']['notes']
     assert prepare_film_looks.CAVEATS['velvia100'] in entries['velvia100']['notes']
     assert entries['private']['notes'] == ''
+    assert all(e['modification'][0].isupper() for e in entries.values())
 
 
 def test_prepare_rejects_an_unsafe_slug_and_leaves_the_old_library(tmp_path):
@@ -178,3 +172,13 @@ def test_prepare_keeps_the_old_library_when_the_new_catalog_is_invalid(tmp_path)
     with pytest.raises(ValueError, match='kind'):
         prepare_film_looks.prepare(broken, target)
     assert [look['id'] for look in looklibrary.catalog(target)] == ['portra400']
+
+
+def test_fit_concerns_name_only_poor_unknown_and_unreadable_looks(tmp_path):
+    good = look_file(tmp_path / 'good.a7look', mae=2.0, p95=7.0)
+    fair = look_file(tmp_path / 'fair.a7look', mae=4.0, p95=12.0)
+    poor = look_file(tmp_path / 'poor.a7look', mae=6.0, p95=20.0)
+    unknown = look_file(tmp_path / 'unknown.a7look')
+    concerns = looklibrary.fit_concerns([dict(slot=n, path=str(p)) for n, p in
+                                         enumerate((good, fair, poor, unknown, tmp_path / 'missing.a7look'), 1)])
+    assert [(c['slot'], c['fit']['rating']) for c in concerns] == [(3, 'poor'), (4, 'unknown'), (5, 'invalid')]

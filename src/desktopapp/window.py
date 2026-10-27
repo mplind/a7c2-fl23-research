@@ -523,11 +523,64 @@ class Window(W.QMainWindow):
         layout.addStretch()
         self._look_displayed_pending=None;self._look_refreshing=False
         self.look_editor.changed.connect(self.refresh_look_controls)
+        self.look_editor.preview_requested.connect(self.preview_look)
+        self.look_editor.library_requested.connect(self.film_library_dialog)
         self.refresh_look_controls()
 
     def open_profile_library(self):
         from .profilelibrary import location
         QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(str(location())))
+
+    def film_library_dialog(self):
+        from . import looklibrary
+        from .lookviews import FilmLibraryDialog
+        try:
+            looks=looklibrary.catalog()
+        except (OSError,ValueError) as exc:
+            W.QMessageBox.warning(self,tr('胶片外观库无法读取'),str(exc));return
+        if not looks:
+            W.QMessageBox.information(self,tr('胶片外观库'),tr('此安装没有附带胶片外观库。'));return
+        dialog=FilmLibraryDialog(looks,self,notices=looklibrary.location())
+        dialog.add_requested.connect(self.add_library_look)
+        dialog.preview_requested.connect(self.preview_look)
+        dialog.exec()
+
+    def add_library_look(self,look,slot):
+        """Write the library look to slot: update that slot's row, or add one."""
+        if not self.look_editor.isEnabled():
+            W.QMessageBox.information(self,tr('清单已锁定'),tr('上次操作尚未完成或正在运行，暂时不能修改清单。'));return False
+        row=next((r for r in self.look_editor.rows if r.slot.currentData()==slot),None) or self.look_editor.add_row(slot)
+        if row is None:
+            W.QMessageBox.information(self,tr('清单已满'),tr('六个槽位都已在清单中，请先移除一项。'));return False
+        row.action.setCurrentIndex(1);row.set_file(look['path'])
+        return True
+
+    def preview_look(self,path):
+        from .lookviews import PreviewDialog
+        try:
+            dialog=PreviewDialog(path,cache=data_root()/'preview-cache',parent=self)
+        except (OSError,ValueError) as exc:
+            W.QMessageBox.warning(self,tr('无法预览此外观'),str(exc));return
+        dialog.exec()
+
+    def fit_checked_looks(self,action,arguments):
+        """The looks a fresh write would install (slot, path, name), for the fit warning."""
+        if action=='direct_looks_import':
+            return [r for r in arguments.get('operations',[]) if r.get('action')=='write']
+        if action=='setup_all' and not Path(arguments['workspace'],'setup.private.json').is_file():
+            return arguments.get('options',{}).get('looks',[])
+        return []
+
+    def confirm_fit(self,looks):
+        from .looklibrary import fit_concerns
+        from .lookviews import rating_word
+        concerns=fit_concerns(looks)
+        if not concerns:return True
+        lines=[tr('自订 %s：%s（拟合%s）')%(c['slot'],c.get('name') or Path(c['path']).stem,rating_word(c['fit']['rating'])) for c in concerns]
+        answer=W.QMessageBox.question(self,tr('拟合提醒'),
+            tr('以下外观在机内的拟合较差或未知，相机效果可能与原外观明显不同。建议先预览。\n')+'\n'.join(lines)+tr('\n仍要继续？'),
+            W.QMessageBox.Yes|W.QMessageBox.Cancel,W.QMessageBox.Cancel)
+        return answer==W.QMessageBox.Yes
 
     def look_pending_state(self):
         prior=self.settings.get('look_direct_work')
@@ -782,6 +835,8 @@ class Window(W.QMainWindow):
                 W.QMessageBox.Yes | W.QMessageBox.Cancel, W.QMessageBox.Cancel)
             if answer != W.QMessageBox.Yes:
                 return
+        if not self.confirm_fit(self.fit_checked_looks(action, arguments)):
+            return
         writing = action in jobs.POWER_ACTIONS
         if writing:
             target = ((tr('首页勾选的功能；替换自订 1–6：') + tr(presets.SUMMARY) if arguments.get('options', {}).get('preset_pack') else tr('首页勾选的功能及所选 A7Look 槽位')) if action == 'setup_all' else
