@@ -38,7 +38,10 @@ class Window(W.QMainWindow):
         layout = W.QHBoxLayout(central)
         layout.setContentsMargins(0, 0, 0, 0)
         self.nav = W.QListWidget()
-        self.nav.setFixedWidth(205)
+        # Wide enough for the English labels; long translations wrap instead of scrolling.
+        self.nav.setFixedWidth(230)
+        self.nav.setWordWrap(True)
+        self.nav.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
         self.nav.addItems([tr('首页 · 一键安装'), tr('连接与驱动'), tr('恢复原厂功能'), 'FL2 / FL3', tr('自定义创意外观'), tr('竖屏显示'), tr('电子快门声音')])
         layout.addWidget(self.nav)
         right = W.QVBoxLayout()

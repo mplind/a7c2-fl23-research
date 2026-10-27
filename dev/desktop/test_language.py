@@ -77,6 +77,14 @@ def test_new_install_defaults_to_english_and_no_page_shows_chinese(ui):
     assert window.current_job is None
 
 
+def test_button_labels_keep_every_ampersand_visible(ui):
+    # Qt turns a single '&' in a button or checkbox label into a hidden shortcut marker.
+    create, _, _ = ui
+    window = create()
+    labels = [button.text() for button in window.findChildren(W.QAbstractButton)]
+    assert [label for label in labels if re.search(r'(?<!&)&(?!&)', label)] == []
+
+
 def test_language_selector_offers_english_and_chinese(ui):
     create, _, _ = ui
     window = create()
@@ -213,7 +221,7 @@ def test_windows_driver_controls_and_zadig_guide_use_english(ui):
         window = create('en')
     automatic = window.findChild(W.QPushButton, 'action_usb_prepare')
     zadig = window.findChild(W.QPushButton, 'zadig_guide')
-    assert automatic.text() == 'Prepare two-stage drivers & test connection (automatic)'
+    assert automatic.text() == 'Prepare two-stage drivers and test connection (automatic)'
     assert zadig.text().startswith('Install with Zadig')
     from desktopapp.zadigguide import TEXT
     assert '054C 0336' in i18n.tr(TEXT) and 'administrator' in i18n.tr(TEXT)
