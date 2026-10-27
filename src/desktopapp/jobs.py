@@ -10,7 +10,7 @@ import zipfile
 from .paths import data_root, write_json
 from . import VERSION
 
-from .actions.catalog import CAMERA_ACTIONS, POWER_ACTIONS, DIRECT_ACTIONS
+from .actions.catalog import CAMERA_ACTIONS, POWER_ACTIONS, DIRECT_ACTIONS, REMOTE_ACTIONS
 
 
 def new_job(action, arguments):

@@ -42,7 +42,7 @@ class Window(W.QMainWindow):
         self.nav.setFixedWidth(230)
         self.nav.setWordWrap(True)
         self.nav.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
-        self.nav.addItems([tr('首页 · 一键安装'), tr('连接与驱动'), tr('恢复原厂功能'), 'FL2 / FL3', tr('自定义创意外观'), tr('竖屏显示'), tr('电子快门声音')])
+        self.nav.addItems([tr('首页 · 一键安装'), tr('连接与驱动'), tr('恢复原厂功能'), 'FL2 / FL3', tr('自定义创意外观'), tr('竖屏显示'), tr('电子快门声音'), tr('胶片配方（实验性）')])
         layout.addWidget(self.nav)
         right = W.QVBoxLayout()
         right.setContentsMargins(22, 18, 22, 16)
@@ -78,6 +78,7 @@ class Window(W.QMainWindow):
         self.look_page()
         self.vertical_page()
         self.sound_page()
+        self.recipe_page()
         self.nav.currentRowChanged.connect(self.pages.setCurrentIndex)
         self.nav.setCurrentRow(0)
         self.progress = W.QProgressBar()
@@ -720,6 +721,81 @@ class Window(W.QMainWindow):
         self.button(layout, tr('恢复原厂音效'), 'sound_restore_sound', args)
         layout.addStretch()
 
+    def recipe_page(self):
+        from . import recipes
+        layout=self.page(tr('胶片配方（实验性）'),tr('通过 USB 把创意外观配方（基础外观、八项微调、白平衡偏移和 DRO）写入相机设置；不修改固件。'))
+        warning=W.QLabel(tr('实验功能：使用索尼 PC 遥控协议，尚未在 α7C II 实机上验证。每次先只读读取相机并列出全部更改，确认后才写入，写入后逐项读回核对。'))
+        warning.setWordWrap(True);warning.setProperty('warning',True);layout.addWidget(warning)
+        setup=W.QLabel(tr('相机设置：菜单 > 设置 > USB > USB 连接模式选“PC 遥控”，模式拨盘置于 P／A／S／M。先退出“照片”、“图像捕获”、Lightroom 和 Imaging Edge。'))
+        setup.setWordWrap(True);layout.addWidget(setup)
+        form=self.box(layout,tr('配方'))
+        self.recipe_preset=W.QComboBox()
+        for preset in recipes.PRESETS:self.recipe_preset.addItem(preset.name)
+        form.addRow(tr('预设'),self.recipe_preset)
+        self.recipe_target=W.QComboBox();self.recipe_target.addItem(tr('直接调整基础外观'),None)
+        for slot in range(1,7):self.recipe_target.addItem(tr('存入自订外观 %d')%slot,slot)
+        form.addRow(tr('写入位置'),self.recipe_target)
+        self.recipe_details=W.QLabel();self.recipe_details.setWordWrap(True);self.recipe_details.setTextFormat(QtCore.Qt.RichText)
+        self.recipe_details.setOpenExternalLinks(True);layout.addWidget(self.recipe_details)
+        self.recipe_preset.currentIndexChanged.connect(self.show_recipe);self.show_recipe()
+        self.recipe_ptpcamerad=W.QCheckBox(tr('允许暂时停止 macOS 相机服务 ptpcamerad（仅限当前用户，系统会自动重新启动它）'))
+        self.recipe_ptpcamerad.setToolTip(tr('ptpcamerad 会占用相机的 PC 遥控接口。勾选后，本工具连接前先结束它；不需要管理员密码。'))
+        self.recipe_ptpcamerad.setVisible(sys.platform=='darwin');layout.addWidget(self.recipe_ptpcamerad)
+        self.recipe_button=self.button(layout,tr('读取相机并列出更改（只读）'),'recipe_plan',self.recipe_args,primary=True)
+        self.recipe_windows_note=W.QLabel(tr('Windows 需要为 PC 遥控接口安装 WinUSB 驱动，本工具暂不提供，因此此功能在 Windows 上停用。'))
+        self.recipe_windows_note.setWordWrap(True);self.recipe_windows_note.setVisible(sys.platform=='win32')
+        layout.addWidget(self.recipe_windows_note)
+        if sys.platform=='win32':
+            self.buttons.remove(self.recipe_button);self.recipe_button.setEnabled(False)
+        layout.addStretch()
+
+    def selected_recipe(self):
+        import dataclasses
+        from . import recipes
+        return dataclasses.replace(recipes.PRESETS[self.recipe_preset.currentIndex()],target=self.recipe_target.currentData())
+
+    def show_recipe(self):
+        import html
+        from . import recipes
+        recipe=recipes.PRESETS[self.recipe_preset.currentIndex()]
+        def text(value):return html.escape(value,quote=False)
+        sliders=' · '.join('%s %s'%(s.label,recipes.display_value(s.code,v)) for s,v in recipe.slider_values())
+        balance=recipe.white_balance+(' %d K'%recipe.kelvin if recipe.kelvin else '') if recipe.white_balance else tr('保持相机当前模式')
+        shifts=tr('白平衡偏移 %s · %s')%(recipes.display_value(recipes.WB_SHIFT_AB,recipes.wb_shift_wire(recipe.wb_shift_ab)),
+                                      recipes.display_value(recipes.WB_SHIFT_GM,recipes.wb_shift_wire(recipe.wb_shift_gm)))
+        source=text(recipe.source)+(' · <a href="%s">%s</a>'%(html.escape(recipe.source_url),text(recipe.source_url)) if recipe.source_url else '')
+        lines=[text(tr('基础外观 %s')%recipe.base_look+' · '+sliders),
+               text(tr('白平衡：%s')%balance+' · '+shifts+' · '+tr('DRO：%s')%(recipe.dro or tr('不变'))),
+               text(tr('来源：'))+source]
+        if recipe.note:lines.append(text(tr('说明：')+recipe.note))
+        self.recipe_details.setText('<br>'.join(lines))
+
+    def recipe_args(self):
+        from .actions.recipe import recipe_args
+        return dict(recipe=recipe_args(self.selected_recipe()),stop_ptpcamerad=self.recipe_ptpcamerad.isChecked())
+
+    @staticmethod
+    def recipe_change(row):
+        return '%s: %s → %s'%(row['label'],row['before'],row['after']) if row['before'] is not None else '%s: %s'%(row['label'],row['after'])
+
+    def review_recipe_plan(self,result):
+        def lines(rows):return '\n'.join('• '+row for row in rows)
+        notes=['%s: %s'%(p['label'],p['reason']) for p in result['problems'] if not p['blocking']]
+        if not result['ok']:
+            blockers=['%s: %s'%(p['label'],p['reason']) for p in result['problems'] if p['blocking']]
+            W.QMessageBox.warning(self,tr('无法写入此配方'),tr('相机不接受以下设置，未写入任何内容：\n')+lines(blockers));return
+        if not result['writes']:
+            W.QMessageBox.information(self,tr('无需写入'),tr('相机设置已与此配方一致。'));return
+        now=[self.recipe_change(r) for r in result['writes'] if not r['provisional']]
+        later=[self.recipe_change(r) for r in result['writes'] if r['provisional']]
+        text=tr('将写入以下 %d 项相机设置：\n')%len(result['writes'])+lines(now)
+        if later:text+=tr('\n\n切换外观或白平衡后，先重新读取相机，再写入：\n')+lines(later)
+        if notes:text+=tr('\n\n说明：\n')+lines(notes)
+        text+=tr('\n\n这是实验功能，尚未在 α7C II 实机上验证。每项写入后读回核对；如有设置未生效或其他设置被改变，会停止并报告。写入期间不要操作相机或拔线。\n现在写入？')
+        answer=W.QMessageBox.question(self,tr('写入配方（实验性）'),text,W.QMessageBox.Yes|W.QMessageBox.Cancel,W.QMessageBox.Cancel)
+        if answer==W.QMessageBox.Yes:
+            self.launch('recipe_apply',dict(recipe=result['recipe'],stop_ptpcamerad=result['stop_ptpcamerad'],reviewed=result['steps']))
+
     def show_zadig_guide(self):
         from .zadigguide import TITLE, TEXT, URL
         dialog = W.QDialog(self); dialog.setWindowTitle(tr(TITLE)); dialog.resize(820, 680)
@@ -890,7 +966,7 @@ class Window(W.QMainWindow):
             write_json(data_root()/'desktop.json',self.settings)
         self.log_offset = 0
         self.log.clear()
-        self.camera_operation = action in jobs.CAMERA_ACTIONS or action == 'driver_install'
+        self.camera_operation = action in jobs.CAMERA_ACTIONS or action in jobs.REMOTE_ACTIONS or action == 'driver_install'
         for button in self.buttons:
             button.setEnabled(False)
         self.look_editor.setEnabled(False)
@@ -986,6 +1062,7 @@ class Window(W.QMainWindow):
                            tr('名称与只读挂载已确认；程序尚未安装，请点自定义外观页“继续槽位更改”。') if resource_ready else
                            tr('完成。请按日志提示进行下一步。') if success else
                            tr('操作停止：') + (tr(status['error']) if 'error' in status else tr('进程异常退出，退出码 ') + str(code)) + tr('。请导出诊断包。'))
+        if success and status.get('action')=='recipe_apply':self.status.setText(tr('配方已写入并读回核对。'))
         if not success and sys.platform == 'win32' and self.driver_step_failed(status.get('action')):
             self.status.setText(self.status.text() + tr(DRIVER_HINT))
         if sound_notice:self.status.setText(sound_notice['status'])
@@ -1015,6 +1092,10 @@ class Window(W.QMainWindow):
                 self.show_reload_guide(mode='factory_prewrite_temporary')
         if sound_notice:
             W.QMessageBox.information(self,sound_notice['title'],sound_notice['text'])
+        elif success and status.get('action')=='recipe_plan':
+            self.review_recipe_plan(status['result'])
+        elif success and status.get('action')=='recipe_apply':
+            W.QMessageBox.information(self,tr('配方已写入'),tr('已写入并读回核对：\n')+'\n'.join('• '+self.recipe_change(row) for row in status['result']['written']))
         elif status.get('action')=='usb_stability':
             if success:
                 result=status['result']

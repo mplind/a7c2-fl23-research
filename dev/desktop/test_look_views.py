@@ -3,7 +3,7 @@ import json
 import os
 from pathlib import Path
 import time
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 import numpy as np
@@ -33,7 +33,9 @@ def english():
 
 
 @pytest.fixture
-def window(app):
+def window(app, monkeypatch):
+    # No test may start a real worker, even when the code under test is wrong.
+    monkeypatch.setattr('desktopapp.window.QtCore.QProcess', Mock())
     windows = []
     def create():
         result = Window(); result.timer.stop(); windows.append(result)
