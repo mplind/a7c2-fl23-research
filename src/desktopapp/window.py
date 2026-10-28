@@ -20,7 +20,7 @@ from . import connectionguide
 from . import shell
 from . import theme
 from .shell import ask  # camera-write confirmations; tests patch desktopapp.window.ask
-from .paths import ROOT, data_root, load_settings, save_settings, write_json
+from .paths import APP_ICON, ROOT, data_root, load_settings, save_settings, write_json
 
 
 SENTENCE_END = '.!?\u3002\uff01\uff1f'  # full stop, ! and ? in English and Chinese; compared, never shown
@@ -1506,6 +1506,14 @@ class Window(W.QMainWindow):
             event.accept()
 
 
+def configure_application(app):
+    """The running app's name, version and icon: the Dock and every window show APP_ICON."""
+    app.setApplicationName('A7C2Tools')
+    app.setApplicationVersion(VERSION)
+    app.setOrganizationName('QAQLeonard')
+    app.setWindowIcon(QtGui.QIcon(str(APP_ICON)))
+
+
 def main():
     app = W.QApplication.instance() or W.QApplication(sys.argv)
     if '--smoke-test' in sys.argv and sys.platform == 'win32':
@@ -1514,9 +1522,7 @@ def main():
         font = Path(os.environ.get('WINDIR', 'C:/Windows')) / 'Fonts/msyh.ttc'
         if font.is_file():
             QtGui.QFontDatabase.addApplicationFont(str(font))
-    app.setApplicationName('A7C2Tools')
-    app.setApplicationVersion(VERSION)
-    app.setOrganizationName('QAQLeonard')
+    configure_application(app)
     window = Window()
     window.show()
     if '--smoke-test' in sys.argv:

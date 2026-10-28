@@ -8,6 +8,9 @@ from profilepack import files as profile_files
 import assets_check
 version = {}
 exec((root / 'src/desktopapp/__init__.py').read_text(encoding='utf-8'), version)
+# The Finder and Dock icon (make_icon.py beside it redraws it). The same file ships as data below, where
+# the window loads it (desktopapp.paths.APP_ICON).
+icon = str(root / 'dev/desktop/icon/AppIcon.icns')
 assets_check.require(root)
 datas, binaries, hidden = [], [], ['PySide6.QtCore', 'PySide6.QtGui', 'PySide6.QtSvg', 'PySide6.QtWidgets',
                                  'tarfile', 'lzma', 'bz2', 'zlib', 'urllib.request', 'wave', 'plistlib', 'backports.tarfile', 'zipfile', 'filecmp']
@@ -40,7 +43,7 @@ for relative,source in profile_files().items():
 for name in ('desktop.py', 'LICENSE', 'README.md', 'README.zh-CN.md', 'desktop-requirements.txt',
              'dev/desktop/offline_smoke.py', 'docs/en/lut-formats.md', 'docs/zh-CN/lut-formats.md',
              'docs/en/notices.md', 'docs/zh-CN/notices.md', 'docs/licenses/a7c2-fl23-macos-MIT.txt',
-             'calibration/a7c2-2.01.virtual.npz'):
+             'calibration/a7c2-2.01.virtual.npz', 'dev/desktop/icon/AppIcon.icns'):
     datas.append((str(root / name), str(Path(name).parent)))
 
 a = Analysis([str(root / 'dev/desktop/frozen_entry.py')], pathex=[],
@@ -51,11 +54,11 @@ if sys.platform == 'darwin':
     from machosign import keep_unsigned
     a.binaries, a.datas = keep_unsigned(a.binaries, a.datas)
 pyz = PYZ(a.pure)
-exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name='A7C2Tools',
+exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name='A7C2Tools', icon=icon,
           console=False, disable_windowed_traceback=False)
 collection = COLLECT(exe, a.binaries, a.datas, name='A7C2Tools')
 if sys.platform == 'darwin':
-    app = BUNDLE(collection, name='A7C2Tools.app', bundle_identifier='io.github.QAQLeonard.A7C2Tools',
+    app = BUNDLE(collection, name='A7C2Tools.app', icon=icon, bundle_identifier='io.github.QAQLeonard.A7C2Tools',
                  info_plist={'CFBundleShortVersionString': version['VERSION'],
                              'CFBundleVersion': version['VERSION'].rsplit('.', 1)[-1],
                              'LSMinimumSystemVersion': '14.0',

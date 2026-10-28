@@ -161,6 +161,26 @@ def check_feature_modules():
     return dict(film_looks=len(looks), shutter_sounds=len(sounds))
 
 
+# The app icon's sizes Qt reads, in pixels. iconutil stores 16 and 32 px as ARGB images (ic04, ic05),
+# which Qt's icns plugin skips; Qt draws those from the 32 px image (16 px @2x) instead.
+APP_ICON_SIZES = (32, 64, 128, 256, 512, 1024)
+
+
+def check_app_icon():
+    """The app icon the window loads (paths.APP_ICON) is in the package and Qt reads every size of it,
+    so a missing file or icns image plugin fails here rather than leaving the Dock blank."""
+    from PySide6 import QtGui
+    from desktopapp import paths
+    reader = QtGui.QImageReader(str(paths.APP_ICON))
+    sizes = set()
+    for index in range(reader.imageCount()):
+        reader.jumpToImage(index)
+        sizes.add(reader.read().width())
+    assert reader.format() == b'icns' and set(APP_ICON_SIZES) <= sizes, \
+        'The app icon is missing or unreadable: %s (%s)' % (paths.APP_ICON, reader.errorString())
+    return dict(sizes=sorted(sizes))
+
+
 def run():
     import usb.core
     def no_device(*args,**kwargs):
@@ -315,7 +335,8 @@ def run():
             '0123456789abcdef',Path(folder)/'forward',byte_only=True)
         assert forward['stream_install'] and Path(forward['path']).read_bytes()[:4]==b'\x7fELF'
     features = check_feature_modules()
-    return {'camera_io': False, 'project_imports': 'passed', **features, 'bundled_exiftool':exif_result.stdout.strip(), 'assets': 'passed', 'builtin_factory_reference': 'passed',
+    return {'camera_io': False, 'project_imports': 'passed', **features, 'app_icon': check_app_icon(),
+            'bundled_exiftool':exif_result.stdout.strip(), 'assets': 'passed', 'builtin_factory_reference': 'passed',
             'native_cross_compile': 'passed', 'native_assembler_disassembler':'passed',
             'one_click_offline_sequence':'passed','look_batch_defaults':'passed','streaming_names_compile':'passed',
             'bundled_six_looks':list(presets.NAMES),'fl23_pr6_movie_routes':'passed',

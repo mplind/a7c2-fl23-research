@@ -4,6 +4,9 @@ from pathlib import Path
 import sys
 
 ROOT = Path(__file__).resolve().parents[2]
+# The app icon for the Dock and the window. desktop.spec ships it at this path (and gives the bundle the
+# same file), so it resolves in the source tree and in the packaged app; make_icon.py beside it redraws it.
+APP_ICON = ROOT / 'dev/desktop/icon/AppIcon.icns'
 
 
 def data_root():
