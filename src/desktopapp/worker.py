@@ -29,6 +29,22 @@ def register_backup(path):
         traceback.print_exc()
 
 
+def connection_build(camera):
+    """The key of the supported build the camera's programs are, or None when they are no supported
+    build. Only reads: the two program files are read and identified, nothing is staged or written. An
+    unsupported camera is a result, not an error: the connection test still succeeds, and every write
+    primitive refuses that camera."""
+    from looktool import checkpoint
+    from looktool.buildprofile import UnsupportedFirmware
+    print('读取相机程序文件以识别固件版本（只读）。', flush=True)
+    programs = {name: camera.read(path) for name, path in checkpoint.PROGRAM_PATHS.items()}
+    try:
+        return camera.identify_programs(programs['appFw.so'], programs['cpapp-b.bin']).key
+    except UnsupportedFirmware as refusal:
+        print(refusal, flush=True)
+        return None
+
+
 def run(action, args, job):
     setup_runtime()
     from .jobs import POWER_ACTIONS
@@ -225,7 +241,7 @@ def run(action, args, job):
         from looktool.devicesession import Camera
         with Camera() as camera:
             return {'model': camera.identity['model'], 'service_connected': True,
-                    'firmware_programs_written': False}
+                    'firmware_programs_written': False, 'firmware_build': connection_build(camera)}
     if action=='usb_stability':
         from .usbcheck import run as check_usb
         return check_usb(job)

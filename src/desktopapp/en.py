@@ -492,7 +492,7 @@ STRINGS = {
     '检查': 'Check',
     '在建立服务连接前推出上方选择的存储卷。': 'Ejects the volume chosen above before a service connection.',
     '推出': 'Eject',
-    '连接后立即断开，不写入任何内容。': 'Connects and disconnects. Nothing is written.',
+    '连接后读取固件版本，然后断开，不写入任何内容。': 'Connects, reads the firmware build, then disconnects. Nothing is written.',
     '测试': 'Test',
     '反复读取相同文件以检测线缆和接口，只读。': 'Reads the same files several times to test the cable and port. Read-only.',
     '安装两个连接身份所需的驱动，然后测试连接。自动安装失败时，许多电脑改用 Zadig 手动安装即可成功。': 'Installs the drivers for both connection modes, then tests the connection. If this fails, many computers succeed with a manual Zadig install.',
@@ -572,4 +572,12 @@ STRINGS = {
     '所选原厂文件是固件版本 %s，而相机是 %s，未写入任何内容。': 'The selected Sony firmware file is build %s, but the camera is %s. Nothing was written',
     '所选原厂文件不是受支持的固件版本，未写入任何内容。': "The selected Sony firmware file isn't a supported firmware build, so nothing was written",
     '此任务记录的固件版本是 %s，而相机现在是 %s，没有核对或写入任何内容。': 'This job recorded firmware build %s, but the camera is now %s. Nothing was verified or written',
+    # The camera's firmware build on the Connection page (window.show_firmware_build); the two build names are buildprofile's label_zh.
+    '相机固件版本': 'Camera firmware build',
+    '尚未检测': 'Not checked yet',
+    'Sony 2.01（公开更新）': 'Sony 2.01 (public update)',
+    'Sony 2.01（机身版本，2025 年 9 月 23 日）': 'Sony 2.01 (camera build, 23 Sep 2025)',
+    '固件版本不受支持：已禁用更改': 'Unsupported firmware build: changes are disabled',
+    # Connection test log line (worker.connection_build).
+    '读取相机程序文件以识别固件版本（只读）。': 'Reading the camera program files to identify the firmware build (read-only).',
 }

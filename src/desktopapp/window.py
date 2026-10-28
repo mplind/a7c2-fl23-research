@@ -38,6 +38,9 @@ class Window(W.QMainWindow):
         self.resize(1130, 850)
         self.setMinimumSize(960, 730)
         self.fields, self.buttons = {}, []
+        # Buttons that start a camera write, and whether the connection test found a build the tool
+        # does not support: those buttons then stay disabled (apply_write_gate).
+        self.write_buttons, self.build_unsupported = [], False
         self.current_job = None
         self.log_offset = 0
         self.process = None
@@ -206,13 +209,26 @@ class Window(W.QMainWindow):
         work = self.work(group)
         return dict(self.common(), workspace=work, **{key: value for key, value in values.items() if key != 'mode'})
 
-    def setup_args(self):
+    def setup_saved(self):
+        """(state, refusal): the saved one-click job, and the plain refusal text when a firmware refusal
+        stopped it. That job is not continued, since the gate refuses before it writes: the page starts a
+        new one and shows the refusal in its place, so `state` comes back empty."""
         root = self.settings.get('setup_work', '')
-        state = Path(root, 'setup.private.json') if root else None
-        if state is not None and state.is_file():
-            saved = json.loads(state.read_text(encoding='utf-8'))
-            if saved['phase'] != 'COMPLETE':
-                return dict(self.common(), workspace=root, options=saved['options'])
+        path = Path(root, 'setup.private.json') if root else None
+        state = json.loads(path.read_text(encoding='utf-8')) if path is not None and path.is_file() else {}
+        refusal = self.firmware_refusal(state)
+        return ({}, refusal) if refusal else (state, '')
+
+    def show_setup_note(self, pending, refusal):
+        """The note above the install button: why the last job was not continued (a firmware refusal),
+        or that an unfinished one is."""
+        self.setup_note.setText(refusal or self.setup_continue_note)
+        self.setup_note.setVisible(pending or bool(refusal))
+
+    def setup_args(self):
+        saved, _ = self.setup_saved()
+        if saved and saved['phase'] != 'COMPLETE':
+            return dict(self.common(), workspace=self.settings['setup_work'], options=saved['options'])
         root = self.work('setup')
         tool = ROOT / ('desktop-assets/exiftool/exiftool.exe' if sys.platform=='win32' else 'desktop-assets/exiftool/exiftool')
         looks = [dict(slot=s, path=self.text('setup_look_' + str(s))) for s in range(1, 7) if self.text('setup_look_' + str(s))]
@@ -230,9 +246,9 @@ class Window(W.QMainWindow):
         self.setup_sound = W.QCheckBox(tr('启用索尼原生电子快门声音')); self.setup_sound.setChecked(True)
         self.setup_vertical = W.QCheckBox(tr('保存开启竖屏拍摄信息显示（重开后自动生效）')); self.setup_vertical.setChecked(True)
         self.setup_plugin = W.QCheckBox(tr('安装 Lightroom 自动识别插件（需要 Lightroom）'))
-        prior_path=Path(self.settings.get('setup_work',''),'setup.private.json')
-        prior=json.loads(prior_path.read_text(encoding='utf-8')) if prior_path.is_file() else {}
-        if prior and prior.get('phase')!='COMPLETE':
+        prior,refused=self.setup_saved()
+        pending=bool(prior) and prior.get('phase')!='COMPLETE'
+        if pending:
             options=prior['options']
             self.setup_presets.setChecked(options.get('preset_pack') == presets.PACK)
             for box,key in ((self.setup_fl23,'fl23'),(self.setup_sound,'sound'),(self.setup_vertical,'vertical'),(self.setup_plugin,'plugin')):
@@ -240,11 +256,12 @@ class Window(W.QMainWindow):
             for box in (self.setup_presets,self.setup_fl23,self.setup_sound,self.setup_vertical,self.setup_plugin):box.setEnabled(False)
 
         self.setup_note=shell.text_label(tr('安装尚未结束，请点击“继续安装”，按弹窗完成下一步；需要断电时，接回 USB 后仍点击此按钮。'))
+        self.setup_continue_note=self.setup_note.text()
         self.setup_note.setProperty('warning', True)
-        self.setup_note.setVisible(bool(prior) and prior.get('phase')!='COMPLETE')
+        self.show_setup_note(pending,refused)
         layout.addWidget(self.setup_note)
         self.setup_preset_summary = W.QLabel(tr(presets.SUMMARY))
-        if prior and prior.get('phase')!='COMPLETE':
+        if pending:
             names = ['%s %s' % (r['slot'], r.get('name', Path(r['path']).stem)) for r in prior['options'].get('looks', [])]
             self.setup_preset_summary.setText(tr('本次已保存外观：') + (tr('、').join(names) if names else tr('未选择外观，不会新增六款')))
         else:
@@ -267,7 +284,7 @@ class Window(W.QMainWindow):
                                       'setup_all', self.setup_args, primary=True)
         look_section=self.advanced(layout,tr('改用自己的 A7Look 文件（先取消勾选内置六款）'))
         custom_container = self.setup_custom_container = look_section.parentWidget()
-        custom_container.setEnabled(not self.setup_presets.isChecked() and not (prior and prior.get('phase')!='COMPLETE'))
+        custom_container.setEnabled(not self.setup_presets.isChecked() and not pending)
         self.setup_presets.toggled.connect(lambda enabled: custom_container.setEnabled(not enabled))
         form = self.box(look_section, tr('选择 A7Look 文件'))
         for slot in range(1, 7):
@@ -330,12 +347,11 @@ class Window(W.QMainWindow):
         W.QMessageBox.information(self,tr('安装完成'),text(state))
 
     def refresh_setup_controls(self):
-        path=Path(self.settings.get('setup_work',''),'setup.private.json')
-        state=json.loads(path.read_text(encoding='utf-8')) if path.is_file() else {}
+        state,refused=self.setup_saved()
         pending=bool(state) and state.get('phase')!='COMPLETE'
         self.setup_button.setText(tr('继续安装') if pending else tr('开始新的一键安装') if state else tr('一键安装'))
         self.setup_result_button.setVisible(state.get('phase')=='COMPLETE')
-        self.setup_note.setVisible(pending)
+        self.show_setup_note(pending,refused)
         self.setup_custom_container.setEnabled(not pending and not self.setup_presets.isChecked() and self.process is None)
         if not state:
             self.setup_preset_summary.setText(tr(presets.SUMMARY))
@@ -432,6 +448,8 @@ class Window(W.QMainWindow):
         button.setProperty('primary', primary)
         button.clicked.connect(lambda: self.launch(action, arguments()))
         self.buttons.append(button)
+        if action in jobs.POWER_ACTIONS:
+            self.write_buttons.append(button)
         return button
 
     def button(self, layout, text, action, arguments=lambda: {}, *, primary=False):
@@ -496,7 +514,11 @@ class Window(W.QMainWindow):
         if sys.platform == 'darwin':
             self.act(group, tr('推出选中的相机存储卷'), tr('在建立服务连接前推出上方选择的存储卷。'), tr('推出'), 'mac_unmount',
                      lambda: {'volume': self.text('mac_volume')})
-        self.act(group, tr('测试服务连接（不写固件）'), tr('连接后立即断开，不写入任何内容。'), tr('测试'), 'connect')
+        self.act(group, tr('测试服务连接（不写固件）'), tr('连接后读取固件版本，然后断开，不写入任何内容。'), tr('测试'), 'connect')
+        # What the last connection test found; show_firmware_build keeps it up to date.
+        self.build_label = shell.text_label(tr('尚未检测'))
+        self.build_label.setObjectName('firmware_build')
+        group.add(shell.ActionRow(tr('相机固件版本'), self.build_label))
         self.act(group, tr('检测 USB 连接稳定性（只读）'), tr('反复读取相同文件以检测线缆和接口，只读。'), tr('检查'), 'usb_stability')
         if sys.platform == 'win32':
             self.act(group, tr('卸载相机驱动，恢复 Windows 默认连接'), tr('备份并移除第三方驱动，让 Windows 重新识别相机。'), tr('卸载…'),
@@ -510,6 +532,7 @@ class Window(W.QMainWindow):
         self.factory_status=shell.text_label(tr('恢复写入后必须按弹窗重启，再接回核对；核对通过前不会标记恢复完成。'), 'callout')
         self.factory_button=self.action_button(tr('恢复／继续恢复原厂 2.01 功能（无需旧备份）'), 'direct_factory_reset',
                     lambda: self.direct_args('factory', mode='factory_reset', factory='builtin'), primary=True)
+        self.factory_start_text=self.factory_button.text()
         group.add(shell.ActionRow(tr('移除本工具的修改，六个自订栏位恢复为 ST'), self.factory_status, [self.factory_button]))
         self.factory_accept = self.reload_controls(group, tr('取景、拍照和回放正常'))
         self.act(group, tr('重启后核对并完成恢复（恢复写入后必做）'), tr('恢复写入后必做：确认相机加载了原厂内容。'), tr('核对'), 'direct_verify',
@@ -545,6 +568,14 @@ class Window(W.QMainWindow):
             self.factory_button.setText(tr('重新恢复原厂 2.01 功能（无需旧备份）'))
             self.factory_status.setText(tr('上次恢复核对已通过。程序、设置、加载状态及只读挂载已核对；当前功能和拍摄验收以机身为准。'))
         elif phase=='NEEDS_REVIEW':
+            refusal=self.firmware_refusal(state)
+            if refusal:
+                # The gate refused this camera before writing, so there is no transaction to
+                # continue. The button starts a new restore, which refuses again until the camera is
+                # a supported build.
+                self.factory_button.setText(self.factory_start_text)
+                self.factory_status.setText(refusal)
+                return
             from looktool.factoryrecover import connection_failed_before_restore,prewrite_temporary_conflict
             if prewrite_temporary_conflict(state):
                 self.factory_button.setText(tr('断电后重试恢复（本次尚未写入）'))
@@ -571,6 +602,7 @@ class Window(W.QMainWindow):
         auto.setObjectName('one_click_restore')
         auto.clicked.connect(self.one_click_restore)
         self.buttons.append(auto)
+        self.write_buttons.append(auto)  # launches restore_auto
         group.add(shell.ActionRow(tr('一键还原：查找并使用最初完整备份'), tr('自动找到这台相机最早的完整备份并还原。'), [auto]))
         self.act(group, tr('恢复所选备份并完整读回'), tr('写入上方选择的备份，并完整读回核对。'), tr('还原…'), 'restore',
                  lambda: dict(self.common(), backup=self.text('restore_backup'), workspace=self.text('restore_work')), primary=True)
@@ -603,7 +635,7 @@ class Window(W.QMainWindow):
         actions.addWidget(shell.text_label(tr('同一次操作自动检查当前状态、写入并完整读回。结束后按弹窗断电加载，无需单独点击核对。'),'callout'),1)
         self.look_button=W.QPushButton(tr('添加操作项后继续'));self.look_button.setProperty('primary',True)
         self.look_button.setObjectName('action_direct_looks_import');self.look_button.clicked.connect(self.launch_look_changes)
-        actions.addWidget(self.look_button,0,QtCore.Qt.AlignTop);self.buttons.append(self.look_button)
+        actions.addWidget(self.look_button,0,QtCore.Qt.AlignTop);self.buttons.append(self.look_button);self.write_buttons.append(self.look_button)
         tools=shell.section(layout,tr('工具'))
         for title,detail,verb,callback in [
                 (tr('打开内置 DCP／A7Look 配对库'),tr('内置的 DCP 配置文件和对应的相机外观文件。'),tr('打开'),self.open_profile_library),
@@ -675,6 +707,13 @@ class Window(W.QMainWindow):
             tr('仍然继续'))
 
     def look_pending_state(self):
+        """(workspace, state) of the look job still to continue or review; None when there is none: it
+        finished, or a firmware refusal stopped it, so there is nothing to continue and
+        refresh_look_controls shows the refusal instead."""
+        found=self.look_unfinished_state()
+        return None if found and self.firmware_refusal(found[1]) else found
+
+    def look_unfinished_state(self):
         prior=self.settings.get('look_direct_work')
         if not prior:return None
         try:
@@ -701,7 +740,9 @@ class Window(W.QMainWindow):
         if self._look_refreshing:return
         self._look_refreshing=True
         try:
-            pending=self.look_pending_state();busy=self.process is not None
+            unfinished=self.look_unfinished_state();busy=self.process is not None
+            refusal=self.firmware_refusal(unfinished[1]) if unfinished else ''
+            pending=None if refusal else unfinished
             if pending:
                 prior,state=pending;phase=state.get('phase')
                 token=(prior,phase)
@@ -730,11 +771,13 @@ class Window(W.QMainWindow):
             else:
                 if self._look_displayed_pending is not None:
                     self._look_displayed_pending=None;self.look_editor.set_operations([])
-                self.look_pending.hide();self.look_editor.setEnabled(not busy)
+                # A job a firmware refusal stopped is not continued: the plan stays editable beneath the refusal.
+                self.look_pending.setText(refusal);self.look_pending.setVisible(bool(refusal));self.look_editor.setEnabled(not busy)
                 rows=self.look_editor.values()
                 self.look_button.setText(tr('查看并应用这 %d 项更改')%len(rows) if rows else tr('添加操作项后继续'))
                 self.look_button.setEnabled(bool(rows) and not self.look_editor.errors() and not busy)
         finally:self._look_refreshing=False
+        self.apply_write_gate()
 
     def look_batch_args(self):
         return self.direct_args('look',operations=self.look_editor.values())
@@ -1251,6 +1294,12 @@ class Window(W.QMainWindow):
         status_path = self.current_job / 'status.private.json'
         status = json.loads(status_path.read_text(encoding='utf-8')) if status_path.exists() else {}
         success = code == 0 and status.get('phase') == 'SUCCEEDED'
+        result = status.get('result') or {}
+        connection_checked = success and status.get('action') == 'connect' and 'firmware_build' in result
+        if connection_checked:
+            self.show_firmware_build(result['firmware_build'])
+        elif not success and status.get('error_type') == 'UnsupportedFirmware':
+            self.show_firmware_build(None)  # the gate refused this camera: it is no build the tool supports
         if success and (status.get('action') in ('usb_prepare', 'connect') or
                         (status.get('action') == 'setup_all' and 'drivers' in status.get('result', {}).get('completed_steps', []))):
             self.settings['connection_verified'] = True
@@ -1296,6 +1345,8 @@ class Window(W.QMainWindow):
                            tr('完成。请按日志提示进行下一步。') if success else
                            tr('操作停止：') + (tr(self.error_text(status)) if 'error' in status else tr('进程异常退出，退出码 ') + str(code)) + tr('。请导出诊断包。'))
         if success and status.get('action')=='recipe_apply':self.status.setText(tr('配方已写入并读回核对。'))
+        refused_build=connection_checked and self.build_unsupported
+        if refused_build:self.status.setText(self.build_label.text())
         if not success and sys.platform == 'win32' and self.driver_step_failed(status.get('action')):
             self.status.setText(self.status.text() + tr(DRIVER_HINT))
         if sound_notice:self.status.setText(sound_notice['status'])
@@ -1307,7 +1358,7 @@ class Window(W.QMainWindow):
         for button in self.buttons:
             button.setEnabled(True)
         self.stop.setEnabled(False)
-        self.set_state('danger' if not success else 'warning' if (waiting or resource_wait or resource_ready or factory_wait or sound_notice)
+        self.set_state('danger' if not success else 'warning' if (waiting or resource_wait or resource_ready or factory_wait or sound_notice or refused_build)
                        else 'success')
         self.process.deleteLater()
         self.process = None
@@ -1316,6 +1367,7 @@ class Window(W.QMainWindow):
         self.refresh_look_controls()
         self.refresh_setup_controls()
         self.refresh_factory_controls()
+        self.apply_write_gate()
         if not success and status.get('action')=='direct_factory_reset':
             from looktool.factoryrecover import prewrite_temporary_conflict
             work=self.settings.get('factory_direct_work')
@@ -1349,6 +1401,39 @@ class Window(W.QMainWindow):
             self.setup_result_button.setVisible(True)
             for box in (self.setup_presets,self.setup_fl23,self.setup_sound,self.setup_vertical,self.setup_plugin):box.setEnabled(True)
             self.show_setup_result()
+
+    def show_firmware_build(self, key):
+        """The Connection page's line for what the connection test found: the supported build named by
+        `key`, or no supported build (key None, or one this release does not know). The latter disables
+        every button that writes to the camera, until a later test finds a supported one."""
+        from looktool.buildprofile import by_key
+        build = by_key(key) if key else None
+        self.build_unsupported = build is None
+        self.build_label.setText(tr(build.label_zh) if build else tr('固件版本不受支持：已禁用更改'))
+        self.build_label.setProperty('warning', self.build_unsupported)
+        theme.repolish(self.build_label)
+
+    def apply_write_gate(self):
+        """Keep every button that writes to the camera disabled while its build is unsupported. Called
+        after anything that enables buttons. The worker's own gate refuses these writes as well."""
+        if self.build_unsupported:
+            for button in self.write_buttons:
+                button.setEnabled(False)
+
+    @staticmethod
+    def firmware_refusal(state):
+        """The plain text, in the interface language, of the UnsupportedFirmware refusal that stopped the
+        saved job `state` (NEEDS_REVIEW with the gate's message as its error); '' for any other state.
+        The gate refuses before it writes, so a job so stopped has nothing to continue."""
+        error = state.get('error')
+        if state.get('phase') != 'NEEDS_REVIEW' or not isinstance(error, str):
+            return ''
+        # looktool is imported only for a stopped job: a window with no saved job opens without it.
+        from looktool.buildprofile import unsupported_digests
+        from looktool.devicesession import UNIDENTIFIED
+        if error != UNIDENTIFIED and unsupported_digests(error) is None:
+            return ''
+        return tr(Window.error_text({'error': error}))
 
     @staticmethod
     def error_text(status):
