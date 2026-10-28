@@ -25,8 +25,10 @@ No Claude or additional agents without explicit user authorization.
   requirements into these GUI actions; ST reset does not recover former recipes.
 - Historical backup restoration and the existing CLI behavior remain separate,
   optional paths with their own contracts.
-- The built-in factory reference holds generic original Sony bytes only for
-  supported project regions, with no body calibration or full firmware.
+- The built-in factory references hold each supported build's original Sony bytes
+  only for supported project regions, with no body calibration or full firmware.
+  Factory restore uses only the identified build's reference and refuses a
+  reference from another build.
 - Preserve current calibration, unselected slots and their titles, and unrelated
   settings. Every imported slot uses ST in saved and runtime bindings; the base
   picker stays editable, so never claim a hard lock.
@@ -42,13 +44,24 @@ No Claude or additional agents without explicit user authorization.
 - Service entry checks the normal USB product string, authenticates, then binds AP
   property `00e70003` using the legacy hex-text serial digest. Do not make TUR
   readiness or getCameraInfo prerequisites, or substitute a HASP hash.
-- FL23 admits model/user-confirmed version 2.01 without a firmware fingerprint
-  whitelist. New FL23 and checkpoint workers use edited-byte checks and full host
-  byte readback, without firmware SHA gates or repeated package SHA scans. Keep
-  actual patch-position conflict guards and body-bound backups.
+- Every camera write needs an identified firmware build. `looktool.devicesession`
+  refuses property, CP-unit and settings writes, and every native launch except
+  the read-only `runtime`/`probe` ones, until `looktool.buildprofile.identify`
+  recognises the programs read from the camera. It puts every tool-owned region
+  back to a build's stock bytes, then compares the full-file SHA-256 of appFw.so
+  and cpapp-b.bin with the supported builds (Sony's public 2.01 and the 23 Sep
+  2025 body compile of 2.01). Any other build is refused before anything is
+  written. Never admit a build from the model or the user's version answer, and
+  take every build-dependent byte and address from the identified build. Staging
+  files in camera RAM (`/tmp`) is not gated. The standalone `src/fl23` tool
+  (`FL23.cmd`) is outside this gate.
+- FL23 and checkpoint workers use edited-byte checks and full host byte readback,
+  without repeated package SHA scans; FL23's guards are the identified build's
+  stock bytes. Keep actual patch-position conflict guards and body-bound backups.
 - Existing LUT import adapters keep their source fingerprints. Single-slot
-  restoration uses byte checks without firmware/backup/worker hash gates.
-  Checkpoint rollback is independent of job order and output fingerprints.
+  restoration uses byte checks without backup or worker hash gates; like every
+  write, it needs the identified build. Checkpoint rollback is independent of job
+  order and output fingerprints.
 - After writing: full readback; size/inode/mount/cleanup checks; check that saved
   and runtime settings are preserved; inspect retained images. A kernel boot is
   not proof of direct CP RAM state.
