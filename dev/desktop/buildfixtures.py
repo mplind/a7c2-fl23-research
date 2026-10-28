@@ -2,7 +2,12 @@
 
 The folder holds public-2.01/, body-2.01-20250923/ and hybrid-20261027/, each with appFw.so and
 cpapp-b.bin. conftest.py serves them as the build_fixture_files and build_fixtures fixtures: they
-skip when the variable is unset and fail when a file isn't the one recorded here. Offline only.
+skip when the variable is unset and fail when a file isn't the one recorded here.
+
+A build's /usr/share/app name files are in its own resources/ folder when the build was captured from
+a camera (camera_fingerprint.py), or else beside the read-only fixture folders, in
+<A7C2_BUILD_FIXTURES>-resources/<build>/ (extract_resources.py writes the public build's there).
+conftest.py serves them as build_resources. Offline only.
 """
 import hashlib
 from pathlib import Path
@@ -42,3 +47,25 @@ def mismatches(files):
     """One line for each fixture in `files` whose digests aren't the recorded ones."""
     return ['%s: %s, expected %s' % (name, files[name].digests, digests)
             for name, digests in DIGESTS.items() if files[name].digests != digests]
+
+
+def resources_folder(folder, name):
+    """Where fixture build `name` under `folder` keeps its name files: its own resources/ folder when
+    there is one, else <folder>-resources/<name>/ beside the fixtures; None when neither exists."""
+    folder = Path(folder)
+    for candidate in (folder / name / 'resources', folder.with_name(folder.name + '-resources') / name):
+        if candidate.is_dir():
+            return candidate
+    return None
+
+
+def resources(folder, name, filenames):
+    """{file name: bytes} of every name file in `filenames` for fixture build `name`, or None when the
+    build has no name files. A folder lacking any of them is refused, naming the first few."""
+    where = resources_folder(folder, name)
+    if where is None:
+        return None
+    missing = [filename for filename in filenames if not (where / filename).is_file()]
+    if missing:
+        raise ValueError('%s lacks %d of its name files: %s' % (where, len(missing), ', '.join(missing[:3])))
+    return {filename: (where / filename).read_bytes() for filename in filenames}

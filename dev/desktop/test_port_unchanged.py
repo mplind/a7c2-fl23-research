@@ -6,17 +6,26 @@ out, because the vertical tool puts them back itself, so identification normalis
 buildprofile.identity_regions: without it a camera with Vertical Display installed would no longer
 identify, and the firmware gate would refuse every later write, the undo included.
 
+The name tools' /usr/share/app files and the .bss RAM addresses the native helpers read are proven the
+same in both builds too, and every native-photo stage write stays inside each build's regions.
+
 Real-firmware tests read A7C2_BUILD_FIXTURES through conftest.py's build_fixtures and skip when it is
-unset. The rest run everywhere on the committed regions files.
+unset; the name-file comparison also skips, naming the build, until both builds' name files are there
+(build_resources). The rest run everywhere on the committed regions files.
 """
 import bisect
+import io
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 
+from capstone import CS_ARCH_ARM64, CS_MODE_ARM, Cs
+from capstone.arm64 import ARM64_OP_IMM, ARM64_OP_MEM, ARM64_OP_REG
+from elftools.elf.elffile import ELFFile
 import numpy as np
 import pytest
 
-from looktool import buildprofile, device_layout, six
+from looktool import buildprofile, device_layout, nameworker, photobasis, photoio, resources, six
 from looktool.buildprofile import BUILDS, identify, regions, translate
 from looktool.devicesession import modules
 import build_factory_reference
@@ -31,6 +40,18 @@ PUBLIC, BODY = BUILDS
 PROGRAMS = ('appFw.so', 'cpapp-b.bin')
 EACH_BUILD = pytest.mark.parametrize('name, build', [('public', PUBLIC), ('body', BODY)], ids=['public', 'body'])
 VERTICAL_WINDOWS = 19   # 17 portrait image references and two gauge blocks
+SHIFTED = 0x4ba1744     # where the body's .rodata starts to sit lower than the public build's
+# RAM addresses in appFw.so's .bss that native helpers read and write: the look bindings
+# (src/looks/native/look_bindings.c), the audio buffer (src/shutter_sound/native/sound_probe.c,
+# buffer_probe.c) and the vertical-display value (src/vertical/native/vertical_ram.c).
+BSS_ADDRESSES = (0x7e70598, 0x7eac508, 0x7e735b8, 0x7e732b8)
+# The (adrp, use) .text offsets that reach each one, found by bss_references on both builds.
+BSS_SITES = {
+    0x7e70598: {(0x2775e20, 0x2775e24), (0x2775e2c, 0x2775e30)},
+    0x7eac508: {(0x2799c04, 0x2799c08), (0x2799c10, 0x2799c14)},
+    0x7e735b8: {(0x2779b1c, 0x2779b20), (0x2779b28, 0x2779b2c)},
+    0x7e732b8: {(0x27796b4, 0x27796b8), (0x2817dbc, 0x2817dc0)},
+}
 
 
 def programs(fixture):
@@ -58,6 +79,70 @@ class Spans:
     def cover(self, at, size=1):
         index = bisect.bisect_right(self.starts, at) - 1
         return index >= 0 and at + size <= self.spans[index][1]
+
+
+def changes(before, after):
+    """{offset: new byte} for every byte `after` changes in `before`, two programs of one size."""
+    at = changed(before, after)
+    return dict(zip(at, np.frombuffer(after, np.uint8)[at].tolist()))
+
+
+def table(slot):
+    """A distinct, valid full-precision custom-look table for each slot."""
+    return bytes([slot]) * six.TABLE_BYTES
+
+
+def section(ap, name):
+    """(file offset, address, size) of ELF section `name` in appFw.so `ap`."""
+    found = ELFFile(io.BytesIO(ap)).get_section_by_name(name)
+    return found['sh_offset'], found['sh_addr'], found['sh_size']
+
+
+DISASSEMBLER = Cs(CS_ARCH_ARM64, CS_MODE_ARM)
+DISASSEMBLER.detail = True
+
+
+def page_uses(ap, at, page, limit=64):
+    """(offset, address) of each add-immediate, load or store after the adrp at `at` whose base is the
+    register that adrp set to `page`, until the register is written again or control leaves through b,
+    br or ret, and at most `limit` instructions on."""
+    register = next(DISASSEMBLER.disasm(ap[at:at + 4], at)).operands[0].reg
+    result = []
+    for insn in DISASSEMBLER.disasm(ap[at + 4:at + 4 + 4 * limit], at + 4):
+        operands = insn.operands
+        if (insn.mnemonic == 'add' and len(operands) == 3 and operands[1].type == ARM64_OP_REG
+                and operands[1].reg == register and operands[2].type == ARM64_OP_IMM):
+            result.append((insn.address, page + operands[2].imm))
+        result.extend((insn.address, page + operand.mem.disp) for operand in operands
+                      if operand.type == ARM64_OP_MEM and operand.mem.base == register and operand.mem.index == 0)
+        if register in insn.regs_access()[1] or insn.mnemonic in ('b', 'br', 'ret'):
+            break
+    return result
+
+
+def bss_references(ap, addresses):
+    """{address: {(adrp offset, use offset), …}}: the .text sites of appFw.so `ap` whose adrp plus an
+    add, load or store resolves to each address."""
+    offset, start, size = section(ap, '.text')
+    assert offset == start   # .text is loaded at its file offset, so an instruction's offset is its address
+    words = np.frombuffer(ap, '<u4', size // 4, offset).astype(np.int64)
+    pc = start + 4 * np.arange(len(words), dtype=np.int64)
+    pages = ((words >> 5) & 0x7ffff) << 2 | (words >> 29) & 3
+    pages -= (pages & 1 << 20) << 1                       # sign-extend the 21-bit page count
+    pages = (pc & ~0xfff) + (pages << 12)
+    adrp = (words & 0x9f000000) == 0x90000000
+    result = {address: set() for address in addresses}
+    for i in np.flatnonzero(adrp & np.isin(pages, [address & ~0xfff for address in addresses])):
+        for use, address in page_uses(ap, int(pc[i]), int(pages[i])):
+            if address in result:
+                result[address].add((int(pc[i]), use))
+    return result
+
+
+def label_table(raw):
+    """(index count, group, {resource ID: text}) of a name file, this project's appended titles removed."""
+    parsed = resources.decode(resources.before_custom(raw))
+    return parsed['count'], parsed['group'], {rid: entry['text'] for rid, entry in parsed['entries'].items()}
 
 
 def written(ap, windows, count, cut=0):
@@ -152,7 +237,151 @@ def test_identity_set_covers_every_generated_region(build_fixtures):
                 assert identity[program].cover(moved, size), (build.key, program, hex(at), size)
 
 
+def test_vertical_plan_on_body_equals_public(build_fixtures):
+    """portraitlayout and portraitgauge plan the same windows, at the same offsets with the same bytes,
+    on both builds, and find the same canvas roots and landscape references they check."""
+    public, body = build_fixtures.public.ap, build_fixtures.body.ap
+    windows = portraitlayout.canonical_windows(public)
+    assert portraitlayout.canonical_windows(body) == windows
+    assert [(row['offset'], bytes.fromhex(row['before_hex'])) for row in windows] == portraitlayout.stock_windows()
+    for row in windows:
+        at, size = row['offset'], len(row['before_hex']) // 2
+        assert at + size <= SHIFTED, hex(at)
+        assert body[at:at + size] == public[at:at + size], hex(at)
+    for portrait, landscape, delta, _ in portraitlayout.PAIRS:
+        for root in (portrait, landscape):
+            assert body[root:root + 24] == public[root:root + 24], hex(root)
+        assert body[landscape + delta:landscape + delta + 4] == public[landscape + delta:landscape + delta + 4]
+    on = {name: portraitlayout.references(ap, True) for name, ap in (('public', public), ('body', body))}
+    assert on['body'][1] == on['public'][1]
+    assert changes(body, on['body'][0]) == changes(public, on['public'][0])
+
+
+def test_name_resources_are_identical_or_parse_identically(build_resources):
+    """Each /usr/share/app name file the name tools rewrite is byte-equal in both builds, or else holds
+    the same label table once this project's appended titles are removed."""
+    uncaptured = [name for name, files in build_resources.items() if files is None]
+    if uncaptured:
+        pytest.skip('R4: no name files yet for %s, in neither <build>/resources/ nor <A7C2_BUILD_FIXTURES>-resources/'
+                    '<build>/: camera_fingerprint.py saves the camera\'s, read-only, in Task 10 step 1, and '
+                    'extract_resources.py the public update\'s' % ', '.join(uncaptured))
+    public, body = build_resources['public-2.01'], build_resources['body-2.01-20250923']
+    for filename in nameworker.filenames():
+        assert public[filename] == body[filename] or label_table(public[filename]) == label_table(body[filename]), filename
+
+
+def test_public_name_resources_are_sony_stock(build_resources):
+    """The public update's name files, from extract_resources.py, are the 68 files the name tools take,
+    with Sony's 2860 indices and none of this project's titles."""
+    files = build_resources['public-2.01']
+    if files is None:
+        pytest.skip('R4: no public-2.01 name files: run dev/desktop/extract_resources.py on Sony\'s BODYDATA.DAT')
+    assert list(files) == nameworker.filenames() and len(files) == 68
+    for filename, raw in files.items():
+        parsed = resources.decode(raw)
+        assert (parsed['count'], parsed['group']) == (2860, 5), filename
+        assert resources.before_custom(raw) == raw, filename
+
+
+def test_native_bss_addresses_are_referenced_identically(build_fixtures):
+    """.text and .bss lie at the same addresses in both builds, and the .text sites whose adrp plus add,
+    load or store reach each RAM address the native helpers use are the same, hold the same
+    instructions, and are there at all."""
+    public, body = build_fixtures.public.ap, build_fixtures.body.ap
+    for name in ('.text', '.bss'):
+        assert section(body, name) == section(public, name), name
+    _, start, size = section(public, '.bss')
+    assert all(start <= address < start + size for address in BSS_ADDRESSES)
+    found = {'public': bss_references(public, BSS_ADDRESSES), 'body': bss_references(body, BSS_ADDRESSES)}
+    for address in BSS_ADDRESSES:
+        assert found['public'][address], hex(address)
+        assert found['body'][address] == found['public'][address], hex(address)
+        for site in found['public'][address]:
+            for at in site:
+                assert body[at:at + 4] == public[at:at + 4], (hex(address), hex(at))
+    assert found['public'] == BSS_SITES
+
+
+@pytest.fixture(scope='module')
+def photo_stages(build_fixtures):
+    """Native-photo stages planned on each build's stock, worked out once for the module, by label: a
+    custom look with a stage in each slot alone and in all six, then slot 6's stage removed from all six
+    and slot 1's from slot 1 alone. Each keeps .changes against stock, .mask (the installed stage mask)
+    and .identified (the build its programs identify as)."""
+    result = {}
+    for name, build in (('public', PUBLIC), ('body', BODY)):
+        stock = programs(getattr(build_fixtures, name))
+        first = device_layout.replace(stock['appFw.so'], stock['cpapp-b.bin'], {1: table(1)}, build=build,
+                                      hash_checks=False, transitions=False)[2]
+        bank = photoio.neutral_bank(first['cpapp-b.bin'])
+
+        def install(slots):
+            return device_layout.replace(stock['appFw.so'], stock['cpapp-b.bin'], {slot: table(slot) for slot in slots},
+                                         native_photo={slot: photobasis.pack(bank, tone=[16 + slot, 0, 0])[1] for slot in slots},
+                                         native_bank=bank, build=build, hash_checks=False, transitions=False)[2]
+
+        def remove(state, slot):
+            return device_layout.deactivate(state['appFw.so'], state['cpapp-b.bin'], slot, bytes(six.TABLE_BYTES),
+                                            native_bank=bank, build=build, hash_checks=False, transitions=False)[2]
+
+        def kept(state):
+            return SimpleNamespace(changes={program: changes(stock[program], state[program]) for program in PROGRAMS},
+                                   mask=photoio.inspect(state['cpapp-b.bin'])['mask'],
+                                   identified=identify(state['appFw.so'], state['cpapp-b.bin']))
+        states = {}
+        for slot in range(1, 7):
+            state = install([slot])
+            states['slot %d' % slot] = kept(state)
+            if slot == 1:
+                states['slot 1 removed'] = kept(remove(state, 1))
+        state = install(range(1, 7))
+        states['all six'] = kept(state)
+        states['slot 6 removed'] = kept(remove(state, 6))
+        result[name] = states
+    return result
+
+
+@EACH_BUILD
+def test_native_photo_stage_writes_lie_inside_the_builds_regions(photo_stages, name, build):
+    """R22: every byte a native-photo stage install or removal changes lies inside the build's regions
+    (so inside its identity set too), and the programs still identify as the build."""
+    restore = {program: Spans(rows) for program, rows in regions(build).items()}
+    states = photo_stages[name]
+    assert {label: state.mask for label, state in states.items()} == {
+        **{'slot %d' % slot: 1 << (slot - 1) for slot in range(1, 7)},
+        'slot 1 removed': 0, 'all six': 63, 'slot 6 removed': 31}
+    for label, state in states.items():
+        assert state.changes['cpapp-b.bin'], label
+        for program in PROGRAMS:
+            outside = [at for at in state.changes[program] if not restore[program].cover(at)]
+            assert not outside, (label, program, hex(outside[0]))
+        assert state.identified is build, label
+
+
+def test_native_photo_stages_write_the_same_cp_bytes_on_both_builds(photo_stages):
+    for label, public in photo_stages['public'].items():
+        assert photo_stages['body'][label].changes['cpapp-b.bin'] == public.changes['cpapp-b.bin'], label
+
+
 # Committed tables ----------------------------------------------------------------------------
+
+@EACH_BUILD
+def test_custom_look_windows_lie_inside_the_restore_regions(name, build):
+    """R23: every AP restore window of runtime_for(build), every cp_sources window of both kinds and the
+    CP six-table span lie inside the build's regions, so a regenerated regions file that dropped one
+    fails here, without fixtures."""
+    restore = {program: Spans(rows) for program, rows in regions(build).items()}
+    runtime = device_layout.runtime_for(build)
+    assert sorted(spec['kind'] for spec in runtime['ap_sources']) == sorted(spec['kind'] for spec in runtime['cp_sources']) \
+        == ['fl23', 'stock']
+    for spec in runtime['ap_sources']:
+        for window in spec['restore']:
+            assert restore['appFw.so'].cover(window['offset'], len(window['hex']) // 2), (spec['kind'], hex(window['offset']))
+    for spec in runtime['cp_sources']:
+        for window in spec['windows']:
+            assert restore['cpapp-b.bin'].cover(window['offset'], len(window['before']) // 2), (spec['kind'], hex(window['offset']))
+    assert restore['cpapp-b.bin'].cover(six.TABLE_FILE, 32 + 6 * six.TABLE_BYTES)
+
 
 @EACH_BUILD
 def test_identity_regions_are_the_restore_regions_and_the_vertical_windows(name, build):

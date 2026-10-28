@@ -1,4 +1,5 @@
 """Prepare a model/version-checked Sony reference locally. Never opens USB."""
+from contextlib import contextmanager
 import json
 from pathlib import Path
 import shutil
@@ -12,6 +13,7 @@ from .paths import ROOT, data_root, write_json
 
 MODEL = 0x20030014
 FILES = ('appFw.so', 'cpapp-b.bin', 'CX89700_ALLLANG.bin')
+VENDOR = ROOT / 'src/desktopapp/vendor'
 
 
 def load(folder=None):
@@ -36,21 +38,21 @@ def builtin():
     return json.loads((ROOT / 'src/looks/assets/factory-regions-2.01.json').read_text(encoding='utf-8'))
 
 
-def prepare(source, cache=None):
-    source = Path(source).expanduser().resolve()
-    cache = Path(cache or data_root() / 'factory-2.01')
-    if source.is_dir():
-        load(source)
-        return {'cache': str(source), 'camera_io': False}
-    sys.path.insert(0, str(ROOT / 'src/desktopapp/vendor'))
+def _vendor():
+    """Make the bundled fwtool importable."""
+    if str(VENDOR) not in sys.path:
+        sys.path.insert(0, str(VENDOR))
+
+
+@contextmanager
+def firmware(source):
+    """(decoder, open tar archive) of the firmware inside Sony ILCE-7CM2 2.01 update file `source`, a
+    BODYDATA.DAT or a decrypted FDAT. Decodes on this computer only, into a temporary file, and refuses
+    another model or version."""
+    _vendor()
     from fwtool.sony import dat, fdat
-    from fwtool.archive import ext2, fat
-    cache.mkdir(parents=True, exist_ok=True)
-    generation = 'sony-2.01-' + uuid.uuid4().hex[:12]
-    folder = cache / generation
-    folder.mkdir()
     print('正在解码原厂文件，仅操作电脑文件…', flush=True)
-    with source.open('rb') as stream, tempfile.TemporaryFile() as decoded:
+    with Path(source).open('rb') as stream, tempfile.TemporaryFile() as decoded:
         if stream.read(8) == fdat.fdatHeaderMagic:
             stream.seek(0)
             contents = fdat.readFdat(stream)
@@ -77,25 +79,46 @@ def prepare(source, cache=None):
         decoded.seek(0)
         contents = fdat.readFdat(decoded)
         with tarfile.open(fileobj=contents.firmware, mode='r:') as archive:
-            for member in archive:
-                if not member.isfile():
-                    continue
-                base = member.name.rsplit('/', 1)[-1]
-                if base in FILES:
-                    with (folder / base).open('wb') as out:
-                        shutil.copyfileobj(archive.extractfile(member), out)
-                elif member.name.startswith('0700_part_image/') and member.size:
-                    image = archive.extractfile(member)
-                    reader = ext2.readExt2 if ext2.isExt2(image) else fat.readFat if fat.isFat(image) else None
-                    if reader:
-                        for entry in reader(image):
-                            name = entry.path.rsplit('/', 1)[-1]
-                            if stat.S_ISREG(entry.mode) and name in FILES:
-                                with (folder / name).open('wb') as out:
-                                    entry.contents.seek(0)
-                                    shutil.copyfileobj(entry.contents, out)
-                if all((folder / name).is_file() for name in FILES):
-                    break
+            yield cipher, archive
+
+
+def files(archive, wanted):
+    """Yield (path, stream) for every regular file of firmware `archive` whose base name is in `wanted`:
+    its own members, then the files inside each 0700_part_image/ ext2 or FAT partition image, whose
+    path is the image's member name followed by the path inside it. Each stream is read from the start
+    and only until the next file is asked for."""
+    _vendor()
+    from fwtool.archive import ext2, fat
+    for member in archive:
+        if not member.isfile():
+            continue
+        if member.name.rsplit('/', 1)[-1] in wanted:
+            yield member.name, archive.extractfile(member)
+        elif member.name.startswith('0700_part_image/') and member.size:
+            image = archive.extractfile(member)
+            reader = ext2.readExt2 if ext2.isExt2(image) else fat.readFat if fat.isFat(image) else None
+            for entry in reader(image) if reader else ():
+                if stat.S_ISREG(entry.mode) and entry.path.rsplit('/', 1)[-1] in wanted:
+                    entry.contents.seek(0)
+                    yield member.name + entry.path, entry.contents
+
+
+def prepare(source, cache=None):
+    source = Path(source).expanduser().resolve()
+    cache = Path(cache or data_root() / 'factory-2.01')
+    if source.is_dir():
+        load(source)
+        return {'cache': str(source), 'camera_io': False}
+    cache.mkdir(parents=True, exist_ok=True)
+    generation = 'sony-2.01-' + uuid.uuid4().hex[:12]
+    folder = cache / generation
+    folder.mkdir()
+    with firmware(source) as (cipher, archive):
+        for path, contents in files(archive, FILES):
+            with (folder / path.rsplit('/', 1)[-1]).open('wb') as out:
+                shutil.copyfileobj(contents, out)
+            if all((folder / name).is_file() for name in FILES):
+                break
     if not all((folder / name).is_file() for name in FILES):
         raise ValueError('Sony archive lacks required original programs/settings')
     report = {'model_code': MODEL, 'version': '2.01', 'decoder': cipher,
