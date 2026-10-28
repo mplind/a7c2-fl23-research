@@ -7,8 +7,10 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'src/looks/tests'))
 import candidate
 import trial
+from simbuild import CarriesBuild
 
 
 def probe(kind=3, mode='2', audio=0):
@@ -89,7 +91,7 @@ class CandidateTests(unittest.TestCase):
                 cp=bytes(legacy)
             state = {'files': {'/usr/lib/appFw.so': self.ap, '/cp/cpapp-b.bin': cp},
                      'mode': '2', 'calls': [], 'audio': 0}
-            class Camera:
+            class Camera(CarriesBuild):
                 identity = {'model': 'ILCE-7CM2', 'serial_sha256': 'synthetic-body'}
                 core = None
                 def __enter__(self): return self

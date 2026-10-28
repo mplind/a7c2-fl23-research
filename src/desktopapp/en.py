@@ -563,4 +563,7 @@ STRINGS = {
     '管理员进程意外结束，相机操作结果未知。请导出诊断包，不要重复刚才的操作。': 'The administrator process ended unexpectedly, so the camera operation result is unknown. Do not repeat the operation',
     '终端授权未完成（窗口已关闭或密码不正确）；本次相机操作尚未开始，可重新点击原按钮。': 'Terminal authorization did not complete (window closed or wrong password); the camera operation has not started, and you can click the same button again',
     '尚未确认新的冷启动。完成断电重开后再核对，不要重复写入。': 'No new cold boot has been confirmed yet. Finish the cold reload, then verify again; do not repeat the write',
+    # The firmware identity gate (looktool.devicesession, looktool.buildprofile.UNSUPPORTED).
+    '此相机的固件版本不受支持，未写入任何内容。（appFw.so %s…，cpapp-b.bin %s…）': "This camera's firmware build isn't supported. Nothing was written. (appFw.so %s…, cpapp-b.bin %s…)",
+    '尚未识别此相机的固件版本，未写入任何内容。': "This camera's firmware build hasn't been identified, so nothing was written",
 }

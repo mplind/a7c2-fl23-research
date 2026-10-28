@@ -7,9 +7,10 @@ import pytest
 
 from looktool import portraitjob,verticalpersist
 from looktool.checkpointjob import Rollback
+from simbuild import CarriesBuild
 
 
-class Camera:
+class Camera(CarriesBuild):
     identity={'model':'ILCE-7CM2','serial_sha256':'fixture'}
     identity_pending=False
     def __init__(self):
@@ -18,8 +19,8 @@ class Camera:
     def __enter__(self):return self
     def __exit__(self,*args):pass
     def read(self,path):
-        assert path=='/usr/lib/appFw.so'
-        return self.ap
+        assert path in ('/usr/lib/appFw.so','/cp/cpapp-b.bin')
+        return self.ap if path.endswith('.so') else b'original CP'
     def snapshot(self,memory):return b'ram' if memory else b'saved'
     def records(self,raw):return [{},{}]
 

@@ -58,7 +58,7 @@ class Stage:
         if self.build is None:
             self.reconcile()
             self.build=portraitworker.build(self.plans,self.ap,self.owner.root/'portrait-worker',ap_windows=self.windows)
-        return invoke(self.camera,Path(self.build['path']).read_bytes(),stage='portrait.staged.so',
+        return invoke(self.camera,Path(self.build['path']).read_bytes(),kind='portrait',stage='portrait.staged.so',
             request='portrait.request',result='portrait.result',contents=struct.pack('<8sII',portraitworker.MAGIC,mode,0),
             mode=mode,decode=lambda raw:portraitworker.decode(raw,mode),record=self.owner.record,
             save_raw=lambda raw:self.owner.raw('portrait-'+str(mode)+'.bin',raw),extras=('a7c2.probe.result',))

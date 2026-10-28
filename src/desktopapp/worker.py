@@ -1,6 +1,5 @@
 """One job per child process. Full tracebacks stay in the GUI's private log."""
 import contextlib
-import importlib.util
 import json
 import os
 from pathlib import Path
@@ -8,14 +7,6 @@ import sys
 import traceback
 import uuid
 from .paths import ROOT, data_root, write_json
-
-
-def module(name, path):
-    spec = importlib.util.spec_from_file_location(name, path)
-    value = importlib.util.module_from_spec(spec)
-    sys.modules[name] = value
-    spec.loader.exec_module(value)
-    return value
 
 
 def setup_runtime():
@@ -235,23 +226,6 @@ def run(action, args, job):
     if action=='usb_stability':
         from .usbcheck import run as check_usb
         return check_usb(job)
-    if action.startswith('fl23_'):
-        # The tested flexible planner, with PR #5's revised color/curve assets.
-        # The PR's original standalone GUI/CLI remains untouched in src/fl23.
-        from looktool.devicelock import DeviceLock
-        app = module('desktop_fl23', ROOT / 'src/camera_runtime/app.py')
-        work = Path(args['workspace'])
-        with DeviceLock():
-            obj = app.Job(work)
-            if action == 'fl23_prepare':
-                obj.prepare(Path(args['backup']), args['firmware'])
-                register_backup(Path(args['backup']) / 'checkpoint.private.zip')
-            elif action == 'fl23_install':
-                obj.load()
-                obj.install(args.get('battery'), power_confirmed=args.get('power_confirmed', False))
-            else:
-                obj.verify()
-        return {'workspace': str(work), 'phase': obj.state.get('phase')}
     if action == 'backup_inspect':
         from looktool import checkpoint
         manifest, target = checkpoint.load_target(args['backup'])

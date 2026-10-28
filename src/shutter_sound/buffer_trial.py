@@ -252,6 +252,7 @@ def run(root, original_job, zig=None, *, payload=None, register=False, wire_form
                 trial.save(root, state)
             ap = camera.read('/usr/lib/appFw.so')
             cp = camera.read('/cp/cpapp-b.bin')
+            camera.identify_programs(ap, cp)
             if cp[candidate.OFFSET:candidate.OFFSET+2]==candidate.BEFORE:
                 raise ValueError('当前相机的电子快门声音尚未开启，请先开启；本次没有注册试听声音。')
             candidate.guard(ap, cp, installed=True)
@@ -269,7 +270,7 @@ def run(root, original_job, zig=None, *, payload=None, register=False, wire_form
 
             state['phase'] = 'invoking_empty_allocations'
             trial.save(root, state)
-            result = devicesession.invoke(camera, worker.read_bytes(),
+            result = devicesession.invoke(camera, worker.read_bytes(), kind='audition',
                 stage='shutter.staged.so', request=None,
                 result='shutter.probe.result', contents=None, mode=0, decode=parse,
                 record=record, save_raw=lambda raw: (root / 'report.private.bin').write_bytes(raw),

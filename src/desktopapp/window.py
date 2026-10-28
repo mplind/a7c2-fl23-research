@@ -1352,12 +1352,15 @@ class Window(W.QMainWindow):
 
     @staticmethod
     def error_text(status):
-        """The worker's error; a recipe job's outcome hint is shown in the interface language."""
+        """The worker's error; a recipe job's outcome hint and a firmware-build refusal (which names
+        the digests it saw) are shown in the interface language."""
         from .actions.catalog import RECIPE_ACTIONS
         if status.get('action') in RECIPE_ACTIONS:
             from .actions.recipe import localized
             return localized(status['error'],tr)
-        return status['error']
+        from looktool.buildprofile import UNSUPPORTED,unsupported_digests
+        digests=unsupported_digests(status['error'])
+        return tr(UNSUPPORTED)%digests if digests else status['error']
 
     def process_error(self, error):
         if self.process and error == QtCore.QProcess.FailedToStart:

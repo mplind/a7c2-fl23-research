@@ -43,11 +43,10 @@ class CheckpointCamera(Camera):
         if name in TEMPS:
             if self.identity_pending or not self.programs_pinned or self.service_only:raise ValueError('Body identity required before checkpoint execution')
             if not data or len(data)>65536:raise ValueError('Checkpoint staging limit exceeded')
-            self.link.select('/tmp/jiritsu/'+name);return self.link.jiritsu(16,b'\0\xff\0'+data)
+            return self._jiritsu_write(name,data)
         return super().temp_write(name,data)
     def temp_remove(self,name):
-        if name in TEMPS:
-            self.link.select('/tmp/jiritsu/'+name);return self.link.jiritsu(18,b'\0\xff')
+        if name in TEMPS:return self._jiritsu_remove(name)
         return super().temp_remove(name)
 
 class Rollback:
@@ -81,13 +80,14 @@ class Rollback:
             path=nativebuild.ROOT/'src/fl23/assets/runtime.so';magic=None
             request,result=None,'a7c2.runtime.result';extras=('a7c2.probe.result',)
             decode=lambda raw:camera.core.parse_native('runtime',raw)
-        return invoke(camera,path.read_bytes(),stage='checkpoint.staged.so',request=request,result=result,
+        return invoke(camera,path.read_bytes(),kind=kind,stage='checkpoint.staged.so',request=request,result=result,
             contents=struct.pack('<8sII',magic,mode,0) if request else None,mode=mode,decode=decode,
             record=self.record,save_raw=lambda raw:self.raw(kind+'-'+str(mode)+'.bin',raw),extras=extras)
     def capture(self,camera):
         print('Reading current programs, look settings and names.',flush=True)
         values={name:camera.read(path) for name,path in checkpoint.PROGRAM_PATHS.items()}
-        # Body and user-confirmed 2.01, no firmware origin/hash admission.
+        # Every later write needs the build these programs are; tool regions are normalised first.
+        camera.identify_programs(values['appFw.so'],values['cpapp-b.bin'])
         camera.programs_pinned=True
         values['settings-ram.bin']=camera.snapshot(True);values['settings-saved.bin']=camera.snapshot(False)
         for name in nameworker.filenames():values['resources/'+name]=camera.read('/usr/share/app/'+name)
@@ -126,13 +126,13 @@ class Rollback:
         keys,ram,saved,before_ram,before_saved=plan
         for chip,selected in [(1,checkpoint.CP_KEYS),(0,keys)]:
             read=(camera.link.cp_read if chip else camera.property_read)
-            write=(camera.link.cp_write if chip else lambda k,v:camera.property_write(k,v,set(keys)))
+            write=(camera.cp_write if chip else lambda k,v:camera.property_write(k,v,set(keys)))
             if any(before_saved[chip][k].data!=saved[chip][k].data for k in selected):
                 for key in selected:
                     value=saved[chip][key].data
                     if read(key)!=value:write(key,value)
                     if read(key)!=value:raise ValueError('Look field readback differs: '+hex(key))
-                camera.link.call(camera.link.camera.saveBackup,0x02a4 if chip else 0x02cf)
+                camera.save_settings(0x02a4 if chip else 0x02cf)
             for key in selected:
                 value=ram[chip][key].data
                 if read(key)!=value:write(key,value)

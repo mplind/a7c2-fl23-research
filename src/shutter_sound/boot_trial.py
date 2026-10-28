@@ -214,7 +214,7 @@ def invoke_files(camera, root, state, worker, mode):
         folder = root / 'evidence'
         folder.mkdir(exist_ok=True)
         (folder / ('files-' + str(len(state['journal'])) + '.bin')).write_bytes(raw)
-    result = devicesession.invoke(camera, Path(worker).read_bytes(),
+    result = devicesession.invoke(camera, Path(worker).read_bytes(), kind='files',
         stage='shutter.staged.so', request='a7c2.install.request',
         result='shutter.probe.result', contents=struct.pack('<8sII', b'A7SFQ001', mode, 0),
         mode=mode, decode=files_worker.parse, record=record, save_raw=capture,

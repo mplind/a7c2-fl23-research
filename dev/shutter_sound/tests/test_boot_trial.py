@@ -6,8 +6,10 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'src/looks/tests'))
 import boot_trial
 import trial
+from simbuild import CarriesBuild
 
 
 class BootTrialOrderingTests(unittest.TestCase):
@@ -25,7 +27,7 @@ class BootTrialOrderingTests(unittest.TestCase):
             state = {'files': {'/usr/lib/appFw.so': b'original-unrelated',
                                '/cp/cpapp-b.bin': b'unchanged CP'}, 'events': [], 'fault': None}
 
-            class Camera:
+            class Camera(CarriesBuild):
                 core = None
                 def __enter__(self): return self
                 def __exit__(self, *args): pass

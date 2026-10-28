@@ -3,6 +3,7 @@ import types,unittest
 from unittest.mock import Mock,patch
 from looktool import usbservice,firmware
 from looktool.devicesession import Camera
+from simbuild import identified
 
 class ReadinessFailure(RuntimeError):pass
 class SonyBusyFailure(RuntimeError):pass
@@ -45,12 +46,12 @@ class ServiceTests(unittest.TestCase):
         self.assertNotIn(('device',0x0336),events)
         self.assertEqual([e for e in events if e[0]=='authenticate'],[('authenticate',0x0e8a)])
     def test_unconfirmed_identity_only_allows_pinned_readonly_probe(self):
-        camera=Camera();camera.identity_pending=True;camera.programs_pinned=True;camera.service_only=False
+        camera=identified(Camera());camera.identity_pending=True;camera.programs_pinned=True;camera.service_only=False
         camera.identity={'model':None};camera.link=Mock();blob=b'only-readonly-runtime'
         camera.core=types.SimpleNamespace(MODEL='ILCE-7CM2',assets=lambda:{'files':{'runtime.so':firmware.sha(blob)}})
         for stage,data in [('lut-program-staged.so',blob),('lut-runtime-staged.so',b'other'),('libJit.so',b'other')]:
             with self.assertRaises(ValueError):camera.temp_write(stage,data)
-        with self.assertRaises(ValueError):camera.property_write(0x02cf0001,b'\0',{0x02cf0001})
+        with self.assertRaisesRegex(ValueError,'Verified model'):camera.property_write(0x02cf0001,b'\0',{0x02cf0001})
         camera.link.call.assert_not_called();camera.link.select.assert_not_called()
         camera.temp_write('lut-runtime-staged.so',blob)
         with self.assertRaises(ValueError):camera.confirm_identity({'model_index':17})

@@ -5,6 +5,7 @@ from looktool import device_layout,firmware,resources,six
 from looktool.devicesession import invoke,Camera
 from looktool import nameworker
 from looktool.devicelock import DeviceLock
+from simbuild import CarriesBuild,identified
 
 def resource_fixture():
     count=2866;base=(16+2*count+3)&~3
@@ -52,8 +53,10 @@ class TemplateSourceTests(unittest.TestCase):
             self.assertEqual(mapping.hex(),asset['map'])
 
 class NativeInvocationTests(unittest.TestCase):
-    class Camera:
-        def __init__(self):self.files={};self.writes=[];self.healthy=True;self.result=b'valid report'
+    class Camera(CarriesBuild):
+        def __init__(self):
+            self.files={};self.writes=[];self.healthy=True;self.result=b'valid report'
+            self.identify_programs(b'stand-in appFw.so',b'stand-in cpapp-b.bin')
         def temp_read(self,name,missing=False):return self.files.get(name)
         def temp_write(self,name,data):
             self.writes.append(name);self.files[name]=data
@@ -63,7 +66,7 @@ class NativeInvocationTests(unittest.TestCase):
         def mark_unknown(self):self.healthy=False
     def run_native(self,camera,decode):
         events=[];raw=[]
-        result=invoke(camera,b'worker',stage='lut-program-staged.so',request='a7c2.install.request',result='a7c2.install.result',contents=b'request',mode=1,decode=decode,record=lambda e,**kw:events.append(e),save_raw=raw.append)
+        result=invoke(camera,b'worker',kind='program',stage='lut-program-staged.so',request='a7c2.install.request',result='a7c2.install.result',contents=b'request',mode=1,decode=decode,record=lambda e,**kw:events.append(e),save_raw=raw.append)
         return result,events,raw
     def test_single_invocation_cleans_only_verified_owned_temporaries(self):
         camera=self.Camera();result,events,raw=self.run_native(camera,lambda raw:{'valid':True})
@@ -83,8 +86,8 @@ class NativeInvocationTests(unittest.TestCase):
 class NameReportTests(unittest.TestCase):
     def test_settings_allowlist_cannot_authorize_protected_cp_groups(self):
         from unittest.mock import Mock
-        camera=Camera();camera.service_only=False;camera.programs_pinned=True;camera.link=Mock()
-        with self.assertRaises(ValueError):camera.property_write(0x02a40000,b'\0',{0x02a40000})
+        camera=identified(Camera());camera.service_only=False;camera.programs_pinned=True;camera.link=Mock()
+        with self.assertRaisesRegex(ValueError,'Setting outside'):camera.property_write(0x02a40000,b'\0',{0x02a40000})
         camera.link.call.assert_not_called()
     def test_valid_modes_and_unsafe_preflight_pid_or_hash_are_rejected(self):
         build={'count':2,'files':[{},{}],'AP':'11'*32,'target_AP':'22'*32}

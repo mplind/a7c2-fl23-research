@@ -86,14 +86,12 @@ def factory(expected=None):
             if name == 'shutter.staged.so':
                 if not self.programs_pinned or not data or len(data) > 65536:
                     raise ValueError('Invalid sound preflight staging')
-                self.link.select('/tmp/jiritsu/' + name)
-                return self.link.jiritsu(16, b'\0\xff\0' + data)
+                return self._jiritsu_write(name, data)
             return super().temp_write(name, data)
         def temp_remove(self, name):
             from looktool.checkpointjob import TEMPS
             if name in TEMPS or name in ('shutter.staged.so', 'shutter.probe.result', 'shutter.custom.lease'):
-                self.link.select('/tmp/jiritsu/' + name)
-                return self.link.jiritsu(18, b'\0\xff')
+                return self._jiritsu_remove(name)
             return super().temp_remove(name)
     return SoundCamera(expected, allow_service_resume=True)
 
@@ -160,14 +158,17 @@ def run_native(camera, root, state, blob, kind, mode=0, plan=None):
         extras = ()  # The worker includes fresh drop-log evidence in its report.
     evidence = root / 'evidence'
     evidence.mkdir(exist_ok=True)
-    return devicesession.invoke(camera, Path(blob).read_bytes(), stage=stage,
+    return devicesession.invoke(camera, Path(blob).read_bytes(), kind=kind, stage=stage,
         request=request, result=result, contents=contents, mode=mode, decode=decode,
         record=record, save_raw=lambda raw: (evidence / (kind + '-' + str(len(state['journal'])) + '.bin')).write_bytes(raw), extras=extras)
 
 
 def capture(camera):
-    return {'appFw.so':camera.read('/usr/lib/appFw.so'),
-            'cpapp-b.bin':camera.read('/cp/cpapp-b.bin'),
+    """Current programs and settings. Identifies the programs' build: every sound write needs it."""
+    ap, cp = camera.read('/usr/lib/appFw.so'), camera.read('/cp/cpapp-b.bin')
+    camera.identify_programs(ap, cp)
+    return {'appFw.so':ap,
+            'cpapp-b.bin':cp,
             'settings-ram.bin':camera.snapshot(True),
             'settings-saved.bin':camera.snapshot(False)}
 

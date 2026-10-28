@@ -106,11 +106,11 @@ class Workers:
         self.camera, self.journal = camera, journal
         self.sequence = 0
 
-    def call(self, name, decoder, mode=0, contents=None):
+    def call(self, kind, name, decoder, mode=0, contents=None):
         from looktool.devicesession import invoke
         self.sequence += 1
         aliases = name in ('aliases.so','aliases_recovery.so')
-        return invoke(self.camera, (ASSETS / name).read_bytes(),
+        return invoke(self.camera, (ASSETS / name).read_bytes(), kind=kind,
             stage='lut-names-staged.so' if aliases else 'lut-runtime-staged.so',
             request='a7c2.names.request' if aliases else None,
             result='a7c2.names.result' if aliases else 'a7c2.runtime.result',
@@ -119,15 +119,15 @@ class Workers:
             extras=('a7c2.probe.result',))
 
     def probe(self):
-        return require_ok(self.call('vertical_probe.so', parse_probe))
+        return require_ok(self.call('probe', 'vertical_probe.so', parse_probe))
 
     def ram(self, target):
         name = 'vertical_enable_ram.so' if target == 0 else 'vertical_disable_ram.so'
-        return require_ok(self.call(name, lambda raw: parse_ram(raw, target), mode=target))
+        return require_ok(self.call('ram', name, lambda raw: parse_ram(raw, target), mode=target))
 
     def aliases(self, mode):
         name='aliases_recovery.so' if getattr(self,'allow_writable_recovery',False) else 'aliases.so'
-        result = self.call(name, lambda raw: parse_aliases(raw, mode), mode=mode,
+        result = self.call('aliases', name, lambda raw: parse_aliases(raw, mode), mode=mode,
                            contents=struct.pack('<8sII', b'A7VRS001', mode, 0))
         self.journal.report['last_alias_result'] = result
         self.journal.record('alias_result', result=result)
@@ -157,7 +157,7 @@ def prepare_camera(camera, journal):
             parsed['model_index'] = struct.unpack_from('<I', raw, 48)[0]
             return parsed
 
-        runtime = invoke(camera, blob, stage='lut-runtime-staged.so', request=None,
+        runtime = invoke(camera, blob, kind='runtime', stage='lut-runtime-staged.so', request=None,
             result='a7c2.runtime.result', contents=None, mode=0, decode=decode,
             record=journal.record, save_raw=lambda raw: journal.raw('identity', raw),
             extras=('a7c2.probe.result',))

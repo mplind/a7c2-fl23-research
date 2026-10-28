@@ -9,7 +9,8 @@ import tempfile
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
-from looktool import checkpoint,checkpointworker,checkpointjob,firmware,nameworker,resources
+from looktool import checkpoint,checkpointworker,checkpointjob,devicesession,firmware,nameworker,resources
+from simbuild import CarriesBuild
 from test_device_components import resource_fixture
 from test_device_job import Prop,core
 
@@ -32,7 +33,9 @@ def values(resource=None):
 
 def records(raw):return [{int(k):Prop(bytes.fromhex(v[0]),v[1]) for k,v in p.items()} for p in json.loads(raw)]
 
-class Camera:
+class Camera(CarriesBuild):
+    """Simulated session over 40 kB stand-in programs. Like the production session, it refuses
+    every write until identify_programs has run."""
     def __init__(self,initial):
         self.identity=dict(BODY);self.core=core;self.files={}
         for n,p in checkpoint.PROGRAM_PATHS.items():self.files[p]=initial[n]
@@ -53,8 +56,13 @@ class Camera:
     records=staticmethod(records)
     def property_read(self,k):return self.ram[0][k].data
     def property_write(self,k,v,allowed):
+        self.require_build()
         if k not in allowed:raise AssertionError('Unselected write')
         self._set(0,k,v)
+    def cp_write(self,k,v):
+        self.require_build();return self.link.cp_write(k,v)
+    def save_settings(self,group=0x02cf):
+        self.require_build();return self.link.call(self.link.camera.saveBackup,group)
     def save_group(self,group):
         self.saves.append(group);chip=int(group==0x02a4)
         for k,v in self.ram[chip].items():
@@ -67,6 +75,8 @@ class SimRollback(checkpointjob.Rollback):
     lose_after_program=False
     corrupt_name=False
     def native(self,camera,kind,mode,build=None):
+        # The production launcher's gate, before anything reaches the simulated camera.
+        if not devicesession.read_only_launch(kind,mode,None):camera.require_build()
         camera.native_calls.append((kind,mode));self.record('simulated_native',kind=kind,mode=mode)
         if kind=='purge':
             stale=[p for p in camera.files if p.startswith('/usr/share/app/.a7c2-')]

@@ -382,7 +382,7 @@ class DirectJob(Rollback):
     def forward_names(self, camera, build, mode):
         if build.get('unchanged'):
             return
-        return invoke(camera, Path(build['path']).read_bytes(), stage='lut-names-staged.so',
+        return invoke(camera, Path(build['path']).read_bytes(), kind='names', stage='lut-names-staged.so',
             request='a7c2.names.request', result='a7c2.names.result',
             contents=struct.pack('<8sII', b'A7NAM001', mode, 0), mode=mode,
             decode=lambda raw: nameworker.validate(raw, mode, build,allow_completed_busy=True), record=self.record,

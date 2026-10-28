@@ -106,7 +106,7 @@ def sync(camera,owner,fields,expected=None):
         if camera.property_read(row['key'])!=bytes([row['value']]):
             raise ValueError('Save selected look bases before native model synchronization')
     compiled=build(ap,selected,owner.root/'runtime-bindings'/str(len(owner.state['journal'])),owner.zig)
-    result=invoke(camera,Path(compiled['path']).read_bytes(),stage='lut-runtime-staged.so',request=None,
+    result=invoke(camera,Path(compiled['path']).read_bytes(),kind='bindings',stage='lut-runtime-staged.so',request=None,
         result='a7c2.runtime.result',contents=None,mode=1,decode=lambda raw:parse(raw,selected),
         record=owner.record,save_raw=lambda raw:owner.raw('look-bindings.bin',raw),extras=('a7c2.probe.result',))
     owned=dict(previous)

@@ -22,7 +22,7 @@ def verify(args,job):
             custom=boot_sound.installed(ap)
             probe=boot_trial.current_probe(ap,root/'probe')
             camera.programs_pinned=True
-            loaded=invoke(camera,Path(probe).read_bytes(),stage='lut-runtime-staged.so',request=None,
+            loaded=invoke(camera,Path(probe).read_bytes(),kind='probe',stage='lut-runtime-staged.so',request=None,
                 result='shutter.probe.result',contents=None,mode=0,decode=candidate.parse_probe,
                 record=record,save_raw=lambda raw:(root/'report.private.bin').write_bytes(raw),extras=('a7c2.probe.result',))
             candidate.require_registry(loaded)

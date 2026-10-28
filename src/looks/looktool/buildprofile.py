@@ -12,6 +12,7 @@ from dataclasses import dataclass
 import hashlib
 import json
 from pathlib import Path
+import re
 import zlib
 
 ASSETS = Path(__file__).resolve().parents[1] / 'assets'
@@ -19,10 +20,18 @@ PROGRAMS = ('appFw.so', 'cpapp-b.bin')
 PUBLIC_LOOK_TABLE = 0x4c7cf7c
 LOOK_TABLE_BYTES = 12
 UNSUPPORTED = '此相机的固件版本不受支持，未写入任何内容。（appFw.so %s…，cpapp-b.bin %s…）'
+_UNSUPPORTED_MESSAGE = re.compile(re.escape(UNSUPPORTED).replace('%s', '([0-9a-f]{16})'))
 
 
 class UnsupportedFirmware(ValueError):
     """The program files are not a supported build, so nothing may be written to this camera."""
+
+
+def unsupported_digests(message):
+    """The two digest prefixes an UNSUPPORTED refusal names, so the window can show it translated;
+    None for any other message."""
+    match = _UNSUPPORTED_MESSAGE.fullmatch(message)
+    return match.groups() if match else None
 
 
 @dataclass(frozen=True)

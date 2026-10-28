@@ -96,6 +96,8 @@ def test_model_is_synchronized_before_final_backup_snapshot_readback(tmp_path):
     camera.snapshot=export
     job=SimDirect(tmp_path/'pending-export',factory=lambda expected=None:camera)
     job.root.mkdir();job.state=dict(journal=[])
+    # This step runs after the job's capture, which identified the programs it read.
+    camera.identify_programs(camera.files['/usr/lib/appFw.so'],camera.files['/cp/cpapp-b.bin'])
     current={'settings-ram.bin':camera.snapshot(True),'settings-saved.bin':camera.snapshot(False)}
     prepared=job.settings(camera,current,[{key:b'\0'},{}])
     job.prepare_look_settings(camera,prepared)

@@ -121,7 +121,7 @@ class Job:
                 return value
         else:raise ValueError('Unknown native operation')
         if kind in ['program','names'] and self._hashes() and firmware.sha(blob)!=build['sha256']:raise ValueError('Compiled worker changed')
-        return invoke(camera,blob,stage=stage,request=request,result=result,contents=struct.pack('<8sII',magic,mode,0) if request else None,mode=mode,decode=decode,record=self.record,save_raw=lambda raw:self.raw(kind+'-'+str(mode)+'.bin',raw),extras=('a7c2.probe.result',) if kind=='runtime' else ())
+        return invoke(camera,blob,kind=kind,stage=stage,request=request,result=result,contents=struct.pack('<8sII',magic,mode,0) if request else None,mode=mode,decode=decode,record=self.record,save_raw=lambda raw:self.raw(kind+'-'+str(mode)+'.bin',raw),extras=('a7c2.probe.result',) if kind=='runtime' else ())
     def _read_programs(self,camera,expected,*,allow_later_slots=False):
         actual={}
         self._later_fl23=False

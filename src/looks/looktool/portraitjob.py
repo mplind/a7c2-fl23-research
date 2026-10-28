@@ -28,6 +28,7 @@ class PortraitJob(DirectJob):
         try:
             with self.factory() as camera:
                 ap=camera.read('/usr/lib/appFw.so')
+                camera.identify_programs(ap,camera.read('/cp/cpapp-b.bin'))
                 # This action edits only the AP reference data and two image
                 # banks. Its native worker checks the actual C2 model index;
                 # the planner checks each edited layout/record byte below.

@@ -1,13 +1,30 @@
-"""Lazy optional USB access for explicit LUT device commands only."""
+"""Lazy optional USB access for explicit LUT device commands only.
+
+The firmware identity gate lives here. No primitive with a persistent effect on the camera (a setting
+write or save, a CP unit write, or a native launch that can change anything) runs until
+Camera.identify_programs has identified the programs just read from the camera as a supported build.
+Staging files in camera RAM (/tmp/jiritsu) stays ungated: it changes nothing persistent.
+"""
 import importlib,struct,sys,time
 from pathlib import Path
-from . import firmware
+from . import buildprofile, firmware
+from .buildprofile import UnsupportedFirmware
 from .nativebuild import ROOT
 
 TEMP_NAMES={'libJit.so','lut-program-staged.so','lut-names-staged.so','lut-runtime-staged.so',
     'portrait.staged.so','portrait.request','portrait.result',
     'a7c2.install.request','a7c2.install.result','a7c2.names.request','a7c2.names.result',
     'a7c2.wbi.request','a7c2.wbi.result','a7c2.runtime.result','a7c2.probe.result'}
+# The only native launches that run before identification. ('runtime', 0) is the pinned runtime.so
+# model/boot/span probe; ('probe', 0) is a read-only probe (the sound registry and vertical-display
+# probes). Neither stages a request file. Every other (kind, mode) can change the camera.
+READ_ONLY_NATIVE=frozenset({('runtime',0),('probe',0)})
+UNIDENTIFIED='尚未识别此相机的固件版本，未写入任何内容。'
+
+
+def read_only_launch(kind,mode,request):
+    """The one place that decides whether a native launch may run before identification."""
+    return (kind,mode) in READ_ONLY_NATIVE and request is None
 
 def modules():
     folder=ROOT/('src/camera_runtime' if (ROOT/'src/camera_runtime').is_dir() else 'src/fl23');sys.path[:0]=[str(folder),str(folder/'vendor')]
@@ -20,6 +37,7 @@ class Camera:
     def __init__(self,expected=None,*,allow_service_resume=False):
         self.expected=expected;self.healthy=True;self.identity_pending=False;self.programs_pinned=False
         self.allow_service_resume=allow_service_resume
+        self.firmware_build=None
     def __enter__(self):
         from .devicelock import DeviceLock
         self.lock=DeviceLock();self.lock.__enter__()
@@ -86,7 +104,18 @@ class Camera:
         except BaseException:
             self.link.__exit__(*sys.exc_info());raise
         return self
+    def identify_programs(self,ap,cp):
+        """Identify the build of appFw.so and cpapp-b.bin just read from this camera. Writes stay
+        refused until this succeeds; a refusal also withdraws any earlier identification."""
+        self.firmware_build=None
+        self.firmware_build=buildprofile.identify(ap,cp)
+        return self.firmware_build
+    def require_build(self):
+        """The identified build. Every write primitive calls this first."""
+        if self.firmware_build is None:raise UnsupportedFirmware(UNIDENTIFIED)
+        return self.firmware_build
     def pin_programs(self,ap,cp):
+        self.identify_programs(ap,cp)
         from .device_layout import identify,structural
         self.program_identity=(structural if getattr(self,'byte_checks',False) else identify)(ap,cp);self.programs_pinned=True
         return self.program_identity
@@ -115,22 +144,36 @@ class Camera:
             if name not in ['lut-runtime-staged.so','libJit.so'] or firmware.sha(data)!=manifest['files']['runtime.so']:
                 raise ValueError('Only the pinned read-only model/runtime probe is allowed before model confirmation')
         if name not in TEMP_NAMES or not data or len(data)>65536:raise ValueError('Invalid job temporary data')
-        self.link.select('/tmp/jiritsu/'+name);self.link.jiritsu(16,b'\0\xff\0'+data)
+        self._jiritsu_write(name,data)
     def temp_remove(self,name):
         if name not in TEMP_NAMES:raise ValueError('Unowned temporary name')
-        self.link.select('/tmp/jiritsu/'+name);self.link.jiritsu(18,b'\0\xff')
+        self._jiritsu_remove(name)
+    # The raw /tmp/jiritsu file commands. Each session class checks its own namespace first.
+    def _jiritsu_write(self,name,data):
+        self.link.select('/tmp/jiritsu/'+name);return self.link.jiritsu(16,b'\0\xff\0'+data)
+    def _jiritsu_remove(self,name):
+        self.link.select('/tmp/jiritsu/'+name);return self.link.jiritsu(18,b'\0\xff')
     def snapshot(self,memory):return self.link.call(self.link.camera.getBackupPresetData,memory)
     def records(self,raw):return self.core.backup_records(raw)
     def property_read(self,key):return self.link.call(self.link.camera.readBackup,key)
     def property_write(self,key,value,allowlist):
+        self.require_build()
         if self.service_only:raise ValueError('Service-only recovery cannot write settings')
         if self.identity_pending or not self.programs_pinned:raise ValueError('Verified model and complete programs required for settings writes')
         if key not in allowlist or key>>16!=0x02cf or not value or len(value)>4:raise ValueError('Setting outside selected AP descriptor plan')
         return self.link.call(self.link.camera.writeBackup,key,value)
-    def save_settings(self):
+    def cp_write(self,key,value):
+        self.require_build()
+        if self.service_only:raise ValueError('Service-only recovery cannot write settings')
+        if self.identity_pending or not self.programs_pinned:raise ValueError('Verified model and complete programs required for settings writes')
+        return self.link.cp_write(key,value)
+    def save_settings(self,group=0x02cf):
+        """Save the AP look group (0x02cf) or the CP colour group (0x02a4) to flash."""
+        self.require_build()
         if self.service_only:raise ValueError('Service-only recovery cannot save settings')
         if self.identity_pending or not self.programs_pinned:raise ValueError('Verified model and complete programs required before saving settings')
-        return self.link.call(self.link.camera.saveBackup,0x02cf)
+        if group not in (0x02cf,0x02a4):raise ValueError('Settings group outside the project scope')
+        return self.link.call(self.link.camera.saveBackup,group)
     def mark_unknown(self):self.link.healthy=False;self.healthy=False
 
 def clear_stale_probe(camera,record):
@@ -155,8 +198,12 @@ def clear_stale_probe(camera,record):
     if camera.temp_read(probe,True) is not None:raise ValueError('Temporary cleanup incomplete: '+probe)
     print('已清理上次只读检测留下的报告（不影响相机内容），继续本次操作。',flush=True)
 
-def invoke(camera,blob,*,stage,request,result,contents,mode,decode,record,save_raw,extras=()):
-    """One invocation, never retries or cleans an unknown operation."""
+def invoke(camera,blob,*,kind,stage,request,result,contents,mode,decode,record,save_raw,extras=()):
+    """One invocation, never retries or cleans an unknown operation.
+
+    `kind` names what the worker is; with `mode` it decides whether the launch only reads. Any other
+    launch needs an identified build, checked before anything is staged."""
+    if not read_only_launch(kind,mode,request):camera.require_build()
     names=[n for n in [stage,request,'libJit.so',result,*extras] if n is not None]
     clear_stale_probe(camera,record)
     for name in names:
