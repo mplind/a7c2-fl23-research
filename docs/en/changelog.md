@@ -2,6 +2,18 @@
 
 [Home](../../README.md) · [简体中文](../zh-CN/changelog.md)
 
+## 3.0.3 Intel macOS build r7 — firmware build gate and body-build support — 2026-10-28
+
+A local Intel macOS build, `A7C2Tools-3.0.3-macOS-x86_64-r7-buildgate.dmg`, on top of 3.0.3 and the earlier Intel and English builds.
+
+- Every camera write now checks the firmware build first. The app reads appFw.so and cpapp-b.bin, puts every region its tools may change back to stock, and compares each file's SHA-256 with the supported builds: Sony's public 2.01 update, and a second compile of 2.01 (CP build 23 Sep 2025), found on one camera, which Sony's updater won't replace. Any other build is refused before anything is written, and the message names both files' fingerprints. Detect, Test the service connection and Check connection stability still work on any build.
+- FL2/FL3, custom looks, shutter sound, Vertical display and Factory restore take the three facts that differ between the builds from the identified build: the look table address, the converter instruction and the start-up sound log instruction. Factory restore uses only that build's built-in reference and refuses a full reference from another build. This prevents a repeat of the 27 Oct restore that wrote public-build bytes into a camera running the other compile.
+- Connection and drivers shows the camera's firmware build after Test. On an unsupported build every button that writes to the camera is disabled.
+- With English chosen, the Terminal password window, the log pane, error banners and status lines are in English, and the English text is shorter. The log pane wraps long lines.
+- libusb's debug log is off by default; it wrote about 10 MB/min of root-owned logs. Check connection stability still turns it on, and an explicit `LIBUSB_DEBUG` passes through.
+- New app icon: one sunset through six film looks in a 35mm slide mount.
+- Evidence is offline only. The tests run against both builds' real program files, and the packaged self-test and startup check pass. Nothing in this build has run on a camera yet: FL2/FL3, looks, Vertical display and shutter sound on the second compile wait for a step-by-step camera check.
+
 ## 3.0.3 — USB recovery and sound workflow fixes — 2026-10-23
 
 - All desktop sound controls now work from the current selection/body: volume up/down/reset and conversion remain host-only; On/Off use fresh switch transactions; Restore original sound rebuilds only the supported AP sound-loader inverse from current bytes, preserves the switch and looks, and removes the boot call before its reader prerequisites. It no longer searches completed installation records or sends the user to full factory recovery. Sound verification reads currently loaded sound code/resources without a saved installation job. Optional listening/recovery statements can be recorded without an audition job. Stale staging is handled by the same current-request cleanup used by Save/Audition; no old pending task is an eligibility gate.
