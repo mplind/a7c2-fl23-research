@@ -18,9 +18,11 @@ def verify(args,job):
     with CurrentRequest(root,state,'verify'):
         with trial.factory() as camera:
             ap=camera.read('/usr/lib/appFw.so');cp=camera.read('/cp/cpapp-b.bin')
+            # The probe guards the build's own sound bytes: refuse programs of no supported build.
+            build=camera.identify_programs(ap,cp)
             enabled=candidate.is_enabled(cp);candidate.guard(ap,cp,installed=enabled)
-            custom=boot_sound.installed(ap)
-            probe=boot_trial.current_probe(ap,root/'probe')
+            custom=boot_sound.installed(ap,build=build)
+            probe=boot_trial.current_probe(ap,root/'probe',build=build)
             camera.programs_pinned=True
             loaded=invoke(camera,Path(probe).read_bytes(),kind='probe',stage='lut-runtime-staged.so',request=None,
                 result='shutter.probe.result',contents=None,mode=0,decode=candidate.parse_probe,

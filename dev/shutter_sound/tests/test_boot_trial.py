@@ -9,11 +9,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'src/looks/tests'))
 import boot_trial
 import trial
-from simbuild import CarriesBuild
+from simbuild import PUBLIC, CarriesBuild
+from looktool.buildprofile import BUILDS
 
 
 class BootTrialOrderingTests(unittest.TestCase):
-    def scenario(self, check):
+    def scenario(self, check, carries=PUBLIC):
         with tempfile.TemporaryDirectory() as directory:
             folder = Path(directory)
             native, audio, job = (folder / name for name in ('native', 'audio', 'job'))
@@ -25,7 +26,7 @@ class BootTrialOrderingTests(unittest.TestCase):
                 (path / 'job.private.json').write_text(json.dumps(value))
             (audio / 'payload.private.bin').write_bytes(payload)
             state = {'files': {'/usr/lib/appFw.so': b'original-unrelated',
-                               '/cp/cpapp-b.bin': b'unchanged CP'}, 'events': [], 'fault': None}
+                               '/cp/cpapp-b.bin': b'unchanged CP'}, 'events': [], 'fault': None, 'planned_builds': []}
 
             class Camera(CarriesBuild):
                 core = None
@@ -41,9 +42,12 @@ class BootTrialOrderingTests(unittest.TestCase):
             def factory(expected):
                 self.assertEqual(expected, identity)
                 state['events'].append('connect')
-                return Camera()
+                camera = Camera()
+                camera.carries = carries
+                return camera
 
-            def prepare(ap, cp, value, output, zig):
+            def prepare(ap, cp, value, output, zig, *, build):
+                state['planned_builds'].append(build)
                 root = Path(output); root.mkdir()
                 (root / 'audio').write_bytes(value)
                 (root / 'csv').write_bytes(b'private CSV')
@@ -83,6 +87,14 @@ class BootTrialOrderingTests(unittest.TestCase):
                  patch.object(boot_trial, 'program_worker', reverse_worker), \
                  patch.object(trial, 'run_native', program), patch('looktool.devicesettings.compare'):
                 check(job, state, install, factory, audio)
+
+    def test_install_plans_against_the_cameras_identified_build(self):
+        for build in BUILDS:
+            def check(job, state, install, factory, audio):
+                install()
+                self.assertEqual(state['planned_builds'], [build])
+            with self.subTest(build=build.key):
+                self.scenario(check, carries=build)
 
     def test_bad_file_readback_stops_before_any_AP_commit(self):
         def check(job, state, install, factory, audio):

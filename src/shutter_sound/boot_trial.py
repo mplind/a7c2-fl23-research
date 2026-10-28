@@ -57,9 +57,10 @@ def current_sound(csv):
 
 def replace_connected(camera,before,root,backup_copy,state,payload,zig):
     """Keep the boot hook; publish a complete new audio through atomic CSV."""
-    edits=boot_sound.expected_windows()
+    build=camera.require_build()
+    edits=boot_sound.expected_windows(build)
     stock=boot_sound.patch(before['appFw.so'],edits,reverse=True)
-    target,components=prepare(stock,before['cpapp-b.bin'],payload,root/'build',zig)
+    target,components=prepare(stock,before['cpapp-b.bin'],payload,root/'build',zig,build=build)
     if target['appFw.so']!=before['appFw.so']:raise ValueError('Existing sound hook differs; no resource update started')
     old_csv=camera.read(PATHS[1],True) or b''
     try:active=current_sound(old_csv)
@@ -117,8 +118,8 @@ def require_dependencies():
     zig_command()
 
 
-def current_probe(ap,output,zig=None):
-    """Read-only loaded-code check built from current supported sound bytes."""
+def current_probe(ap,output,zig=None,*,build):
+    """Read-only loaded-code check built from current supported sound bytes of `build`."""
     from looktool import nativebuild
     root=Path(output);root.mkdir(parents=True,exist_ok=True)
     lines=[]
@@ -126,7 +127,7 @@ def current_probe(ap,output,zig=None):
         lines.append('static const u8 '+name+'[]={'+','.join(map(str,ap[at:at+20]))+'};')
     lines+=['#define CHECK_EXTRA_GUARDS 1','struct ExtraGuard {u64 offset;u32 length;const u8 *bytes;};']
     rows=[]
-    for i,(at,old,new) in enumerate(boot_sound.expected_windows()):
+    for i,(at,old,new) in enumerate(boot_sound.expected_windows(build)):
         actual=ap[at:at+len(old)]
         if actual not in (old,new):raise ValueError('Current sound-hook bytes conflict at '+hex(at))
         lines.append('static const u8 guard_'+str(i)+'[]={'+','.join(map(str,actual))+'};')
@@ -139,13 +140,16 @@ def current_probe(ap,output,zig=None):
     return path
 
 
-def prepare(ap, cp, payload, output, zig=None):
-    from looktool import nativebuild
+def prepare(ap, cp, payload, output, zig=None, *, build=None):
+    """The Save plan for appFw.so `ap` and cpapp-b.bin `cp` of `build`, which is identified from
+    them when None: programs of no supported build are refused before anything is planned."""
+    from looktool import buildprofile, nativebuild
+    if build is None:build=buildprofile.identify(ap,cp)
     target_cp=candidate.patch(ap,cp)['cpapp-b.bin']
     cp_edits=[(at,cp[at:at+len(old)],target_cp[at:at+len(old)])
               for at,old,_ in candidate.WINDOWS if cp[at:at+len(old)]!=target_cp[at:at+len(old)]]
     # Byte planning only: camera actions never execute the Unicorn/JIT model.
-    target, csv, edits, report = boot_sound.plan(ap, payload, current=True)
+    target, csv, edits, report = boot_sound.plan(ap, payload, current=True, build=build)
     root = Path(output)
     root.mkdir(parents=True, exist_ok=False)
     (root / 'custom-shutter.bin').write_bytes(payload)
@@ -176,7 +180,7 @@ def prepare(ap, cp, payload, output, zig=None):
         'windows': [{'offset': at, 'before_hex': old.hex(), 'after_hex': new.hex()} for at, old, new in edits],
         'cp_windows': [{'offset': at, 'before_hex': old.hex(), 'after_hex': new.hex()} for at, old, new in cp_edits],
         'restore_windows':[{'offset':at,'before_hex':old.hex(),'after_hex':new.hex()}
-                           for at,old,new in boot_sound.expected_windows()],
+                           for at,old,new in boot_sound.expected_windows(build)],
         'program': program, 'files': str(files), 'probe': str(root / 'probe.so'),
         'post_probe': str(root / 'post-probe.so'),
         'wbi': str(root / 'wbi.so'), 'csv': str(root / 'custom.txt'),
@@ -270,13 +274,15 @@ def install(root, backup_copy, native_job, audio_job, payload, battery, zig=None
                 trial.change(support,zig=zig,camera_factory=camera_factory)
                 state['current_native_support']=str(support)
                 before=trial.capture(camera)
+            # capture identified the programs just read: plan against that build only.
+            build=camera.require_build()
             installed=False
             if len(before['appFw.so'])>boot_sound.PATH+len(boot_sound.OLD_PATH):
-                try:installed=boot_sound.installed(before['appFw.so'])
-                except ValueError:boot_sound.plan(before['appFw.so'],payload,current=True)
+                try:installed=boot_sound.installed(before['appFw.so'],build=build)
+                except ValueError:boot_sound.plan(before['appFw.so'],payload,current=True,build=build)
             if installed:
                 return replace_connected(camera,before,root,backup_copy,state,payload,zig)
-            target, components = prepare(before['appFw.so'], before['cpapp-b.bin'], payload, root / 'build', zig)
+            target, components = prepare(before['appFw.so'], before['cpapp-b.bin'], payload, root / 'build', zig, build=build)
             from replacement import active
             if active() is not None:components=update_plan(camera,root,components,payload,zig)
             state['components'] = components

@@ -5,11 +5,17 @@ the original single-row CSV reader on kind3's existing descriptor. The native
 file-loader then owns AP/CP allocation, transfer and lifetime as usual. Missing
 CSV returns without changing that descriptor. Hardware codec/rate, physical
 boot, missing/corrupt audio-file behavior and live installation remain untested.
+
+Every window is planned against the identified Sony 2.01 build (looktool.buildprofile).
+The builds' stock boot blocks differ in one instruction: the add at BOOT+8 that forms
+the address of the boot log string, which the body build's .rodata holds 16 bytes
+lower. The new boot block and every other window are the same in both builds.
 """
 import argparse
 import json
 from pathlib import Path
 import struct
+import sys
 
 from verify_beeplist import CSV, execute
 
@@ -35,10 +41,17 @@ def adrp(at, target, register):
                        (((delta >> 2) & 0x7ffff) << 5) | register)
 
 
-def expected_windows():
+def original_boot(build):
+    """The build's 16-byte stock boot block at BOOT: adrp x0 to the log string's page, ldr x21,
+    the build's own add of the string's page offset (build.boot_log_add), then BL to the logger."""
     # Derive the exact original BL-to-logger bytes from the documented native
     # targets, without accepting arbitrary instructions supplied as a source.
-    original_boot = adrp(BOOT, 0x4c14000, 0) + bytes.fromhex('b53f40f9000c2b91') + branch(BOOT + 12, 0x36804c8, True)
+    return (adrp(BOOT, 0x4c14000, 0) + bytes.fromhex('b53f40f9') + build.boot_log_add +
+            branch(BOOT + 12, 0x36804c8, True))
+
+
+def expected_windows(build):
+    """Every (offset, stock bytes, new bytes) window of the sound on `build`, in install order."""
     # This is the first instruction of the original fopen-failure fatal path.
     # Reuse its own clean return epilogue at 2759bc8; no new code storage.
     original_missing = adrp(MISSING, 0x48cf000, 20)
@@ -63,20 +76,20 @@ def expected_windows():
     edits.append((PATH, OLD_PATH, NEW_PATH.ljust(len(OLD_PATH), b'\0')))
     # Prepare the reader and private path before enabling the boot call. The
     # inverse must use reverse order, removing the call before its prerequisites.
-    edits.append((BOOT, original_boot, new_boot))
+    edits.append((BOOT, original_boot(build), new_boot))
     return edits
 
 
-def windows(ap):
-    edits=expected_windows()
+def windows(ap, *, build):
+    edits=expected_windows(build)
     for at,old,new in edits:
         if ap[at:at+len(old)]!=old:
             raise ValueError('Original boot-sound instruction differs at '+hex(at))
     return edits
 
 
-def installed(ap):
-    edits=expected_windows()
+def installed(ap, *, build):
+    edits=expected_windows(build)
     if all(ap[at:at+len(old)]==old for at,old,new in edits):return False
     if all(ap[at:at+len(new)]==new for at,old,new in edits):return True
     raise ValueError('Boot-sound regions contain an incomplete or different modification')
@@ -92,10 +105,10 @@ def patch(ap, edits, reverse=False):
     return bytes(result)
 
 
-def restore_plan(ap):
-    """Restore only known boot-sound windows from CURRENT bytes, no old job."""
+def restore_plan(ap, *, build):
+    """Restore only known boot-sound windows from CURRENT bytes, no old job, to `build`'s stock."""
     edits=[]
-    for at,old,new in reversed(expected_windows()):
+    for at,old,new in reversed(expected_windows(build)):
         actual=ap[at:at+len(old)]
         if actual not in (old,new):raise ValueError('Current sound-hook bytes conflict at '+hex(at))
         if actual!=old:edits.append((at,actual,old))
@@ -109,18 +122,18 @@ def restore_priority(row):
     return (0 if chip==0 and at<BOOT+16 and at+len(old)>BOOT else 1,chip,at)
 
 
-def plan(ap,raw,*,current=False):
-    """Pure byte planning; no native emulator/JIT is used by camera actions."""
+def plan(ap,raw,*,build,current=False):
+    """Pure byte planning against `build`; no native emulator/JIT is used by camera actions."""
     if not raw or len(raw)>51200 or len(raw) % 64 or any(raw[n] > 8 for n in range(0, len(raw), 32)):
         raise ValueError('Use a complete filter0 native-codec research candidate')
     csv = CSV.replace(b'0xEC0', ('0x%X' % len(raw)).encode())
     if current:
         edits=[]
-        for at,old,new in expected_windows():
+        for at,old,new in expected_windows(build):
             actual=ap[at:at+len(old)]
             if actual not in (old,new):raise ValueError('Current sound-hook bytes conflict at '+hex(at))
             if actual!=new:edits.append((at,actual,new))
-    else:edits=windows(ap)
+    else:edits=windows(ap,build=build)
     target = patch(ap, edits)
     if patch(target, edits, True) != ap:
         raise ValueError('Boot-sound inverse differs')
@@ -130,8 +143,8 @@ def plan(ap,raw,*,current=False):
     return target,csv,edits,report
 
 
-def verify(ap, raw):
-    target,csv,edits,_=plan(ap,raw)
+def verify(ap, raw, *, build):
+    target,csv,edits,_=plan(ap,raw,build=build)
     cases = []
     for scenario in ('valid', 'missing', 'oversized'):
         result = execute(target, csv if scenario != 'oversized' else csv.ljust(2048, b' '),
@@ -159,11 +172,15 @@ def verify(ap, raw):
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--ap', type=Path, required=True)
+    p.add_argument('--cp', type=Path, required=True, help='cpapp-b.bin of the same camera, to identify the build')
     p.add_argument('--native-bin', type=Path, required=True)
     p.add_argument('--output', type=Path, required=True)
     a = p.parse_args(argv)
-    raw = a.native_bin.read_bytes()
-    target, csv, edits, report = verify(a.ap.read_bytes(), raw)
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'looks'))
+    from looktool import buildprofile
+    ap, raw = a.ap.read_bytes(), a.native_bin.read_bytes()
+    build = buildprofile.identify(ap, a.cp.read_bytes())
+    target, csv, edits, report = verify(ap, raw, build=build)
     a.output.mkdir(parents=True, exist_ok=False)
     (a.output / 'appFw.candidate.private.so').write_bytes(target)
     (a.output / 'custom.txt').write_bytes(csv)

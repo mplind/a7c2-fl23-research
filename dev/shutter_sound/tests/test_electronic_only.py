@@ -15,6 +15,9 @@ import trial
 import sound_cli
 from trace_selector import execute
 from verify_selector_inputs import cp_selector
+from looktool.buildprofile import BUILDS
+
+PUBLIC = BUILDS[0]
 
 # Only the small original routines executed by these tests, not a firmware image.
 CP_CODE = {
@@ -234,7 +237,7 @@ def test_save_program_contains_selector_upgrade_before_the_audio_boot_hook(stock
     target_ap=bytearray(ap);target_ap[0x100:0x104]=b'test';target_ap=bytes(target_ap)
     edits=[(0x100,ap[0x100:0x104],b'test')]
     with patch.object(boot_trial.boot_sound,'plan',return_value=(target_ap,b'CSV',edits,{})):
-        target,parts=boot_trial.prepare(ap,cp,bytes(64),tmp_path/'save')
+        target,parts=boot_trial.prepare(ap,cp,bytes(64),tmp_path/'save',build=PUBLIC)
     assert candidate.is_current(target['cpapp-b.bin'])
     assert len(parts['cp_windows'])==2
     spans=[(CP,w['offset'],bytes.fromhex(w['before_hex']),bytes.fromhex(w['after_hex'])) for w in parts['cp_windows']]

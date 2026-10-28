@@ -13,7 +13,7 @@ import struct
 import uuid
 import zlib
 from . import checkpoint, checkpointworker, device_layout, devicesettings, nameworker, resources
-from . import nativebuild, photoformat, photoio, six
+from . import buildprofile, nativebuild, photoformat, photoio, six
 from .checkpointjob import CheckpointCamera, Rollback, program_difference
 from .devicesession import invoke, modules
 from .power import require_power
@@ -118,7 +118,8 @@ def plan(current, records, mode, *, factory=None, slot=None, look=None, name=Non
         import sys
         sys.path.insert(0,str(nativebuild.ROOT/'src/shutter_sound'))
         import boot_sound
-        target['appFw.so']=boot_sound.restore_plan(ap)[0]
+        # The stock boot block differs between builds: put back the identified build's own.
+        target['appFw.so']=boot_sound.restore_plan(ap,build=buildprofile.identify(ap,cp))[0]
     elif mode in ('sound_enable','sound_disable'):
         import sys
         sys.path.insert(0,str(nativebuild.ROOT/'src/shutter_sound'))

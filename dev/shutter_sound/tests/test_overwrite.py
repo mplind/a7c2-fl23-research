@@ -30,7 +30,8 @@ def test_existing_hook_is_kept_and_audio_publication_precedes_csv(tmp_path,same,
     camera=Mock();camera.read.side_effect=lambda path,missing=False:files.get(path)
     before={'appFw.so':files['/usr/lib/appFw.so'],'cpapp-b.bin':files['/cp/cpapp-b.bin']}
     state={'identity':{},'journal':[]};events=[];workers={}
-    def prepare(ap,cp,raw,output,zig):
+    def prepare(ap,cp,raw,output,zig,*,build):
+        assert build is camera.require_build.return_value
         output.mkdir();audio=output/'audio';text=output/'csv';audio.write_bytes(raw);text.write_bytes(b'initial')
         target=dict(before,**({'cpapp-b.bin':b'new-selector'} if upgrade else {}))
         cp_windows=[dict(offset=100,before_hex=b'old'.hex(),after_hex=b'new'.hex())] if upgrade else []
@@ -50,13 +51,14 @@ def test_existing_hook_is_kept_and_audio_publication_precedes_csv(tmp_path,same,
         events.append((kind,mode))
         if kind=='program' and mode:
             files['/cp/cpapp-b.bin']=b'new-selector'
-    with patch.object(boot_sound,'expected_windows',return_value=[]),patch.object(boot_sound,'patch',return_value=b'stock'), \
+    with patch.object(boot_sound,'expected_windows',return_value=[]) as windows,patch.object(boot_sound,'patch',return_value=b'stock'), \
          patch.object(boot_trial,'prepare',side_effect=prepare),patch.object(boot_trial,'probe',return_value={'image_mode':'0'}), \
          patch.object(files_worker,'build',side_effect=build),patch.object(boot_trial,'invoke_files',side_effect=invoke), \
          patch.object(boot_trial,'check_settings'),patch.object(trial,'backup',return_value='small-backup'), \
          patch.object(boot_trial,'program_worker',return_value=dict(path='selector',windows=1,sizes=[10,10])), \
          patch.object(trial,'run_native',side_effect=native_call) as native:
         result=boot_trial.replace_connected(camera,before,root,tmp_path/'backup',state,payload,None)
+    windows.assert_called_once_with(camera.require_build.return_value)
     assert result['phase']=='installed_cold_test_pending' and result['camera_firmware_written']==upgrade
     assert files['/usr/lib/appFw.so']==before['appFw.so']
     assert files['/cp/cpapp-b.bin']==(b'new-selector' if upgrade else before['cpapp-b.bin'])

@@ -190,7 +190,8 @@ def run():
     import sys
     if str(ROOT / 'src/shutter_sound') not in sys.path:sys.path.insert(0,str(ROOT / 'src/shutter_sound'))
     import boot_sound
-    assert boot_sound.expected_windows()[-1][0]==boot_sound.BOOT
+    from looktool import buildprofile
+    assert all(boot_sound.expected_windows(build)[-1][0]==boot_sound.BOOT for build in buildprofile.BUILDS)
     importlib.import_module('desktopapp.allinone')
     from desktopapp import allinone, presets, lookbatch, reviewnames, completion
     from looktool import bundle

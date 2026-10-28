@@ -12,7 +12,9 @@ import boot_trial
 import replacement
 import sound_cli
 import trial
+from looktool.buildprofile import BUILDS
 
+PUBLIC=BUILDS[0]
 
 IDENTITY=dict(model='ILCE-7CM2',serial_sha256='fixture')
 BOOT1=b'11111111-1111-1111-1111-111111111111'
@@ -121,7 +123,7 @@ def test_changing_camera_files_stop_without_deleting_them(tmp_path):
 
 
 def test_production_sound_planner_handles_stock_mixed_and_installed_without_jit():
-    edits=boot_sound.expected_windows()
+    edits=boot_sound.expected_windows(PUBLIC)
     source=bytearray(max(at+len(old) for at,old,new in edits)+4)
     for at,old,new in edits:source[at:at+len(old)]=old
     real_import=builtins.__import__
@@ -129,14 +131,14 @@ def test_production_sound_planner_handles_stock_mixed_and_installed_without_jit(
         if name.split('.')[0] in ('unicorn','keystone'):raise AssertionError('Production sound must not use JIT')
         return real_import(name,*args,**kwargs)
     with patch('builtins.__import__',side_effect=no_jit),patch.object(boot_sound,'execute',side_effect=AssertionError('JIT')):
-        target,csv,planned,report=boot_sound.plan(bytes(source),bytes(64),current=True)
+        target,csv,planned,report=boot_sound.plan(bytes(source),bytes(64),current=True,build=PUBLIC)
         assert planned==edits and report['emulator_executed'] is False
         at,old,new=edits[0];source[at:at+len(new)]=new
-        mixed,_,remaining,_=boot_sound.plan(bytes(source),bytes(64),current=True)
+        mixed,_,remaining,_=boot_sound.plan(bytes(source),bytes(64),current=True,build=PUBLIC)
         assert mixed==target and len(remaining)==len(edits)-1
-        assert boot_sound.plan(target,bytes(64),current=True)[2]==[]
+        assert boot_sound.plan(target,bytes(64),current=True,build=PUBLIC)[2]==[]
         source[at]^=1
-        with pytest.raises(ValueError,match='conflict'):boot_sound.plan(bytes(source),bytes(64),current=True)
+        with pytest.raises(ValueError,match='conflict'):boot_sound.plan(bytes(source),bytes(64),current=True,build=PUBLIC)
 
 
 @pytest.mark.parametrize('old_csv',[b'',b'broken private CSV'])
@@ -156,12 +158,12 @@ def test_files_only_previous_attempt_is_replaced_using_current_files(tmp_path,ol
 
 def test_actual_save_prepare_uses_byte_planner_instead_of_emulator(tmp_path):
     source=bytearray(boot_sound.PATH+len(boot_sound.OLD_PATH))
-    for at,old,new in boot_sound.expected_windows():source[at:at+len(old)]=old
+    for at,old,new in boot_sound.expected_windows(PUBLIC):source[at:at+len(old)]=old
     with patch.object(boot_sound,'verify',side_effect=AssertionError('No production emulation')), \
          patch.object(boot_trial.candidate,'patch',return_value={'cpapp-b.bin':b'cp'}), \
          patch('looktool.nativebuild.compile_worker'), \
          patch.object(boot_trial,'program_worker',return_value={'path':'program'}), \
          patch.object(boot_trial.files_worker,'build',return_value=tmp_path/'files'):
-        target,parts=boot_trial.prepare(bytes(source),b'cp',bytes(64),tmp_path/'build')
-    assert boot_sound.installed(target['appFw.so'])
-    assert len(parts['restore_windows'])==len(boot_sound.expected_windows())
+        target,parts=boot_trial.prepare(bytes(source),b'cp',bytes(64),tmp_path/'build',build=PUBLIC)
+    assert boot_sound.installed(target['appFw.so'],build=PUBLIC)
+    assert len(parts['restore_windows'])==len(boot_sound.expected_windows(PUBLIC))

@@ -47,9 +47,12 @@ def main():
     import candidate
     regions['cpapp-b.bin'].extend((at, len(old)) for at, old, _ in candidate.WINDOWS)
     regions['cpapp-b.bin'].extend((w['offset'], len(bytes.fromhex(w['before']))) for w in photoio.template()['hooks'])
-    # Derive every reader/path/call edit from the actual sound implementation.
+    # Derive every reader/path/call edit from the actual sound implementation. This reference is
+    # the public build's; build_body_reference.py derives the body build's from it.
     import boot_sound
-    regions['appFw.so'].extend((at, len(old)) for at, old, new in boot_sound.windows(programs['appFw.so']))
+    from looktool import buildprofile
+    public = next(build for build in buildprofile.BUILDS if build.key == 'public-2.01')
+    regions['appFw.so'].extend((at, len(old)) for at, old, new in boot_sound.windows(programs['appFw.so'], build=public))
     sys.path.insert(0,str(ROOT/'src/vertical'))
     from verticaltool import portraitlayout
     regions['appFw.so'].extend((portrait+delta,4) for portrait,_,delta,_ in portraitlayout.PAIRS)

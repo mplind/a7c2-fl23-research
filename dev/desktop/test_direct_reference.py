@@ -109,7 +109,8 @@ class ReferencePlanningTests(unittest.TestCase):
         import sys
         sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'dev/shutter_sound'))
         import boot_sound
-        modified = boot_sound.patch(self.stock['appFw.so'], boot_sound.windows(self.stock['appFw.so']))
+        from looktool.buildprofile import BUILDS
+        modified = boot_sound.patch(self.stock['appFw.so'], boot_sound.windows(self.stock['appFw.so'], build=BUILDS[0]))
         self.current['appFw.so'] = modified
         restored, _ = self.apply('factory_reset', factory=official.builtin())
         self.assertEqual(restored['appFw.so'], self.stock['appFw.so'])

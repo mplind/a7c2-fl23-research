@@ -9,7 +9,8 @@ import sys
 import pytest
 from desktopapp import worker
 from desktopapp.actions import sound_state
-from looktool import direct,checkpointworker
+from looktool import buildprofile,direct,checkpointworker
+from simbuild import PUBLIC,CarriesBuild
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'src/shutter_sound'))
 import boot_sound,boot_trial,sound_cli
@@ -18,7 +19,7 @@ import boot_sound,boot_trial,sound_cli
 @pytest.fixture(scope='module')
 def stock_ap():
     ap=bytearray(boot_sound.PATH+len(boot_sound.OLD_PATH)+8)
-    for at,old,new in boot_sound.expected_windows():ap[at:at+len(old)]=old
+    for at,old,new in boot_sound.expected_windows(PUBLIC):ap[at:at+len(old)]=old
     ap[-1]=71
     return bytes(ap)
 
@@ -26,16 +27,17 @@ def stock_ap():
 @pytest.mark.parametrize('kind',['stock','installed','partial'])
 def test_restore_sound_reconstructs_only_owned_ap_windows_from_current_bytes(stock_ap,kind):
     current=bytearray(stock_ap)
-    for i,(at,old,new) in enumerate(boot_sound.expected_windows()):
+    for i,(at,old,new) in enumerate(boot_sound.expected_windows(PUBLIC)):
         if kind=='installed' or kind=='partial' and i%2:current[at:at+len(new)]=new
     before={'appFw.so':bytes(current),'cpapp-b.bin':b'current switch and unrelated CP bytes'}
-    target,wanted,names=direct.plan(before,[{},{}],'sound_restore')
+    with patch.object(buildprofile,'identify',return_value=PUBLIC):
+        target,wanted,names=direct.plan(before,[{},{}],'sound_restore')
     assert target['appFw.so']==stock_ap and target['cpapp-b.bin']==before['cpapp-b.bin']
     assert wanted==[{},{}] and names is None
 
 
 def test_restore_disables_boot_call_before_restoring_reader_windows(stock_ap,tmp_path):
-    before={'appFw.so':boot_sound.patch(stock_ap,boot_sound.expected_windows()),'cpapp-b.bin':b'keep'}
+    before={'appFw.so':boot_sound.patch(stock_ap,boot_sound.expected_windows(PUBLIC)),'cpapp-b.bin':b'keep'}
     target={'appFw.so':stock_ap,'cpapp-b.bin':b'keep'}
     def compile(source,header,path,*args,**kwargs):Path(path).write_bytes(b'compiled')
     with patch.object(checkpointworker,'compile_worker',side_effect=compile):
@@ -50,9 +52,9 @@ def test_restore_disables_boot_call_before_restoring_reader_windows(stock_ap,tmp
 def test_current_state_probe_compiles_and_reads_stock_or_custom_without_a_job(stock_ap,tmp_path,custom):
     sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'shutter_sound'))
     from verify_probe import execute
-    ap=boot_sound.patch(stock_ap,boot_sound.expected_windows()) if custom else stock_ap
-    path=boot_trial.current_probe(ap,tmp_path/'probe')
-    headers={at:ap[at:at+len(old)] for at,old,new in boot_sound.expected_windows()}
+    ap=boot_sound.patch(stock_ap,boot_sound.expected_windows(PUBLIC)) if custom else stock_ap
+    path=boot_trial.current_probe(ap,tmp_path/'probe',build=PUBLIC)
+    headers={at:ap[at:at+len(old)] for at,old,new in boot_sound.expected_windows(PUBLIC)}
     result=execute(path,ap,extra_headers=headers,decode=boot_trial.candidate.parse_probe)
     assert result['model_index']==16
 
@@ -70,7 +72,7 @@ def test_desktop_switch_and_restore_ignore_missing_or_unreadable_old_job(tmp_pat
 
 def test_current_verify_uses_no_saved_installation_record(tmp_path):
     root=tmp_path/'sound';root.mkdir();(root/'sound.private.json').write_text('unreadable old state')
-    class Camera:
+    class Camera(CarriesBuild):
         identity=dict(model='ILCE-7CM2',serial_sha256='fixture')
         def __enter__(self):return self
         def __exit__(self,*args):return False
