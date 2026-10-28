@@ -9,13 +9,19 @@ identify, and the firmware gate would refuse every later write, the undo include
 The name tools' /usr/share/app files and the .bss RAM addresses the native helpers read are proven the
 same in both builds too, and every native-photo stage write stays inside each build's regions.
 
+Around every place a tool writes either program, 256 bytes either side hold the same bytes in both
+builds (R30), except the three build facts and instructions that are each build's own adrp + add/ldr
+pair to the same data object, which the body's shorter .rodata holds lower.
+
 Real-firmware tests read A7C2_BUILD_FIXTURES through conftest.py's build_fixtures and skip when it is
 unset; the name-file comparison also skips, naming the build, until both builds' name files are there
 (build_resources). The rest run everywhere on the committed regions files.
 """
 import bisect
 import io
+import json
 from pathlib import Path
+import struct
 import sys
 from types import SimpleNamespace
 
@@ -25,7 +31,7 @@ from elftools.elf.elffile import ELFFile
 import numpy as np
 import pytest
 
-from looktool import buildprofile, device_layout, nameworker, photobasis, photoio, resources, six
+from looktool import buildprofile, device_layout, nameworker, photobasis, photobuild, photoio, resources, six
 from looktool.buildprofile import BUILDS, identify, regions, translate
 from looktool.devicesession import modules
 import build_factory_reference
@@ -33,8 +39,11 @@ import build_factory_reference
 modules()
 import compat  # noqa: E402  (modules() puts src/camera_runtime on sys.path)
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'src/vertical'))
+ROOT = Path(__file__).resolve().parents[2]
+sys.path[:0] = [str(ROOT / 'src/vertical'), str(ROOT / 'src/shutter_sound')]
 from verticaltool import portraitlayout  # noqa: E402
+import boot_sound  # noqa: E402
+import candidate  # noqa: E402
 
 PUBLIC, BODY = BUILDS
 PROGRAMS = ('appFw.so', 'cpapp-b.bin')
@@ -51,6 +60,31 @@ BSS_SITES = {
     0x7eac508: {(0x2799c04, 0x2799c08), (0x2799c10, 0x2799c14)},
     0x7e735b8: {(0x2779b1c, 0x2779b20), (0x2779b28, 0x2779b2c)},
     0x7e732b8: {(0x27796b4, 0x27796b8), (0x2817dbc, 0x2817dc0)},
+}
+CONTEXT = 256           # bytes either side of a write site that must match (R30)
+TARGET_BYTES = 16       # an accepted pair's two targets must hold at least this many equal bytes
+# Public .rodata addresses where the body's sits lower, as derive_shifts finds them in the fixtures:
+# 8 bytes from the extra ID at 0x4ba1744 (4 bytes of ID and, at 0x4ba179c, 4 of padding), 16 from
+# the padding that ends at 0x4c102e8, up to the end of public .rodata.
+SHIFTS = [(0, 0x4ba1744, 0), (0x4ba1744, 0x4c102e8, 8), (0x4c102e8, 0x51a09e4, 16)]
+# The build facts at tool sites: the bytes of Build.boot_log_add and Build.converter_add that differ.
+BUILD_FACTS = {0x3060a2d: 'start-up sound log add (Build.boot_log_add)',
+               0x3060a2e: 'start-up sound log add (Build.boot_log_add)',
+               0x3528811: 'converter look-table add (Build.converter_add)'}
+# Each instruction that differs within a write site's context, other than the facts: its use offset,
+# then (adrp offset, public target, body target). All are .text adds of log and assert strings in the
+# .rodata the body holds 16 lower; none is written by a tool.
+RESOLVED_PAIRS = {
+    0x3060a70: (0x3060a68, 0x4c14aec, 0x4c14adc),   # 'Failure adf_sys_get_syst…', after the sound block
+    0x3060a7c: (0x3060a74, 0x4c14fb8, 0x4c14fa8),   # 'void model::sequence_boo…'
+    0x3060a80: (0x3060a6c, 0x4c149fa, 0x4c149ea),   # 'sequence/sequence_boot.c'
+    0x35286f4: (0x35286ec, 0x4c83648, 0x4c83638),   # 'void infra_wrapper_imagi…', around the converter
+    0x3528798: (0x3528790, 0x4c7db9c, 0x4c7db8c),   # 'infra_wrapper_imaging_ip…'
+    0x35287b4: (0x35287ac, 0x4c83648, 0x4c83638),
+    0x3528890: (0x3528884, 0x4c7db9c, 0x4c7db8c),
+    0x35288a8: (0x35288a0, 0x4c83280, 0x4c83270),
+    0x3528938: (0x352892c, 0x4c7db9c, 0x4c7db8c),
+    0x3528950: (0x3528948, 0x4c82ab8, 0x4c82aa8),
 }
 
 
@@ -103,7 +137,7 @@ DISASSEMBLER.detail = True
 
 
 def page_uses(ap, at, page, limit=64):
-    """(offset, address) of each add-immediate, load or store after the adrp at `at` whose base is the
+    """(offset, address, mnemonic) of each add-immediate, load or store after the adrp at `at` whose base is the
     register that adrp set to `page`, until the register is written again or control leaves through b,
     br or ret, and at most `limit` instructions on."""
     register = next(DISASSEMBLER.disasm(ap[at:at + 4], at)).operands[0].reg
@@ -112,8 +146,8 @@ def page_uses(ap, at, page, limit=64):
         operands = insn.operands
         if (insn.mnemonic == 'add' and len(operands) == 3 and operands[1].type == ARM64_OP_REG
                 and operands[1].reg == register and operands[2].type == ARM64_OP_IMM):
-            result.append((insn.address, page + operands[2].imm))
-        result.extend((insn.address, page + operand.mem.disp) for operand in operands
+            result.append((insn.address, page + operands[2].imm, insn.mnemonic))
+        result.extend((insn.address, page + operand.mem.disp, insn.mnemonic) for operand in operands
                       if operand.type == ARM64_OP_MEM and operand.mem.base == register and operand.mem.index == 0)
         if register in insn.regs_access()[1] or insn.mnemonic in ('b', 'br', 'ret'):
             break
@@ -133,10 +167,135 @@ def bss_references(ap, addresses):
     adrp = (words & 0x9f000000) == 0x90000000
     result = {address: set() for address in addresses}
     for i in np.flatnonzero(adrp & np.isin(pages, [address & ~0xfff for address in addresses])):
-        for use, address in page_uses(ap, int(pc[i]), int(pages[i])):
+        for use, address, _ in page_uses(ap, int(pc[i]), int(pages[i])):
             if address in result:
                 result[address].add((int(pc[i]), use))
     return result
+
+
+def instruction(ap, at):
+    """The capstone instruction at offset `at` of appFw.so `ap`, or None when the word does not decode."""
+    return next(DISASSEMBLER.disasm(ap[at:at + 4], at), None)
+
+
+def pairs_with(ap, at, text):
+    """(adrp offset, use offset, address) of each adrp + add/ldr pair the instruction at `at` belongs to,
+    as the adrp or as the add/ldr, looking back at most 64 instructions within .text span `text`."""
+    def kind(mnemonic):
+        return mnemonic == 'add' or mnemonic.startswith('ldr')
+    found = instruction(ap, at)
+    if found is None:
+        return []
+    if found.mnemonic == 'adrp':
+        return [(at, use, address) for use, address, mnemonic in page_uses(ap, at, found.operands[1].imm) if kind(mnemonic)]
+    for adrp in range(at - 4, max(text[0], at - 4 * 64) - 1, -4):
+        candidate_adrp = instruction(ap, adrp)
+        if candidate_adrp is None or candidate_adrp.mnemonic != 'adrp':
+            continue
+        uses = [(adrp, use, address) for use, address, mnemonic in page_uses(ap, adrp, candidate_adrp.operands[1].imm)
+                if use == at and kind(mnemonic)]
+        if uses:
+            return uses
+    return []
+
+
+def shift_at(spans, address):
+    """How many bytes lower the body holds public address `address`, from (start, end, shift) spans;
+    None outside them."""
+    return next((shift for start, end, shift in spans if start <= address < end), None)
+
+
+def derive_shifts(public, body):
+    """SHIFTS as the fixtures show it: (start, end, shift) spans of public addresses. .rodata starts at
+    the same address in both builds and is 16 bytes shorter in the body. The first insertion is the
+    first byte of .rodata where the two differ; from there to the second, the body holds the public
+    bytes 8 lower, and from the second to the end of .rodata 16 lower."""
+    p_offset, p_address, p_size = section(public, '.rodata')
+    b_offset, b_address, b_size = section(body, '.rodata')
+    assert p_offset == p_address == b_offset == b_address and p_size - b_size == 16
+    end, body_end = p_offset + p_size, b_offset + b_size
+    p, b = np.frombuffer(public, np.uint8), np.frombuffer(body, np.uint8)
+    first = p_offset + int(np.flatnonzero(p[p_offset:body_end] != b[p_offset:body_end])[0])
+    # The 16-byte shift holds from where it starts (in the body) to the end of .rodata ...
+    sixteen = b[first:body_end] == p[first + 16:end]
+    start16 = first + int(np.flatnonzero(~sixteen)[-1]) + 1
+    # ... and the 8-byte shift up to the end of the padding both shifts read as zeros.
+    eight = b[start16:body_end] == p[start16 + 8:body_end + 8]
+    second = start16 + int(np.flatnonzero(~eight)[0]) + 8
+    return [(0, first, 0), (first, second, 8), (second, end, 16)]
+
+
+def write_sites():
+    """(tool, program, public offset, size) of every place a tool writes either program."""
+    sites = []
+    patches = json.loads((ROOT / 'src/camera_runtime/assets/patches.json').read_text(encoding='utf-8'))
+    for program, spec in zip(PROGRAMS, patches):
+        sites += [('FL2/FL3', program, int(w['file_offset'], 16), len(w['before_hex']) // 2) for w in spec['writes']]
+    runtime = device_layout.runtime()
+    for spec in runtime['ap_sources']:
+        sites += [('custom looks', 'appFw.so', w['offset'], len(w['hex']) // 2) for w in spec['restore']]
+    for spec in runtime['cp_sources']:
+        sites += [('custom looks', 'cpapp-b.bin', w['offset'], len(w['before']) // 2) for w in spec['windows']]
+    sites += [('custom looks', 'appFw.so', device_layout.CONVERTER, device_layout.CONVERTER_END - device_layout.CONVERTER),
+              ('custom looks', 'appFw.so', 0x1b5cd7c, 4), ('custom looks', 'appFw.so', PUBLIC.look_table, 12),
+              ('custom looks', 'cpapp-b.bin', six.TABLE_FILE, 32 + 6 * six.TABLE_BYTES)]
+    sites += [('custom looks', 'appFw.so', 0x59896f0 + slot * 0xb8, 4) for slot in range(6)]
+    sites += [('shutter sound', 'appFw.so', at, len(old)) for at, old, _ in boot_sound.expected_windows(PUBLIC)]
+    sites += [('shutter sound', 'cpapp-b.bin', at, len(old)) for at, old, _ in candidate.WINDOWS]
+    sites += [('vertical display', 'appFw.so', at, len(raw)) for at, raw in portraitlayout.stock_windows()]
+    sites += [('native photo', 'cpapp-b.bin', hook['offset'], len(hook['before']) // 2) for hook in photoio.template()['hooks']]
+    sites += [('native photo', 'cpapp-b.bin', photobuild.TABLE_FILE, 0xb27f0e - photobuild.TABLE_FILE),
+              ('native photo', 'cpapp-b.bin', photobuild.DATA_FILE, 1216)]
+    return sites
+
+
+def context_check(public, body, sites, *, text, shifts, moved, facts):
+    """R30 over the CONTEXT bytes either side of each (tool, program, offset, size) site, public and
+    body being {program: bytes} and `moved` the body offset of a public appFw.so offset. Returns
+    (pairs, failures): pairs maps the use offset of each accepted pair to (adrp offset, public target,
+    body target); failures lists (program, public offset, reason) for every other differing byte. The
+    `facts` offsets of appFw.so are exempt. A differing instruction is accepted only when it lies
+    outside every written span, is part of the same adrp + add/ldr pair in both builds, the body's
+    target is the public one less shift_at(shifts, it), and both targets hold the same TARGET_BYTES,
+    not all one value."""
+    differing = {}
+    for _, program, at, size in sites:
+        there = moved(at) if program == 'appFw.so' else at
+        a = public[program][at - CONTEXT:at + size + CONTEXT]
+        b = body[program][there - CONTEXT:there + size + CONTEXT]
+        assert len(a) == len(b) == size + 2 * CONTEXT, (program, hex(at))
+        for i in changed(a, b):
+            differing[(program, at - CONTEXT + i)] = there - CONTEXT + i
+    written = [(program, at, at + size) for _, program, at, size in sites]
+    pairs, failures, instructions = {}, [], {}
+    for (program, offset), there in sorted(differing.items()):
+        if program == 'appFw.so' and offset in facts:
+            continue
+        if program != 'appFw.so' or offset != there or not text[0] <= offset < text[1]:
+            failures.append((program, offset, 'differs outside .text'))
+        else:
+            instructions.setdefault(offset & ~3, []).append(offset)
+    ap, bp = public['appFw.so'], body['appFw.so']
+    for at, offsets in sorted(instructions.items()):
+        found = pairs_with(ap, at, text)
+        if any(program == 'appFw.so' and start < at + 4 and at < end for program, start, end in written):
+            reason = 'inside a tool-written span'
+        elif not found or [row[:2] for row in found] != [row[:2] for row in pairs_with(bp, at, text)]:
+            reason = 'not the same adrp + add/ldr pair in both builds'
+        else:
+            reason = None
+            for (adrp, use, target), (_, _, body_target) in zip(found, pairs_with(bp, at, text)):
+                shift = shift_at(shifts, target)
+                data = ap[target:target + TARGET_BYTES]
+                if shift is None or body_target != target - shift:
+                    reason = 'targets %#x and %#x are not one address shifted' % (target, body_target)
+                elif data != bp[body_target:body_target + TARGET_BYTES] or len(set(data)) < 2:
+                    reason = 'targets %#x and %#x hold different data' % (target, body_target)
+                else:
+                    pairs[use] = (adrp, target, body_target)
+        if reason:
+            failures += [('appFw.so', offset, reason) for offset in offsets]
+    return pairs, failures
 
 
 def label_table(raw):
@@ -361,6 +520,114 @@ def test_native_photo_stage_writes_lie_inside_the_builds_regions(photo_stages, n
 def test_native_photo_stages_write_the_same_cp_bytes_on_both_builds(photo_stages):
     for label, public in photo_stages['public'].items():
         assert photo_stages['body'][label].changes['cpapp-b.bin'] == public.changes['cpapp-b.bin'], label
+
+
+@pytest.fixture(scope='module')
+def shifts(build_fixtures):
+    return derive_shifts(build_fixtures.public.ap, build_fixtures.body.ap)
+
+
+def test_rodata_shift_boundaries_come_from_the_fixtures(build_fixtures, shifts):
+    """The shift spans R30 uses are what the fixtures show: the extra 4-byte ID 0x00020000 at 0x4ba1744
+    (with 4 bytes of padding after its list, at 0x4ba179c, it moves the rest 8), the padding that ends
+    at 0x4c102e8, and the end of public .rodata. From there on the body's addresses are the public
+    ones: its first load segment is 16 bytes shorter and the second starts at the same address, so
+    .data.rel.ro (verticalpersist's descriptor at 0x57bbb90 included) is not shifted."""
+    public, body = build_fixtures.public.ap, build_fixtures.body.ap
+    assert shifts == SHIFTS
+    assert public[0x4ba1744:0x4ba1748] == (0x00020000).to_bytes(4, 'little')
+    assert public[0x4ba1748:0x4ba179c] == body[0x4ba1744:0x4ba1798]       # 4 lower until the padding
+    assert public[0x4ba179c:0x4ba17a0] == bytes(4) != body[0x4ba1798:0x4ba179c]
+    assert public[0x4ba17a0:0x4ba1900] == body[0x4ba1798:0x4ba18f8]       # 8 lower after it
+    loads = [[(segment['p_offset'], segment['p_vaddr'], segment['p_filesz']) for segment in ELFFile(io.BytesIO(ap)).iter_segments()
+              if segment['p_type'] == 'PT_LOAD'] for ap in (public, body)]
+    assert loads[0][0][2] - loads[1][0][2] == 16 and loads[0][1:] == loads[1][1:]
+    _, start, size = section(public, '.data.rel.ro')
+    assert start <= 0x57bbb90 + 0x10000 < start + size and public[0x57bbb90:0x57bbbb0] == body[0x57bbb90:0x57bbbb0]
+
+
+def test_every_write_site_has_identical_context_in_both_builds(build_fixtures, shifts):
+    """R30: 256 bytes either side of every tool write site, and the site, hold the same bytes in both
+    builds, at the site's own address in each, except the three build facts and the adds that complete
+    each build's own adrp pair to the same .rodata object."""
+    facts = {0x3060a2c + i for i, (a, b) in enumerate(zip(PUBLIC.boot_log_add, BODY.boot_log_add)) if a != b}
+    facts |= {0x3528810 + i for i, (a, b) in enumerate(zip(PUBLIC.converter_add, BODY.converter_add)) if a != b}
+    assert facts == set(BUILD_FACTS)
+    sites = write_sites()
+    assert len(sites) == 189
+    text = section(build_fixtures.public.ap, '.text')
+    pairs, failures = context_check(programs(build_fixtures.public), programs(build_fixtures.body), sites,
+                                    text=(text[0], text[0] + text[2]), shifts=shifts,
+                                    moved=lambda at: translate(at, BODY), facts=BUILD_FACTS)
+    assert [(program, hex(at), reason) for program, at, reason in failures] == []
+    assert pairs == RESOLVED_PAIRS
+    for use, (adrp, target, body_target) in pairs.items():
+        assert target - body_target == 16 and SHIFTS[2][0] <= target < SHIFTS[2][1]
+
+
+# R30's rules on a synthetic pair -------------------------------------------------------------
+
+def adrp_word(at, page, register):
+    pages = (page >> 12) - (at >> 12)
+    return 0x90000000 | (pages & 3) << 29 | (pages >> 2 & 0x7ffff) << 5 | register
+
+
+def add_word(register, offset):
+    return 0x91000000 | offset << 10 | register << 5 | register   # add xN, xN, #offset
+
+
+def synthetic(public_add, body_add, *, at=0x1180, data=(b'same data object', b'same data object'), other=None):
+    """Two 64 KiB programs with one write site at 0x1100+8 and, at `at`, adrp x1 to page 0x8000 then
+    add x1 with `public_add` / `body_add`. The public target holds data[0], the body's data[1]. Shifts
+    are 16 from 0x4000. Returns R30's (pairs, failures)."""
+    files = []
+    for add, object_bytes in zip((public_add, body_add), data):
+        ap = bytearray(0x10000)
+        ap[at:at + 8] = struct.pack('<2I', adrp_word(at, 0x8000, 1), add_word(1, add))
+        ap[0x8000 + add:0x8000 + add + 16] = object_bytes
+        files.append({'appFw.so': bytes(ap), 'cpapp-b.bin': bytes(0x2000)})
+    if other:
+        other(*files)
+    return context_check(files[0], files[1], [('tool', 'appFw.so', 0x1100, 8)], text=(0x1000, 0x2000),
+                         shifts=[(0, 0x4000, 0), (0x4000, 0x9000, 16)], moved=lambda offset: offset, facts={})
+
+
+def test_a_pair_to_the_same_shifted_object_is_accepted():
+    assert synthetic(0x120, 0x110) == ({0x1184: (0x1180, 0x8120, 0x8110)}, [])
+
+
+@pytest.mark.parametrize('case, expected', [
+    (dict(public_add=0x120, body_add=0x110, data=(b'same data object', b'other bytes here')), 'hold different data'),
+    (dict(public_add=0x120, body_add=0x110, data=(bytes(16), bytes(16))), 'hold different data'),
+    (dict(public_add=0x120, body_add=0x118, data=(b'same data object', b'same data object')), 'not one address shifted'),
+    (dict(public_add=0x120, body_add=0x110, at=0x1100), 'inside a tool-written span'),
+], ids=['different bytes', 'all zero', 'wrong shift', 'written'])
+def test_a_pair_breaking_a_rule_fails(case, expected):
+    pairs, failures = synthetic(**case)
+    assert pairs == {} and failures and all(expected in reason for _, _, reason in failures)
+
+
+def test_differences_that_are_not_pairs_fail():
+    def other_instruction(public, body):
+        public['appFw.so'] = public['appFw.so'][:0x1200] + struct.pack('<I', 0xd503201f) + public['appFw.so'][0x1204:]
+        body['cpapp-b.bin'] = b'\1' + body['cpapp-b.bin'][1:]
+    pairs, failures = synthetic(0x120, 0x110, other=other_instruction)
+    assert [(program, hex(at), reason) for program, at, reason in failures] == [
+        ('appFw.so', '0x1200', 'not the same adrp + add/ldr pair in both builds'),
+        ('appFw.so', '0x1201', 'not the same adrp + add/ldr pair in both builds'),
+        ('appFw.so', '0x1202', 'not the same adrp + add/ldr pair in both builds'),
+        ('appFw.so', '0x1203', 'not the same adrp + add/ldr pair in both builds')]
+    assert pairs == {0x1184: (0x1180, 0x8120, 0x8110)}
+
+
+def test_a_build_fact_is_exempt_only_where_named():
+    def fact(public, body):
+        body['appFw.so'] = body['appFw.so'][:0x1104] + b'\xff' + body['appFw.so'][0x1105:]
+    assert synthetic(0x120, 0x110, other=fact)[1] == [('appFw.so', 0x1104, 'inside a tool-written span')]
+    files = [{'appFw.so': bytes(0x10000), 'cpapp-b.bin': bytes(16)} for _ in range(2)]
+    files[1]['appFw.so'] = bytes(0x1104) + b'\xff' + bytes(0x10000 - 0x1105)
+    assert context_check(*files, [('tool', 'appFw.so', 0x1100, 8)], text=(0x1000, 0x2000), shifts=[],
+                         moved=lambda offset: offset, facts={0x1104: 'named fact'}) == ({}, [])
 
 
 # Committed tables ----------------------------------------------------------------------------

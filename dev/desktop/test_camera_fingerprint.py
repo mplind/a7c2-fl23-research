@@ -1,15 +1,25 @@
-"""The read-only program check compares camera files with the stock 2.01 digests, saves them and the
-camera's name files, and only reads."""
+"""The read-only program check says which supported Sony 2.01 build the camera's program files are
+(buildprofile.identify), and whether they are that build's stock or carry tool changes. It saves them
+and the camera's name files, and only reads.
+
+Exit codes: 0 for a supported build in stock state, 3 for a supported build with tool changes, 2 for
+files no supported build explains. Real-firmware cases read A7C2_BUILD_FIXTURES through conftest.py's
+build_fixtures and skip when it is unset.
+"""
+import dataclasses
 import hashlib
 import json
+from pathlib import Path
+import sys
 
 import pytest
 
 import camera_fingerprint
-from looktool import nameworker
+from looktool import buildprofile, nameworker
 
 PATHS = {'appFw.so': '/usr/lib/appFw.so', 'cpapp-b.bin': '/cp/cpapp-b.bin'}
 NAMES = nameworker.filenames()
+PUBLIC, BODY = buildprofile.BUILDS
 
 
 class ReadOnlyCamera:
@@ -33,81 +43,52 @@ class ReadOnlyCamera:
         raise AssertionError('The check used camera.%s' % name)
 
 
-def files():
-    return {'/usr/lib/appFw.so': bytes(range(256)) * 4, '/cp/cpapp-b.bin': b'cp program' * 10,
-            **{'/usr/share/app/' + name: name.encode() * 3 for name in NAMES}}
+def files(ap=bytes(range(256)) * 4, cp=b'cp program' * 10):
+    return {PATHS['appFw.so']: ap, PATHS['cpapp-b.bin']: cp, **{'/usr/share/app/' + name: name.encode() * 3 for name in NAMES}}
 
 
-def digests(camera_files):
-    return {name: {'bytes': len(camera_files[path]), 'sha256': hashlib.sha256(camera_files[path]).hexdigest()}
-            for name, path in PATHS.items()}
+def sha(data):
+    return hashlib.sha256(data).hexdigest()
 
 
-def test_stock_files_match_and_are_saved(tmp_path):
+def playing(build, camera_files, stock=True):
+    """`build` as identify would return it for `camera_files`: with their digests as its stock digests,
+    or with others, as for programs carrying tool changes."""
+    ap, cp = camera_files[PATHS['appFw.so']], camera_files[PATHS['cpapp-b.bin']]
+    return dataclasses.replace(build, ap_sha256=sha(ap) if stock else '0' * 64, cp_sha256=sha(cp))
+
+
+def identified_as(monkeypatch, build):
+    """Make buildprofile.identify return `build`, or refuse as unsupported when it is None."""
+    def identify(ap, cp):
+        if build is None:
+            raise buildprofile.UnsupportedFirmware(buildprofile.UNSUPPORTED % (sha(ap)[:16], sha(cp)[:16]))
+        return build
+    monkeypatch.setattr(buildprofile, 'identify', identify)
+
+
+# Reading and saving --------------------------------------------------------------------------
+
+def test_programs_are_read_once_saved_and_digested_in_full(tmp_path):
     camera = ReadOnlyCamera(files())
-    report = camera_fingerprint.check(camera, PATHS, digests(files()), tmp_path, probes={})
-    assert {name: result['matches_stock'] for name, result in report.items()} == {'appFw.so': True, 'cpapp-b.bin': True}
+    report, programs = camera_fingerprint.check(camera, PATHS, tmp_path, probes={})
     assert camera.reads == ['/usr/lib/appFw.so', '/cp/cpapp-b.bin']
-    assert (tmp_path / 'appFw.so').read_bytes() == files()['/usr/lib/appFw.so']
-    assert (tmp_path / 'cpapp-b.bin').read_bytes() == files()['/cp/cpapp-b.bin']
-
-
-def test_one_changed_bit_does_not_match(tmp_path):
-    changed = files()
-    data = bytearray(changed['/usr/lib/appFw.so'])
-    data[0x11] ^= 0x40
-    changed['/usr/lib/appFw.so'] = bytes(data)
-    report = camera_fingerprint.check(ReadOnlyCamera(changed), PATHS, digests(files()), tmp_path, probes={})
-    assert report['appFw.so']['matches_stock'] is False
-    assert report['cpapp-b.bin']['matches_stock'] is True
-
-
-def test_a_file_of_the_wrong_size_does_not_match_even_with_the_stock_digest(tmp_path):
-    stock = digests(files())
-    stock['cpapp-b.bin']['bytes'] += 1
-    report = camera_fingerprint.check(ReadOnlyCamera(files()), PATHS, stock, tmp_path, probes={})
-    assert report['cpapp-b.bin']['matches_stock'] is False
+    assert programs == {name: files()[path] for name, path in PATHS.items()}
+    for name, path in PATHS.items():
+        assert (tmp_path / name).read_bytes() == files()[path]
+        assert report[name] == {'bytes': len(files()[path]), 'sha256': sha(files()[path]), 'probes': {}}
 
 
 def test_probes_show_the_bytes_at_each_offset_and_none_past_the_end(tmp_path):
     probes = {'appFw.so': ((0x10, 4), (1020, 8))}
-    report = camera_fingerprint.check(ReadOnlyCamera(files()), PATHS, digests(files()), tmp_path, probes=probes)
+    report, _ = camera_fingerprint.check(ReadOnlyCamera(files()), PATHS, tmp_path, probes=probes)
     assert report['appFw.so']['probes'] == {'0x10': '10111213', '0x3fc': None}
     assert report['cpapp-b.bin']['probes'] == {}
-
-
-def test_the_stock_digests_are_the_ones_the_app_ships():
-    stock = camera_fingerprint.stock_digests()
-    assert stock['appFw.so'] == {'bytes': 99960744,
-                                 'sha256': '2ea02f7ecbc5bb917316fe8ef4ce5ffd87eb66efaae78ba2ce11420552df539b'}
-    assert stock['cpapp-b.bin'] == {'bytes': 18090880,
-                                    'sha256': 'f5a477588698ef965748903b8959a39ce4f59ffd4aee4d4234ef1670f56a1428'}
 
 
 def test_the_probes_cover_both_moved_pointer_targets_and_their_stock_targets():
     covered = lambda at: any(start <= at < start + size for start, size in camera_fingerprint.PROBES['appFw.so'])
     assert all(covered(at) for at in (0x4c7cf6c, 0x4c7cf7c, 0x4c14ab3, 0x4c14ac3))
-
-
-def test_without_root_it_stops_before_any_camera_access(tmp_path, monkeypatch):
-    monkeypatch.setattr(camera_fingerprint.os, 'geteuid', lambda: 501)
-    camera = ReadOnlyCamera(files())
-    with pytest.raises(SystemExit, match='sudo'):
-        camera_fingerprint.main(['--out', str(tmp_path / 'out')], camera=camera)
-    assert camera.reads == []
-    assert not (tmp_path / 'out').exists()
-
-
-def run_as_root(tmp_path, monkeypatch, camera, stock, owners=None):
-    owners = [] if owners is None else owners
-    monkeypatch.setattr(camera_fingerprint.os, 'geteuid', lambda: 0)
-    monkeypatch.setattr(camera_fingerprint.os, 'chown', lambda path, uid, gid: owners.append((path.name, uid, gid)))
-    monkeypatch.setattr(camera_fingerprint, 'stock_digests', lambda: stock)
-    monkeypatch.setenv('SUDO_UID', '501')
-    monkeypatch.setenv('SUDO_GID', '20')
-    out = tmp_path / 'out'
-    code = camera_fingerprint.main(['--out', str(out)], camera=camera)
-    return code, out, owners
 
 
 def test_name_files_are_saved_under_resources_with_their_digests(tmp_path):
@@ -118,30 +99,105 @@ def test_name_files_are_saved_under_resources_with_their_digests(tmp_path):
     for name in NAMES[:3]:
         data = name.encode() * 3
         assert (tmp_path / 'resources' / name).read_bytes() == data
-        assert report[name] == {'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest()}
+        assert report[name] == {'bytes': len(data), 'sha256': sha(data)}
+
+
+# Which build -----------------------------------------------------------------------------------
+
+@pytest.mark.parametrize('build', [PUBLIC, BODY], ids=['public', 'body'])
+def test_a_supported_build_in_stock_state(monkeypatch, build):
+    camera_files = files()
+    identified_as(monkeypatch, playing(build, camera_files))
+    programs = {name: camera_files[path] for name, path in PATHS.items()}
+    identity = camera_fingerprint.identity(programs)
+    assert identity == {'build': build.key, 'stock': True}
+    assert camera_fingerprint.verdict(identity) == (0, '%s (stock)' % build.key)
+
+
+def test_a_supported_build_with_tool_changes(monkeypatch):
+    camera_files = files()
+    identified_as(monkeypatch, playing(BODY, camera_files, stock=False))
+    identity = camera_fingerprint.identity({name: camera_files[path] for name, path in PATHS.items()})
+    assert identity == {'build': BODY.key, 'stock': False}
+    assert camera_fingerprint.verdict(identity) == (3, 'body-2.01-20250923 (tool changes)')
+
+
+def test_files_no_supported_build_explains(monkeypatch):
+    identified_as(monkeypatch, None)
+    identity = camera_fingerprint.identity({name: files()[path] for name, path in PATHS.items()})
+    assert identity['build'] is None and identity['stock'] is False
+    assert sha(files()[PATHS['appFw.so']])[:16] in identity['refused']
+    code, text = camera_fingerprint.verdict(identity)
+    assert code == 2 and text.startswith('unsupported: ')
+
+
+def test_stock_means_both_full_digests_are_the_builds_own(monkeypatch):
+    """A build that identifies but whose cpapp-b.bin digest differs is not stock either."""
+    camera_files = files()
+    identified_as(monkeypatch, dataclasses.replace(playing(BODY, camera_files), cp_sha256='0' * 64))
+    assert camera_fingerprint.identity({name: camera_files[path] for name, path in PATHS.items()})['stock'] is False
+
+
+def test_the_real_identify_is_used():
+    """Small stand-in programs are no supported build: the refusal is identify's own."""
+    identity = camera_fingerprint.identity({name: files()[path] for name, path in PATHS.items()})
+    assert identity['build'] is None
+    assert buildprofile.unsupported_digests(identity['refused']) == (sha(files()[PATHS['appFw.so']])[:16],
+                                                                     sha(files()[PATHS['cpapp-b.bin']])[:16])
+
+
+# As root -----------------------------------------------------------------------------------------
+
+def test_without_root_it_stops_before_any_camera_access(tmp_path, monkeypatch):
+    monkeypatch.setattr(camera_fingerprint.os, 'geteuid', lambda: 501)
+    camera = ReadOnlyCamera(files())
+    with pytest.raises(SystemExit, match='sudo'):
+        camera_fingerprint.main(['--out', str(tmp_path / 'out')], camera=camera)
+    assert camera.reads == []
+    assert not (tmp_path / 'out').exists()
+
+
+def run_as_root(tmp_path, monkeypatch, camera, owners=None):
+    owners = [] if owners is None else owners
+    monkeypatch.setattr(camera_fingerprint.os, 'geteuid', lambda: 0)
+    monkeypatch.setattr(camera_fingerprint.os, 'chown', lambda path, uid, gid: owners.append((path.name, uid, gid)))
+    monkeypatch.setenv('SUDO_UID', '501')
+    monkeypatch.setenv('SUDO_GID', '20')
+    out = tmp_path / 'out'
+    code = camera_fingerprint.main(['--out', str(out)], camera=camera)
+    return code, out, owners
 
 
 def test_as_root_it_writes_a_report_and_hands_every_file_back(tmp_path, monkeypatch, capsys):
     camera = ReadOnlyCamera(files())
-    code, out, owners = run_as_root(tmp_path, monkeypatch, camera, digests(files()))
+    identified_as(monkeypatch, playing(BODY, files()))
+    code, out, owners = run_as_root(tmp_path, monkeypatch, camera)
     assert code == 0
     # The two programs, then every name file the name tools use, each read once: a fixture build folder.
     assert camera.reads == list(PATHS.values()) + ['/usr/share/app/' + name for name in NAMES]
     report = json.loads((out / 'report.json').read_text(encoding='utf-8'))
-    assert report['appFw.so']['matches_stock'] and report['cpapp-b.bin']['matches_stock']
+    assert report['build'] == {'build': BODY.key, 'stock': True}
+    assert report['appFw.so']['sha256'] == sha(files()[PATHS['appFw.so']])
     assert sorted(report['resources']) == sorted(NAMES) and len(NAMES) == 68
     assert all((out / 'resources' / name).read_bytes() == name.encode() * 3 for name in NAMES)
     assert sorted(owners) == sorted((name, 501, 20) for name in
                                     ('out', 'appFw.so', 'cpapp-b.bin', 'report.json', 'resources', *NAMES))
-    assert 'appFw.so: matches Sony 2.01' in capsys.readouterr().out
+    printed = capsys.readouterr().out
+    assert 'appFw.so sha256 %s' % sha(files()[PATHS['appFw.so']]) in printed
+    assert 'cpapp-b.bin sha256 %s' % sha(files()[PATHS['cpapp-b.bin']]) in printed
+    assert 'Build: body-2.01-20250923 (stock)' in printed
 
 
-def test_a_differing_file_gives_exit_code_2(tmp_path, monkeypatch, capsys):
-    stock = digests(files())
-    stock['appFw.so']['sha256'] = '0' * 64
-    code, _, _ = run_as_root(tmp_path, monkeypatch, ReadOnlyCamera(files()), stock)
-    assert code == 2
-    assert 'appFw.so: DIFFERS from Sony 2.01' in capsys.readouterr().out
+@pytest.mark.parametrize('build, stock, code, text', [
+    (BODY, False, 3, 'Build: body-2.01-20250923 (tool changes)'),
+    (None, False, 2, 'Build: unsupported: '),
+], ids=['tool changes', 'unsupported'])
+def test_exit_codes_as_root(tmp_path, monkeypatch, capsys, build, stock, code, text):
+    identified_as(monkeypatch, build and playing(build, files(), stock=stock))
+    result, out, _ = run_as_root(tmp_path, monkeypatch, ReadOnlyCamera(files()))
+    assert result == code
+    assert text in capsys.readouterr().out
+    assert json.loads((out / 'report.json').read_text(encoding='utf-8'))['build']['build'] == (build and build.key)
 
 
 def test_files_are_handed_back_even_when_a_read_fails(tmp_path, monkeypatch):
@@ -150,7 +206,7 @@ def test_files_are_handed_back_even_when_a_read_fails(tmp_path, monkeypatch):
             raise OSError('USB read failed')
     owners = []
     with pytest.raises(OSError, match='USB read failed'):
-        run_as_root(tmp_path, monkeypatch, Failing(files()), digests(files()), owners)
+        run_as_root(tmp_path, monkeypatch, Failing(files()), owners)
     assert owners == [('out', 501, 20)]
     assert not (tmp_path / 'out/report.json').exists()
 
@@ -163,6 +219,31 @@ def test_files_saved_before_a_failed_name_file_read_are_handed_back(tmp_path, mo
             return super().read(path)
     owners = []
     with pytest.raises(OSError, match='USB read failed'):
-        run_as_root(tmp_path, monkeypatch, FailsOnTheSecondName(files()), digests(files()), owners)
+        run_as_root(tmp_path, monkeypatch, FailsOnTheSecondName(files()), owners)
     assert sorted(owners) == sorted((name, 501, 20) for name in ('out', 'appFw.so', 'cpapp-b.bin', 'resources', NAMES[0]))
     assert not (tmp_path / 'out/report.json').exists()
+
+
+# Real firmware ---------------------------------------------------------------------------------
+
+def vertical_installed(ap):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'src/vertical'))
+    from verticaltool import portraitlayout
+    return portraitlayout.references(ap, True)[0]
+
+
+@pytest.mark.parametrize('name, change, code, text', [
+    ('body', None, 0, 'Build: body-2.01-20250923 (stock)'),
+    ('public', None, 0, 'Build: public-2.01 (stock)'),
+    ('body', vertical_installed, 3, 'Build: body-2.01-20250923 (tool changes)'),
+    ('hybrid', None, 2, 'Build: unsupported: '),
+], ids=['body stock', 'public stock', 'body with vertical display', '27 Oct hybrid'])
+def test_real_programs_as_root(build_fixtures, tmp_path, monkeypatch, capsys, name, change, code, text):
+    """Task 10 step 1 runs this on the body camera, which must say "body-2.01-20250923 (stock)"."""
+    fixture = getattr(build_fixtures, name)
+    ap = change(fixture.ap) if change else fixture.ap
+    result, out, _ = run_as_root(tmp_path, monkeypatch, ReadOnlyCamera(files(ap, fixture.cp)))
+    printed = capsys.readouterr().out
+    assert result == code and text in printed
+    assert 'appFw.so sha256 %s' % sha(ap) in printed and 'cpapp-b.bin sha256 %s' % fixture.digests[1] in printed
+    assert (out / 'appFw.so').read_bytes() == ap
