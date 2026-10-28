@@ -483,9 +483,9 @@ ENGINE = {
     '所选片段（起点 %.3f 秒，长度 %.3f 秒）几乎没有声音。很多音频开头是一段静音，请把起点移到声音出现的位置，或加长片段后重新转换。':
         'The clip (start %.3f s, length %.3f s) is almost silent. Many recordings open with silence: move the start to where the sound begins, or lengthen the clip, then convert again.',
     '电子快门声尚未开启。请先点击“开启电子快门声”，完成断电重开后再试听；本次没有写入固件或注册试听。':
-        'Click "Turn on the electronic shutter sound" first, do the cold restart, then try the sound. It is off now; no firmware was written and no trial was registered.',
+        'The electronic shutter sound is off, so no trial was registered and no firmware was written. Click "Turn on…" beside "Shutter sound", do the cold restart, then try the sound.',
     '旧版快门声音尚未限制机械快门。请重新点击“开启电子快门声”更新后再试听；本次未注册声音。':
-        'Click "Turn on the electronic shutter sound" again to update it, then try the sound. The older version still plays with the mechanical shutter. No sound was registered.',
+        'The older shutter sound support also plays with the mechanical shutter, so no sound was registered. Click "Turn on…" beside "Shutter sound" again to update it, then try the sound.',
     '未找到相机 USB 连接。请拔插 USB 并选择海量存储后重试；尚未进行服务认证或声音写入。':
         'Unplug and reconnect USB, choose Mass Storage, then try again. No camera USB connection was found; no service authentication or sound write took place.',
     '上一次声音操作（%s）中途停止，结果还没确认，所以没有开始新的操作，也没有连接相机。请点窗口底部“导出诊断包”发给作者核对；不要删除声音工作目录。（Previous operation is unresolved: %s）':
@@ -504,7 +504,7 @@ ENGINE = {
         'Sound support is ready. Saving the clip next; the cold restart prompt comes once all writing is done.',
     '本次只接入已启用的声音开关，保持开机继续。': 'Using the sound switch already on. Keep the camera on and continue.',
     '请先转换所选片段，再调节音量。': 'Convert the clip first, then adjust the volume.',
-    '请先点「转换所选片段」，转换成功后再试听。': 'Click "Convert the selected clip" first, and try the sound once it converts.',
+    '请先点「转换所选片段」，转换成功后再试听。': 'Click "Convert" first, and try the sound once it converts.',
     '试听结果已记录；可直接保存当前转换片段，无需先断电恢复。':
         'Trial result recorded. You can save the converted clip now; no cold restart needed first.',
     '自动准备电子快门声支援；已有开关直接接入，不要求先手动开启或关联旧任务。':

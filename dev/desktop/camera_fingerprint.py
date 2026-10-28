@@ -3,7 +3,7 @@
 Usage, as root (the camera's USB service connection needs it):
     sudo env HOME="$HOME" venv/bin/python -I repo/dev/desktop/camera_fingerprint.py --out DIR
 
-It opens the same service session as the app's "Test the service connection" and reads
+It opens the same service session as the app's Test button (Service connection) and reads
 /usr/lib/appFw.so and /cp/cpapp-b.bin. Then it reads the /usr/share/app/ name files the name tools use
 (nameworker.filenames()) into DIR/resources/, so DIR is a complete fixture build folder for the
 real-firmware tests (buildfixtures.py). The files and report.json are saved in DIR and handed back to

@@ -89,7 +89,7 @@ def test_verified_factory_reset_clears_active_install_state_and_survives_reopen(
     assert all(k not in load_settings() for k in active)
     assert window.fields['sound_work'].text()!=old_sound
     assert load_settings()['sound_work']==window.fields['sound_work'].text()
-    assert window.setup_button.text()=='一键安装'
+    assert window.setup_button.text()=='一键安装…'
     assert window.setup_result_button.isHidden()
     assert window.setup_note.isHidden()
     assert window.setup_presets.isEnabled()
@@ -97,7 +97,7 @@ def test_verified_factory_reset_clears_active_install_state_and_survives_reopen(
     assert window.setup_args()['workspace']!=str(setup)
     reopened=Window();reopened.timer.stop()
     try:
-        assert reopened.setup_button.text()=='一键安装'
+        assert reopened.setup_button.text()=='一键安装…'
         assert reopened.setup_note.isHidden()
     finally:reopened.close()
 

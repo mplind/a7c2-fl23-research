@@ -35,6 +35,18 @@ def joined(text, rest):
 
 
 FIRMWARE = '2.01'  # the only firmware this release supports
+# What a Vertical display or Shutter sound button writes, for the "Target:" line of the write
+# confirmation. Their arguments name only a records folder, which says nothing about the write.
+WRITE_TARGETS = {'vertical_enable': '竖屏显示＋Fn／子菜单线框修正', 'vertical_disable': '关闭竖屏显示并撤销线框修正',
+                 'sound_on': '电子快门声：开启', 'sound_off': '电子快门声：关闭',
+                 'sound_audition': '临时试听当前转换的声音', 'sound_install': '保存当前转换的声音',
+                 'sound_restore_sound': '恢复索尼原厂快门声'}
+# The body of every write confirmation. The battery is the one check left to the user (the app can't
+# read its level, so the click confirms it); the model and the firmware build are checked by the app
+# before anything is written (transport.Session, devicesession's build gate).
+WRITE_CHECKS = ('\n请确认电量至少 50%。本工具无法读取电量；点击“写入相机”即表示已确认。\n'
+                '写入前，本工具会核对相机是 ILCE-7CM2 且为受支持的 2.01 固件版本，不符合时停止。\n'
+                '在完整读回结束前，保持相机开机并连接 USB，不要关机或拔线。')
 # Sidebar: (section title shown above the first page of a section, page label, icon).
 NAVIGATION = (('安装与连接', '首页 · 一键安装', 'home'), (None, '连接与驱动', 'connection'), (None, '恢复原厂功能', 'restore'),
               ('相机功能', 'FL2 / FL3', 'film'), (None, '自定义创意外观', 'looks'), (None, '竖屏显示', 'vertical'),
@@ -130,8 +142,9 @@ class Window(W.QMainWindow):
         settings.triggered.connect(self.settings_dialog.open)
         bar.addMenu(tr('编辑')).addAction(settings)
         help_menu = bar.addMenu(tr('帮助'))
+        # The cold-restart steps alone: the Help menu works at any time, even during a write.
         for title, callback in ((tr('连接相机前须知…'), self.show_connection_notice),
-                                (tr('断电重开步骤…'), self.show_reload_guide),
+                                (tr('断电重开步骤…'), lambda *_: self.show_reload_guide(manual=True)),
                                 (tr('支持的 LUT 格式…'), self.show_look_format_guide)):
             action = QtGui.QAction(title, self)
             action.triggered.connect(callback)
@@ -292,7 +305,8 @@ class Window(W.QMainWindow):
         self.setup_result_button.setVisible(prior.get('phase')=='COMPLETE')
         actions.addWidget(self.setup_result_button);self.buttons.append(self.setup_result_button)
         actions.addStretch()
-        self.setup_button=self.button(actions, tr('开始新的一键安装') if prior.get('phase')=='COMPLETE' else tr('继续安装') if prior else tr('一键安装'),
+        # The button's own entry, apart from the page title: it opens the write confirmation, hence the ellipsis.
+        self.setup_button=self.button(actions, tr('开始新的一键安装') if prior.get('phase')=='COMPLETE' else tr('继续安装') if prior else tr('一键安装…'),
                                       'setup_all', self.setup_args, primary=True)
         look_section=self.advanced(layout,tr('改用自己的 A7Look 文件（先取消勾选内置六款）'))
         custom_container = self.setup_custom_container = look_section.parentWidget()
@@ -361,7 +375,7 @@ class Window(W.QMainWindow):
     def refresh_setup_controls(self):
         state,refused=self.setup_saved()
         pending=bool(state) and state.get('phase')!='COMPLETE'
-        self.setup_button.setText(tr('继续安装') if pending else tr('开始新的一键安装') if state else tr('一键安装'))
+        self.setup_button.setText(tr('继续安装') if pending else tr('开始新的一键安装') if state else tr('一键安装…'))
         self.setup_result_button.setVisible(state.get('phase')=='COMPLETE')
         self.show_setup_note(pending,refused)
         self.setup_custom_container.setEnabled(not pending and not self.setup_presets.isChecked() and self.process is None)
@@ -397,7 +411,7 @@ class Window(W.QMainWindow):
         """The restart confirmation as a row of group: the checkbox, and the steps one click away."""
         guide = W.QPushButton(tr('如何断电重开？查看详细步骤'))
         guide.setProperty('quiet', True)
-        guide.clicked.connect(lambda: self.show_reload_guide())
+        guide.clicked.connect(lambda: self.show_reload_guide(manual=True))
         self.buttons.append(guide)
         confirm = W.QCheckBox(tr('已拔 USB、等灯停、关机，取下电池至少 1 分钟后重开；\n已确认') + checks)
         confirm.setToolTip(reloadguide.text())
@@ -409,7 +423,13 @@ class Window(W.QMainWindow):
         group.add(row)
         return confirm
 
-    def show_reload_guide(self, *, setup=False, mode=None):
+    def show_reload_guide(self, *, setup=False, mode=None, manual=False):
+        """The cold-restart dialog after a task (titled by what it ended in), or with `manual`, the steps
+        alone under their own title: the Help menu and the "How to cold restart…" buttons open it at any
+        time, even while a write runs, so it never says that reading and writing have ended."""
+        if manual:
+            W.QMessageBox.information(self, tr('断电重开步骤'), tr(reloadguide.STEPS))
+            return
         title = (tr('恢复尚未开始，请断电后重试') if mode=='factory_prewrite_temporary' else
                  tr('恢复尚未完成，请重启后核对') if mode=='factory_reset' else
                  tr('试听结果已记录，请断电恢复原声') if mode=='sound_confirm' else tr('读写已结束，请断电重开'))
@@ -475,9 +495,15 @@ class Window(W.QMainWindow):
 
     def act(self, group, title, help_text, verb, action, arguments=lambda: {}, *, primary=False):
         """A Settings-style row: what the action does on the leading side, a verb button trailing."""
-        button = self.action_button(verb, action, arguments, primary=primary)
-        group.add(shell.ActionRow(title, help_text, [button]))
-        return button
+        return self.act_each(group, title, help_text, [(verb, action, arguments, primary)])[0]
+
+    def act_each(self, group, title, help_text, buttons):
+        """One Settings-style row with a button for each (verb, action, arguments, primary), leading to
+        trailing: a feature's two opposite writes (Remove…/Enable…, Turn off…/Turn on…) share the row
+        that describes them, the undo first and the primary action last, as on the Mac."""
+        made = [self.action_button(verb, action, arguments, primary=primary) for verb, action, arguments, primary in buttons]
+        group.add(shell.ActionRow(title, help_text, made))
+        return made
 
     def text(self, key):
         return self.fields[key].text().strip()
@@ -499,12 +525,17 @@ class Window(W.QMainWindow):
         read.clicked.connect(self.show_connection_notice)
         guide.actions.addWidget(read, 0, QtCore.Qt.AlignVCenter)
         layout.addWidget(guide)
+        # macOS needs no driver. There the driver install only repeats Detect's listing (usb_drivers.install
+        # returns scan()) and ignores the driver target, and Prepare only opens and closes the service
+        # connection, as Test does: the Mac shows neither row, nor the target picker.
+        mac = sys.platform == 'darwin'
         form = self.box(layout, tr('USB 连接'))
-        self.driver_identity = W.QComboBox()
-        self.driver_identity.addItems([tr('普通连接 · 054C:0E8A'), tr('服务连接 · 054C:0336')])
-        form.addRow(tr('驱动目标'), self.driver_identity)
-        if sys.platform == 'darwin':
+        if mac:
             self.field(form, 'mac_volume', tr('macOS 相机存储卷'), kind='folder', value='/Volumes/')
+        else:
+            self.driver_identity = W.QComboBox()
+            self.driver_identity.addItems([tr('普通连接 · 054C:0E8A'), tr('服务连接 · 054C:0336')])
+            form.addRow(tr('驱动目标'), self.driver_identity)
         group = shell.section(layout, tr('检查与准备'))
         self.act(group, tr('检测相机与驱动'), tr('只读。列出电脑在 USB 上看到的相机和驱动。'), tr('检测'), 'driver_scan', primary=True)
         if sys.platform == 'win32':
@@ -517,13 +548,14 @@ class Window(W.QMainWindow):
             group.add(shell.ActionRow(tr('准备两阶段驱动并测试连接（自动）'),
                                       tr('安装两个连接身份所需的驱动，然后测试连接。自动安装失败时，许多电脑改用 Zadig 手动安装即可成功。'),
                                       [zadig, self.action_button(tr('准备'), 'usb_prepare')]))
-        else:
+        elif not mac:
             self.act(group, tr('准备 USB 服务连接'), tr('让相机进入服务连接，以便读取和写入。'), tr('准备'), 'usb_prepare')
-        self.act(group, tr('单独安装所选身份的驱动（高级）') if sys.platform == 'win32' else tr('检查 USB 访问（macOS 无需 Zadig）'),
-                 tr('只为上方选择的连接身份安装驱动。') if sys.platform == 'win32' else tr('确认本机可以访问相机的 USB 接口。'),
-                 tr('安装') if sys.platform == 'win32' else tr('检查'), 'driver_install',
-                 lambda: {'pid': ['0e8a', '0336'][self.driver_identity.currentIndex()]})
-        if sys.platform == 'darwin':
+        if not mac:
+            self.act(group, tr('单独安装所选身份的驱动（高级）') if sys.platform == 'win32' else tr('检查 USB 访问（macOS 无需 Zadig）'),
+                     tr('只为上方选择的连接身份安装驱动。') if sys.platform == 'win32' else tr('确认本机可以访问相机的 USB 接口。'),
+                     tr('安装') if sys.platform == 'win32' else tr('检查'), 'driver_install',
+                     lambda: {'pid': ['0e8a', '0336'][self.driver_identity.currentIndex()]})
+        if mac:
             self.act(group, tr('推出选中的相机存储卷'), tr('在建立服务连接前推出上方选择的存储卷。'), tr('推出'), 'mac_unmount',
                      lambda: {'volume': self.text('mac_volume')})
         self.act(group, tr('测试服务连接（不写固件）'), tr('连接后读取固件版本，然后断开，不写入任何内容。'), tr('测试'), 'connect')
@@ -574,8 +606,11 @@ class Window(W.QMainWindow):
         except (OSError,ValueError):return
         phase=state.get('phase')
         if phase=='AWAITING_RELOAD':
+            # The finish button resumes the restore: it verifies first, and writes a fresh restore when the
+            # camera has changed since (worker: direct_resume_factory), so it opens the write confirmation.
             self.factory_button.setText(tr('重启后核对并完成恢复'))
-            self.factory_status.setText(tr('恢复尚未完成：写入与读回已结束。请断电重启、接回 USB，再点击上方按钮核对。'))
+            self.factory_status.setText(tr('恢复尚未完成：写入与读回已结束。请断电重启、接回 USB，再点击“重启后核对并完成恢复”；'
+                                           '只有相机内容已改变时才会重新写入。'))
         elif phase in ('LOADED','COMPLETE') and state.get('readonly_after_reload_verified'):
             self.factory_button.setText(tr('重新恢复原厂 2.01 功能（无需旧备份）'))
             self.factory_status.setText(tr('上次恢复核对已通过。程序、设置、加载状态及只读挂载已核对；当前功能和拍摄验收以机身为准。'))
@@ -591,11 +626,13 @@ class Window(W.QMainWindow):
             from looktool.factoryrecover import connection_failed_before_restore,prewrite_temporary_conflict
             if prewrite_temporary_conflict(state):
                 self.factory_button.setText(tr('断电后重试恢复（本次尚未写入）'))
-                self.factory_status.setText(tr('本次恢复尚未写入，遇到相机临时文件冲突。请按弹窗完整断电，接回 USB，再点击上方按钮重试；不需要旧 LUT 记录。'))
+                self.factory_status.setText(tr('本次恢复尚未写入，遇到相机临时文件冲突。请完整断电重开，接回 USB，再点击“断电后重试恢复”；'
+                                               '不需要旧 LUT 记录。'))
                 return
             if connection_failed_before_restore(state):
                 self.factory_button.setText(tr('恢复原厂 2.01 功能（上次尚未开始）'))
-                self.factory_status.setText(tr('上次在 USB 连接阶段停止，尚未开始恢复写入。点击上方按钮，完成系统授权后重新连接。'))
+                self.factory_status.setText(tr('上次在 USB 连接阶段停止，尚未开始恢复写入。点击“恢复原厂 2.01 功能（上次尚未开始）”，'
+                                               '完成系统授权后重新连接。'))
                 return
             self.factory_button.setText(tr('继续恢复／核对未完成事务'))
             self.factory_status.setText(tr('恢复尚未完成，请继续处理未完成事务；当前不代表已恢复成功。'))
@@ -626,10 +663,11 @@ class Window(W.QMainWindow):
     def fl23_page(self):
         layout = self.page('FL2 / FL3', tr('直接启用／移除，不要求创建备份。移除只关闭 FL2／FL3 的列表入口，保留自定义外观所需的共用色彩代码；之后可以重新启用。'))
         group = shell.section(layout, tr('创意外观列表'))
-        self.act(group, tr('启用／重新启用 FL2 / FL3'), tr('把 FL2 和 FL3 加入相机的创意外观列表；再次启用可修复它们。'), tr('启用'),
-                 'direct_fl23_enable', lambda: self.direct_args('fl23', mode='fl23_enable'), primary=True)
-        self.act(group, tr('从列表移除 FL2 / FL3，保留自定义外观'), tr('只从列表中隐藏；自定义外观照常可用，之后可以重新启用。'), tr('移除'),
-                 'direct_fl23_disable', lambda: self.direct_args('fl23', mode='fl23_disable'))
+        self.act_each(group, tr('启用／重新启用 FL2 / FL3'),
+                      tr('启用会把 FL2 和 FL3 加入相机的创意外观列表，再次启用可修复它们；移除只从列表中隐藏，自定义外观照常可用。'
+                         '移除前请先在相机选择 ST。'),
+                      [(tr('移除'), 'direct_fl23_disable', lambda: self.direct_args('fl23', mode='fl23_disable'), False),
+                       (tr('启用'), 'direct_fl23_enable', lambda: self.direct_args('fl23', mode='fl23_enable'), True)])
         layout.addWidget(shell.text_label(tr('写入读回后按弹窗断电重开，在相机确认即可使用；无需再接电脑核对。'), 'callout'))
         diagnostic = self.advanced(layout, tr('加载核对（可选诊断，不是使用前提）'))
         check = shell.section(diagnostic, '')
@@ -809,23 +847,26 @@ class Window(W.QMainWindow):
 
     def vertical_page(self):
         layout = self.page(tr('竖屏显示'), tr('竖握相机时，拍摄信息、图标和布局跟随转向。开启会保存原生开关，断电重开后自动生效；不是整个 MENU 转向。'))
-        form = self.box(layout, tr('显示任务'))
-        self.field(form, 'vertical_work', tr('任务目录'), kind='folder', value=str(data_root() / 'vertical'))
         args = lambda: dict(self.common(), workspace=self.text('vertical_work'))
-        group = shell.section(layout, tr('竖屏显示'))
-        self.act(group, tr('开启竖屏显示'), tr('保存竖屏开关并应用 Fn／子菜单显示修正，相机重启后生效。'), tr('开启'),
-                 'vertical_enable', args, primary=True)
-        self.act(group, tr('关闭竖屏显示'), tr('先关闭竖屏，再撤销显示修正。'), tr('停用'), 'vertical_disable', args)
+        group = shell.section(layout, '')  # no heading: it would repeat the page title
+        self.act_each(group, tr('开启竖屏显示'),
+                      tr('开启会保存竖屏开关并应用当前的 Fn／子菜单显示修正；关闭会先关闭竖屏，再撤销显示修正。两个操作都支持重复覆盖。'),
+                      [(tr('停用'), 'vertical_disable', args, False), (tr('开启'), 'vertical_enable', args, True)])
         layout.addWidget(shell.text_label(tr('已知显示问题：竖屏创意外观选择页的外框仍偏粗；刻度已横向显示，但橙色指针朝向尚未修正。'), 'callout'))
         layout.addWidget(shell.text_label(tr('开启／关闭会一次完成所选写入和读回，再统一弹窗提示断电加载。相同状态可重复点击，相同内容不重复写入。'), 'callout'))
+        folders = self.advanced(layout, tr('显示任务'))
+        form = self.box(folders, '')
+        self.field(form, 'vertical_work', tr('任务目录'), kind='folder', value=str(data_root() / 'vertical'))
         layout.addStretch()
 
     def sound_page(self):
         layout = self.page(tr('电子快门声音'), tr('独立开关控制电子快门发声分支。音频转换后可直接保存，临时试听可选；写入后按弹窗断电加载。'))
         args = lambda: dict(self.common(), workspace=self.text('sound_work'), backup=self.text('sound_backup'))
         switch = shell.section(layout, tr('索尼原生快门声'))
-        self.act(switch, tr('开启电子快门声'), tr('使用电子快门拍摄时播放快门声。'), tr('开启'), 'sound_on', args)
-        self.act(switch, tr('关闭电子快门声'), tr('电子快门拍摄时保持静音。'), tr('停用'), 'sound_off', args)
+        self.act_each(switch, tr('开启电子快门声'),
+                      tr('开启后，使用电子快门拍摄时播放快门声（索尼原生声音或已保存的自定义声音），需要相机的“音频信号”设为开；'
+                         '关闭后电子快门拍摄时保持静音。断电重开后生效。'),
+                      [(tr('停用'), 'sound_off', args, False), (tr('开启'), 'sound_on', args, False)])
         media = self.box(layout, tr('导入音频／视频片段'))
         presets = self.sound_presets()
         if presets:
@@ -864,11 +905,12 @@ class Window(W.QMainWindow):
         custom.add(shell.ActionRow(tr('音量'), tr('达到上限时自动限制以避免削波；保存时使用调整后的声音。重新转换会重置音量。'), volume))
         self.act(custom, tr('相机内临时试听'), tr('可选：保存前在相机上临时试听。'), tr('试听'), 'sound_audition', args)
         self.act(custom, tr('保存当前自定义声音'), tr('写入相机；工作区和电子快门声支援会自动准备。'), tr('保存到相机…'), 'sound_install', args, primary=True)
+        # A write that itself needs a cold restart, so it sits with the sound it replaces, not under the check.
+        self.act(custom, tr('恢复原厂音效'), tr('改回相机原来的快门声。'), tr('恢复…'), 'sound_restore_sound', args)
         check = shell.section(layout, tr('重启后'))
         self.sound_accept = self.reload_controls(check, tr('声音正确、拍摄和回放正常'))
         self.act(check, tr('重开后核对声音'), tr('确认相机加载了新的快门声。'), tr('核对'), 'sound_verify',
                  lambda: dict(args(), accepted=self.sound_accept.isChecked()))
-        self.act(check, tr('恢复原厂音效'), tr('改回相机原来的快门声。'), tr('恢复…'), 'sound_restore_sound', args)
         optional=self.advanced(layout,tr('试听确认与恢复记录（可选，不影响保存）'))
         records = shell.section(optional, '')
         self.act(records, tr('确认试听正确'), tr('记录试听时的声音是正确的。'), tr('确认'), 'sound_confirm', lambda: dict(args(), result='correct'))
@@ -1204,31 +1246,28 @@ class Window(W.QMainWindow):
         if writing:
             target = ((tr('首页勾选的功能；替换自订 1–6：') + tr(presets.SUMMARY) if arguments.get('options', {}).get('preset_pack') else tr('首页勾选的功能及所选 A7Look 槽位')) if action == 'setup_all' else
                       tr('自动选择已连接机身最早可用的完整备份') if action == 'restore_auto' else
-                      arguments.get('backup') if action == 'restore' else arguments.get('look') or arguments.get('workspace'))
+                      arguments.get('backup') if action == 'restore' else
+                      tr(WRITE_TARGETS[action]) if action in WRITE_TARGETS else arguments.get('look') or arguments.get('workspace'))
             if action in jobs.DIRECT_ACTIONS:
                 target = (tr('；').join(tr('自订 %s → %s') % (r['slot'], tr('恢复 ST 默认') if r['action']=='restore' else tr('写入 ')+r['name']) for r in arguments.get('operations', []))
                           if action == 'direct_looks_import' else
                           tr('继续已写好名称的外观安装：')+arguments.get('failed_workspace','') if action=='direct_resume_looks' else
                           (tr('核对上次恢复；相机内容若已改变，则按当前字节重新恢复：') if factory_finished else
                            tr('继续完成名称／设置恢复：')) + arguments.get('failed_workspace', '') if action == 'direct_resume_factory' else
-                          tr('竖屏显示＋Fn／子菜单线框修正') if action=='vertical_enable' else
-                          tr('关闭竖屏显示并撤销线框修正') if action=='vertical_disable' else
                           tr('原厂 2.01 功能') if action == 'direct_factory_reset' else
                           tr('FL2／FL3：启用') if action == 'direct_fl23_enable' else
                           tr('FL2／FL3：从列表移除') if action == 'direct_fl23_disable' else
                           tr('自订 %s：%s') % (arguments.get('slot'), tr('ST 默认') if action == 'direct_slot_default'
                                            else arguments.get('name') or Path(arguments.get('look', '')).stem))
             scope = (tr('一次应用清单内的写入和恢复，未添加的槽位保持原样；保留 FL23、声音和竖屏。写入读回完成后统一提示断电重开。\n') if action=='direct_looks_import' else
-                     tr('自动准备驱动并安装首页勾选的功能。断电重开必须由你按提示完成；结果不明时停止，不自动重复刷写。\n') if action == 'setup_all' else
+                     tr('自动准备 USB 连接并安装首页勾选的功能。断电重开必须由你按提示完成；结果不明时停止，不自动重复刷写。\n') if action == 'setup_all' else
                      tr('先只读核对；只有相机内容已改变时才按当前字节写入，已符合原厂的内容不重复写入。\n') if action == 'direct_resume_factory' and factory_finished else
                      tr('根据当前字节继续未完成阶段，已恢复的内容不重复写入；原失败事务保留，结果不明时先读取报告核对。\n') if action == 'direct_resume_factory' else
                      tr('将移除项目程序修改、将六个自订栏位设为 ST 默认；旧配方不找回。请先在相机选择 ST。\n') if action == 'direct_factory_reset' else
                      tr('只关闭 FL2／FL3 列表入口，保留 LUT 与共用代码。请先在相机选择 ST。\n') if action == 'direct_fl23_disable' else
                      tr('将所选自订栏位设为 ST 默认，保留其他栏位。\n') if action == 'direct_slot_default' else '')
             if not ask(self, tr('开始相机写入'),
-                scope + tr('目标：') + str(target) + tr('\n请确认机身为 ILCE-7CM2、固件 2.01，电量充足（建议至少 50%）。\n'
-                '其它项目修改的固件可能与本工具冲突。\n'
-                '操作和完整读回期间保持供电、USB 连接，不要关机或拔线。\n确认供电充足并开始？'),
+                scope + tr('目标：') + str(target) + tr(WRITE_CHECKS),
                 tr('写入相机')):
                 return
             arguments = dict(arguments, power_confirmed=True)
@@ -1258,7 +1297,8 @@ class Window(W.QMainWindow):
         self.look_editor.setEnabled(False)
         self.stop.setEnabled(not self.camera_operation)
         self.progress.setRange(0, 0)
-        self.status.setText(tr('正在执行：') + action + tr('。详细日志持续保存。'))
+        self.status.setText(tr('正在操作相机。完成前不要关机或拔线。') if self.camera_operation else
+                            tr('正在电脑上处理，不写入相机。'))
         self.stop.setToolTip('' if not self.camera_operation else tr('相机任务不能安全中途停止；请等待它完成。'))
         self.set_state('info')
         self.process = QtCore.QProcess(self)
@@ -1363,7 +1403,7 @@ class Window(W.QMainWindow):
                              tr('读写已结束。拔 USB → 等灯停 → 关机并等灯灭 → 取电池至少 1 分钟 → 开机；详见弹窗。')) if waiting else
                            tr('名称与只读挂载已确认；程序尚未安装，请点首页“继续安装”。') if resource_ready and status.get('action')=='setup_all' else
                            tr('名称与只读挂载已确认；程序尚未安装，请点自定义外观页“继续槽位更改”。') if resource_ready else
-                           tr('完成。请按日志提示进行下一步。') if success else
+                           tr('完成。详情见日志。') if success else
                            joined(tr('操作停止：') + (self.error_text(status) if 'error' in status else tr('进程异常退出，退出码 ') + str(code)), tr('。请导出诊断包。')))
         if success and status.get('action')=='recipe_apply':self.status.setText(tr('配方已写入并读回核对。'))
         refused_build=connection_checked and self.build_unsupported

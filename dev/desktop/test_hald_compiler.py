@@ -111,7 +111,7 @@ def test_the_compiler_dialog_ends_with_cancel_and_a_primary_generate_sized_to_th
         run = dialog.findChild(W.QPushButton, 'compile_run')
         cancel = dialog.findChild(W.QPushButton, 'compile_cancel')
         formats = dialog.findChild(W.QPushButton, 'compile_formats')
-        assert (run.text(), cancel.text(), formats.text()) == ('Generate', 'Cancel', 'Supported LUT formats…')
+        assert (run.text(), cancel.text(), formats.text()) == ('Make', 'Cancel', 'Supported LUT formats…')
         assert run.property('primary') is True
         for button in (run, cancel, formats, dialog.findChild(W.QPushButton, 'hald_identity')):
             assert button.width() < dialog.width() / 2, button.text()

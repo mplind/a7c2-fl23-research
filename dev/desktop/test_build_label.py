@@ -23,8 +23,8 @@ from test_firmware_gate import AP, CP, UNKNOWN, GateCamera  # noqa: E402
 PUBLIC, BODY = BUILDS
 PUBLIC_LABEL = 'Sony 2.01 (public update)'
 BODY_LABEL = 'Sony 2.01 (camera build, 23 Sep 2025)'
-UNSUPPORTED_LABEL = 'Unsupported firmware build: changes are disabled'
-NOT_CHECKED = 'Not checked yet'
+UNSUPPORTED_LABEL = 'Unsupported firmware build. Buttons that write to the camera are off; nothing was written.'
+NOT_CHECKED = 'Not checked yet. Click Test above.'
 
 
 # The window ------------------------------------------------------------------------------------
@@ -206,7 +206,8 @@ def test_an_unsupported_connection_is_explained_on_every_page(window):
 
 def test_connection_test_help_says_it_reads_the_build(window):
     ui = window('en')
-    help_text = 'Reads the camera’s firmware to identify its build, then disconnects. Takes up to a minute. Nothing is written.'
+    help_text = ('Switches the camera to its service connection, reads its program files to identify the firmware build, '
+                 'then switches back. Nothing is written. Takes a minute or two.')
     assert help_text in {label.text() for label in ui.findChildren(W.QLabel)}  # R45: it reads, and it takes a while
     assert STRINGS['连接后读取固件版本，然后断开，不写入任何内容。'] == help_text
 
@@ -374,7 +375,7 @@ def test_a_refused_one_click_job_is_replaced_by_the_refusal_message(window, refu
     point_at(ui, refused)
     message = message_of(refused)
     finish(ui, 'setup_all', error=message, error_type='UnsupportedFirmware')
-    assert ui.setup_button.text() == 'One-click install'
+    assert ui.setup_button.text() == 'Install…'
     assert not ui.setup_note.isHidden() and ui.setup_note.text() == english(message)
     assert ui.setup_presets.isEnabled() and ui.setup_fl23.isEnabled()
     assert not ui.setup_result_button.isVisible()
@@ -459,7 +460,7 @@ def test_a_one_click_job_waiting_for_the_restart_keeps_its_continue_button(windo
     state = json.loads(state_path.read_text(encoding='utf-8'))
     write_json(state_path, dict(state, phase='WAIT_RELOAD'))
     ui = reopened(window, refused)
-    assert ui.setup_button.text() == 'Continue installation'
+    assert ui.setup_button.text() == 'Continue installation…'
 
 
 def test_unidentified_refusal_is_treated_the_same(window, refused):

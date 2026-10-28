@@ -65,7 +65,7 @@ def test_new_install_defaults_to_english_and_no_page_shows_chinese(ui):
     window = create()
     assert window.language.currentData() == 'en'
     assert window.nav.item(0).text() == 'One-click install'
-    assert window.setup_button.text() == 'One-click install'
+    assert window.setup_button.text() == 'Install…'  # the page is One-click install; its button opens the confirmation
     for index in range(window.pages.count()):
         window.nav.setCurrentRow(index)
         app.processEvents()
@@ -104,13 +104,13 @@ def test_language_change_keeps_input_and_applies_on_next_launch(ui):
     assert settings['language'] == 'zh_CN'
     assert settings['sound_source'] == '/example/user 文件.wav'
     assert window.look_editor.values() == [{'slot': 4, 'action': 'restore'}]
-    assert window.setup_button.text() == 'One-click install'
+    assert window.setup_button.text() == 'Install…'
     reopened = create()
     assert reopened.nav.item(0).text() == '首页 · 一键安装'
     assert reopened.fields['sound_source'].text() == '/example/user 文件.wav'
     with patch.object(W.QMessageBox, 'information'):
         reopened.language.setCurrentIndex(0)
-    assert create().setup_button.text() == 'One-click install'
+    assert create().setup_button.text() == 'Install…'
 
 
 @pytest.mark.parametrize('language', ['en', 'zh_CN'])
@@ -266,6 +266,8 @@ def test_every_label_the_english_copy_quotes_is_on_screen(window):
     # Buttons that change their label with the task state show these in other states.
     labels |= {i18n.tr(key) for key in ('继续安装', '开始新的一键安装', '继续槽位更改', '断电后重试恢复（本次尚未写入）',
                                         '重启后核对并完成恢复')}
+    # Prose names a button without the ellipsis its label ends with ("Continue installation").
+    labels |= {label.removesuffix('…') for label in labels}
     from desktopapp.en_engine import ENGINE  # the log and the banner quote labels too
     quoted = {text for english in list(STRINGS.values()) + list(ENGINE.values())
               for text in re.findall(r'"([^"]+)"', english)}

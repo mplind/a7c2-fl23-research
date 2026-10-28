@@ -122,7 +122,7 @@ class PowerProgressTests(unittest.TestCase):
         with patch('desktopapp.window.ask', return_value=False) as question, \
              patch.object(jobs, 'new_job') as job:
             window.launch('look_install', {'workspace': 'not-opened'})
-        self.assertIn('电量充足', question.call_args.args[2])
+        self.assertIn('电量至少 50%', question.call_args.args[2])
         job.assert_not_called()
 
     def test_vertical_cleanup_is_part_of_off_not_a_separate_button(self):
