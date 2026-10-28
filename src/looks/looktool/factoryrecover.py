@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import re
 from . import checkpointworker, nameworker, nativebuild, worker
+from .devicesession import LAUNCHER
 
 FINISHED = {'AWAITING_RELOAD', 'LOADED', 'COMPLETE'}
 
@@ -21,11 +22,11 @@ def supersede_temporary(camera, folder, record):
     """
     from .devicesession import TEMP_NAMES
     from .checkpointjob import TEMPS
-    names=sorted((TEMP_NAMES | TEMPS)-{'libJit.so'})
+    names=sorted((TEMP_NAMES | TEMPS)-{LAUNCHER})
     actual={name:camera.temp_read(name,True) for name in names}
     actual={name:raw for name,raw in actual.items() if raw is not None}
     if not actual:return 0
-    if camera.temp_read('libJit.so',True) is not None:
+    if camera.temp_read(LAUNCHER,True) is not None:
         raise ValueError('相机执行插件仍存在，不能在执行期间覆盖；本次尚未恢复写入，请结束连接后完整断电再重试')
     if camera.read('/etc/ld.so.preload',True):
         raise ValueError('相机存在启用中的 preload，尚未覆盖临时工作文件或开始恢复写入')
@@ -41,7 +42,7 @@ def supersede_temporary(camera, folder, record):
            old_operation_replayed=False,previous_outcome_inferred=False)
     # Check the whole namespace before deletion. A newly appearing report or
     # loader means it is changing, not merely leftover data.
-    if camera.temp_read('libJit.so',True) is not None:
+    if camera.temp_read(LAUNCHER,True) is not None:
         raise ValueError('相机执行插件出现，已保存诊断，未覆盖工作文件')
     for name in names:
         if camera.temp_read(name,True)!=actual.get(name):
@@ -284,11 +285,11 @@ def cleanup(camera, history, record, save_raw, *, allow_completed_name_mount_bus
     else:
         asset = 'runtime.so' if result == 'a7c2.runtime.result' else 'wbi.so'
         blobs = [(nativebuild.ROOT / 'src/fl23/assets' / asset).read_bytes()]
-    names = [stage, *([request] if request else []), 'libJit.so', result]
+    names = [stage, *([request] if request else []), LAUNCHER, result]
     if result == 'a7c2.runtime.result':
         names.append('a7c2.probe.result')
     actual = {n: camera.temp_read(n, True) for n in names}
-    if actual['libJit.so'] is not None:
+    if actual[LAUNCHER] is not None:
         raise ValueError('执行插件仍存在，不能确认相机端已结束；不会删除或重试')
     if actual[stage] is not None and actual[stage] not in blobs:
         raise ValueError('Temporary worker bytes do not match the recorded transaction')

@@ -52,6 +52,7 @@ def source(folder):
 def run(folder, job, *, factory=None):
     from looktool import resources,checkpoint,nameworker
     from looktool.checkpointjob import CheckpointCamera
+    from looktool.devicesession import LAUNCHER
     root,state,raw=source(folder)
     build=state['forward_name_build']
     with session(factory or CheckpointCamera,state['identity']) as camera:
@@ -78,7 +79,7 @@ def run(folder, job, *, factory=None):
                     raise ValueError('Current name pointer differs: '+spec['file'])
         expected={'lut-names-staged.so':Path(build['path']).read_bytes(),
             'a7c2.names.request':struct.pack('<8sII',b'A7NAM001',1,0),'a7c2.names.result':raw}
-        for name in ('libJit.so','checkpoint.staged.so','checkpoint.program.request','checkpoint.program.result',
+        for name in (LAUNCHER,'checkpoint.staged.so','checkpoint.program.request','checkpoint.program.result',
                      'checkpoint.names.request','checkpoint.names.result','a7c2.wbi.request','a7c2.wbi.result'):
             if camera.temp_read(name,True) is not None:raise ValueError('Unaccounted temporary state: '+name)
         for name,data in expected.items():

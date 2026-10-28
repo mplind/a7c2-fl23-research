@@ -2,7 +2,7 @@
 import copy,json,os,struct,tempfile,unittest,importlib.util,subprocess,sys
 from pathlib import Path
 from looktool import device_layout,firmware,resources,six
-from looktool.devicesession import invoke,Camera
+from looktool.devicesession import LAUNCHER,NOT_STAGING,invoke,Camera
 from looktool import nameworker
 from looktool.devicelock import DeviceLock
 from simbuild import CarriesBuild,identified
@@ -59,8 +59,11 @@ class NativeInvocationTests(unittest.TestCase):
             self.identify_programs(b'stand-in appFw.so',b'stand-in cpapp-b.bin')
         def temp_read(self,name,missing=False):return self.files.get(name)
         def temp_write(self,name,data):
+            if name==LAUNCHER:raise ValueError(NOT_STAGING)  # as the production session
             self.writes.append(name);self.files[name]=data
-            if name=='libJit.so':self.files.pop(name);self.files['a7c2.install.result']=self.result
+        def _launch(self,blob):
+            # The worker runs at once: it consumes libJit.so and leaves its report.
+            self.writes.append(LAUNCHER);self.files['a7c2.install.result']=self.result
         def temp_remove(self,name):self.files.pop(name,None)
         def read(self,path,missing=False):return None
         def mark_unknown(self):self.healthy=False

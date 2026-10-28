@@ -49,11 +49,12 @@ class ServiceTests(unittest.TestCase):
         camera=identified(Camera());camera.identity_pending=True;camera.programs_pinned=True;camera.service_only=False
         camera.identity={'model':None};camera.link=Mock();blob=b'only-readonly-runtime'
         camera.core=types.SimpleNamespace(MODEL='ILCE-7CM2',assets=lambda:{'files':{'runtime.so':firmware.sha(blob)}})
-        for stage,data in [('lut-program-staged.so',blob),('lut-runtime-staged.so',b'other'),('libJit.so',b'other')]:
-            with self.assertRaises(ValueError):camera.temp_write(stage,data)
+        for stage,data in [('lut-program-staged.so',blob),('lut-runtime-staged.so',b'other')]:
+            with self.assertRaisesRegex(ValueError,'pinned read-only'):camera.temp_write(stage,data)
+        with self.assertRaisesRegex(ValueError,'pinned read-only'):camera._launch(b'other')
         with self.assertRaisesRegex(ValueError,'Verified model'):camera.property_write(0x02cf0001,b'\0',{0x02cf0001})
         camera.link.call.assert_not_called();camera.link.select.assert_not_called()
-        camera.temp_write('lut-runtime-staged.so',blob)
+        camera.temp_write('lut-runtime-staged.so',blob);camera._launch(blob)
         with self.assertRaises(ValueError):camera.confirm_identity({'model_index':17})
         camera.confirm_identity({'model_index':16})
         self.assertFalse(camera.identity_pending);self.assertEqual(camera.identity['model'],'ILCE-7CM2')

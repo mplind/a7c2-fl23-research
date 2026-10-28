@@ -6,7 +6,7 @@ from datetime import datetime,timezone
 import gzip,json,os,shutil,struct,uuid
 from pathlib import Path
 from . import backupstore,calibration,device_layout,devicesettings,firmware,nameworker,native,nativebuild,project,resources,six,worker
-from .devicesession import Camera,invoke
+from .devicesession import LAUNCHER,Camera,invoke
 from .devicelock import serialized
 
 PROGRAM_PATHS={'appFw.so':'/usr/lib/appFw.so','cpapp-b.bin':'/cp/cpapp-b.bin'}
@@ -625,7 +625,7 @@ class Job:
                 if kind=='names' and mode==0:before=True
                 self._read_programs(camera,self.state['source_hashes'] if before else self.state['target_hashes'])
             if kind=='names' and not recovered_failure:self._resource_readback(camera,mode!=2 and mode!=0,allow_later_slots=mode==3)
-            expected={intent['stage']:blob,'libJit.so':blob,result:raw}
+            expected={intent['stage']:blob,LAUNCHER:blob,result:raw}
             if kind=='runtime':
                 extra=camera.temp_read('a7c2.probe.result');camera.core.parse_native('probe',extra);expected['a7c2.probe.result']=extra
             else:

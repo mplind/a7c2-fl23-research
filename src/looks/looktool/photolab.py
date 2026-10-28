@@ -12,6 +12,7 @@ import uuid
 from datetime import datetime
 from . import checkpoint, checkpointworker, device_layout, devicesettings, photobuild, photocases, photoformat
 from .checkpointjob import Rollback, CheckpointCamera
+from .devicesession import LAUNCHER
 from .devicelock import serialized
 from .backupstore import write_json
 
@@ -369,7 +370,7 @@ class Lab:
             if not cleaned:
                 from .nativebuild import ROOT
                 blob = (Path(build['path']) if kind=='program' else ROOT/'src/fl23/assets'/('runtime.so' if kind=='runtime' else 'wbi.so')).read_bytes()
-                expected = {intent['stage']:blob,'libJit.so':blob,intent['result']:raw}
+                expected = {intent['stage']:blob,LAUNCHER:blob,intent['result']:raw}
                 if intent.get('request'):expected[intent['request']] = bytes.fromhex(intent['contents_hex'])
                 for name, contents in expected.items():
                     actual = camera.temp_read(name, True)

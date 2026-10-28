@@ -3,7 +3,9 @@
 The firmware identity gate lives here. No primitive with a persistent effect on the camera (a setting
 write or save, a CP unit write, or a native launch that can change anything) runs until
 Camera.identify_programs has identified the programs just read from the camera as a supported build.
-Staging files in camera RAM (/tmp/jiritsu) stays ungated: it changes nothing persistent.
+Staging worker, request and report files in /tmp/jiritsu stays ungated: those live in camera RAM
+only. The exception is LAUNCHER (libJit.so): writing it is the launch, because the camera runs it at
+once. temp_write refuses it; only invoke writes it, through Camera._launch, after the gate.
 """
 import importlib,struct,sys,time
 from pathlib import Path
@@ -11,7 +13,10 @@ from . import buildprofile, firmware
 from .buildprofile import UnsupportedFirmware
 from .nativebuild import ROOT
 
-TEMP_NAMES={'libJit.so','lut-program-staged.so','lut-names-staged.so','lut-runtime-staged.so',
+# Writing this /tmp/jiritsu file starts a native worker. Other modules name it through this constant.
+LAUNCHER='libJit.so'
+NOT_STAGING='Writing libJit.so launches a native worker; only devicesession.invoke may launch'
+TEMP_NAMES={LAUNCHER,'lut-program-staged.so','lut-names-staged.so','lut-runtime-staged.so',
     'portrait.staged.so','portrait.request','portrait.result',
     'a7c2.install.request','a7c2.install.result','a7c2.names.request','a7c2.names.result',
     'a7c2.wbi.request','a7c2.wbi.result','a7c2.runtime.result','a7c2.probe.result'}
@@ -137,19 +142,31 @@ class Camera:
         if name not in TEMP_NAMES:raise ValueError('Unowned temporary name')
         return self.link.read('/tmp/jiritsu/'+name,missing)
     def temp_write(self,name,data):
+        """Stage a file in camera RAM. Never libJit.so: writing that launches a worker (see _launch)."""
+        if name==LAUNCHER:raise ValueError(NOT_STAGING)
         if self.service_only:raise ValueError('Service-only recovery is read-only; reconnect normal USB identity before new execution')
         if not self.programs_pinned:raise ValueError('Verify complete source programs before native execution')
-        if self.identity_pending:
-            manifest=self.core.assets()
-            if name not in ['lut-runtime-staged.so','libJit.so'] or firmware.sha(data)!=manifest['files']['runtime.so']:
-                raise ValueError('Only the pinned read-only model/runtime probe is allowed before model confirmation')
+        if self.identity_pending and (name!='lut-runtime-staged.so' or not self._pinned_runtime(data)):
+            raise ValueError('Only the pinned read-only model/runtime probe is allowed before model confirmation')
         if name not in TEMP_NAMES or not data or len(data)>65536:raise ValueError('Invalid job temporary data')
         self._jiritsu_write(name,data)
     def temp_remove(self,name):
         if name not in TEMP_NAMES:raise ValueError('Unowned temporary name')
         self._jiritsu_remove(name)
+    def _pinned_runtime(self,data):
+        return firmware.sha(data)==self.core.assets()['files']['runtime.so']
+    def _launch(self,blob):
+        """Write libJit.so, which the camera runs at once. Only devicesession.invoke calls this, after
+        its firmware gate; before model confirmation only the pinned read-only runtime.so may run."""
+        if self.service_only:raise ValueError('Service-only recovery is read-only; reconnect normal USB identity before new execution')
+        if not self.programs_pinned:raise ValueError('Verify complete source programs before native execution')
+        if self.identity_pending and not self._pinned_runtime(blob):
+            raise ValueError('Only the pinned read-only model/runtime probe is allowed before model confirmation')
+        if not blob or len(blob)>65536:raise ValueError('Invalid native worker')
+        self.link.select('/tmp/jiritsu/'+LAUNCHER);return self.link.jiritsu(16,b'\0\xff\0'+blob)
     # The raw /tmp/jiritsu file commands. Each session class checks its own namespace first.
     def _jiritsu_write(self,name,data):
+        if name==LAUNCHER:raise ValueError(NOT_STAGING)
         self.link.select('/tmp/jiritsu/'+name);return self.link.jiritsu(16,b'\0\xff\0'+data)
     def _jiritsu_remove(self,name):
         self.link.select('/tmp/jiritsu/'+name);return self.link.jiritsu(18,b'\0\xff')
@@ -204,12 +221,12 @@ def invoke(camera,blob,*,kind,stage,request,result,contents,mode,decode,record,s
     `kind` names what the worker is; with `mode` it decides whether the launch only reads. Any other
     launch needs an identified build, checked before anything is staged."""
     if not read_only_launch(kind,mode,request):camera.require_build()
-    names=[n for n in [stage,request,'libJit.so',result,*extras] if n is not None]
+    names=[n for n in [stage,request,LAUNCHER,result,*extras] if n is not None]
     clear_stale_probe(camera,record)
     for name in names:
         if camera.temp_read(name,True) is not None:raise ValueError('Existing temporary state needs recovery: '+name)
     if camera.read('/etc/ld.so.preload',True):raise ValueError('Existing preload configuration requires inspection')
-    expected={stage:blob,'libJit.so':blob}
+    expected={stage:blob,LAUNCHER:blob}
     record('native_stage_intent',stage=stage,result=result,mode=mode,worker_sha256=firmware.sha(blob),request=request,contents_hex=contents.hex() if contents else None)
     camera.temp_write(stage,blob)
     if camera.temp_read(stage)!=blob:raise ValueError('Worker staging readback differs')
@@ -218,7 +235,7 @@ def invoke(camera,blob,*,kind,stage,request,result,contents,mode,decode,record,s
         if camera.temp_read(request)!=contents:raise ValueError('Request staging readback differs')
     record('native_intent',stage=stage,result=result,mode=mode,worker_sha256=firmware.sha(blob))
     try:
-        camera.temp_write('libJit.so',blob)
+        camera._launch(blob)
         raw=camera.temp_read(result);save_raw(raw)
         parsed=decode(raw)
     except BaseException:

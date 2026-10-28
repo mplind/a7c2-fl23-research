@@ -165,6 +165,7 @@ def replace_completed_marker(camera, root, previous_jobs):
     The new registration replaces kind3 normally; leased CP storage is reclaimed
     by cold power-off. Unknown/in-progress registrations are never replayed.
     """
+    from looktool.devicesession import LAUNCHER
     actual=camera.read('/tmp/jiritsu/shutter.custom.lease',True)
     if actual is None:
         return dict(previous_marker_absent=True)
@@ -185,7 +186,7 @@ def replace_completed_marker(camera, root, previous_jobs):
                 continue
         except (OSError,ValueError,KeyError,struct.error):
             continue
-        for name in ('shutter.staged.so','shutter.probe.result','libJit.so','a7c2.probe.result'):
+        for name in ('shutter.staged.so','shutter.probe.result',LAUNCHER,'a7c2.probe.result'):
             if camera.temp_read(name,True) is not None:
                 raise ValueError('Existing native execution needs review before replacing sound: '+name)
         camera.temp_remove('shutter.custom.lease')

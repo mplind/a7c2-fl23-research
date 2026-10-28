@@ -9,6 +9,7 @@ from pathlib import Path
 import re
 import struct
 from . import checkpoint, nameworker
+from .devicesession import LAUNCHER
 
 
 def source(folder):
@@ -64,7 +65,7 @@ def cleanup(camera, root, state, raw, record):
     expected = {'checkpoint.staged.so': blob,
                 'checkpoint.names.request': struct.pack('<8sII', b'A7NAM001', 2, 0),
                 'checkpoint.names.result': raw}
-    if camera.temp_read('libJit.so', True) is not None:
+    if camera.temp_read(LAUNCHER, True) is not None:
         raise ValueError('A native plugin still exists; preserve it for inspection')
     # Inspect the entire namespace before removing anything. Missing exact
     # files are fine after a restart; unexpected bytes are never removed.

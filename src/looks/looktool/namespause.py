@@ -6,6 +6,7 @@ The program installer retains its read-only mount prerequisite.
 import json,re,struct
 from pathlib import Path
 from . import bundle,checkpoint,nameworker,resources,lookfile
+from .devicesession import LAUNCHER
 
 WAIT='AWAITING_RESOURCE_RELOAD'
 
@@ -85,7 +86,7 @@ def cleanup(camera,state,raw):
     build=state['forward_name_build']
     expected={'lut-names-staged.so':Path(build['path']).read_bytes(),
               'a7c2.names.request':struct.pack('<8sII',b'A7NAM001',1,0),'a7c2.names.result':raw}
-    for name in ('libJit.so','checkpoint.staged.so','checkpoint.program.request','checkpoint.program.result',
+    for name in (LAUNCHER,'checkpoint.staged.so','checkpoint.program.request','checkpoint.program.result',
                  'a7c2.wbi.request','a7c2.wbi.result'):
         if camera.temp_read(name,True) is not None:raise ValueError('Unaccounted temporary state: '+name)
     for name,data in expected.items():

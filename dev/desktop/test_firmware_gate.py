@@ -562,10 +562,21 @@ def test_desktop_code_never_loads_the_standalone_writers():
 
 
 # Raw service commands: only the transports and the session that gates them may issue these.
-RAW = {'jiritsu', 'ap_write', 'writeBackup', 'saveBackup', '_sendAdjustControlPacket', 'sendSenserPacket'}
+RAW = {'jiritsu', 'ap_write', 'writeBackup', 'saveBackup', '_sendAdjustControlPacket', 'sendSenserPacket',
+       # SonySenserCamera's other persistent writers (vendor/pmca/usb/sony.py), reachable through link.call.
+       'writeFile', 'deleteFile', 'writeMemory', 'setBackupPresetData', 'setBackupId1', 'setTerminalEnable',
+       '_sendFileControlPacket', '_sendMemoryDumpPacket', '_sendProductInfoPacket',
+       # Writing libJit.so is the launch; only devicesession.invoke calls this.
+       '_launch'}
 # Writes a transport session offers; outside the session they are reachable only through a link.
 LINK_WRITES = {'cp_write', 'temp', 'write'}
+# All that code outside the session may load from a camera's link: reads and bookkeeping. Anything
+# else (link.call, link.camera, an alias of the link itself) could reach a raw writer.
+LINK_READS = {'read', 'cp_read', 'identity', 'healthy', '__enter__'}
 SESSION = ('src/looks/looktool/devicesession.py', 'src/camera_runtime/transport.py', 'src/fl23/transport.py')
+# The transports' own temp-file tables. They name libJit.so for transport.Session.temp, which only the
+# standalone writers call.
+TRANSPORT_TABLES = ('src/camera_runtime/core.py', 'src/fl23/core.py')
 
 
 def through_link(node):
@@ -574,19 +585,99 @@ def through_link(node):
             or (isinstance(receiver, ast.Name) and receiver.id in ('link', 'session')))
 
 
-def test_no_module_writes_around_the_session():
+def offences(tree):
+    """Every way the code in `tree` could write to the camera around the session's gate."""
+    parents = {child: node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
     found = []
-    for relative, tree in sources('src', exclude=SESSION + STANDALONE):
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Attribute) and (
-                    node.attr in RAW or (node.attr in LINK_WRITES and through_link(node))):
-                found.append((relative, node.lineno, node.attr))
+    for node in ast.walk(tree):
+        parent = parents.get(node)
+        used = parent if isinstance(parent, ast.Attribute) and parent.value is node else None
+        if isinstance(node, ast.Attribute) and node.attr in RAW:
+            found.append((node.lineno, node.attr))
+        elif isinstance(node, ast.Attribute) and node.attr in LINK_WRITES and through_link(node):
+            found.append((node.lineno, node.attr))
+        elif isinstance(node, ast.Attribute) and node.attr == 'link' and isinstance(node.ctx, ast.Load):
+            # <x>.link: only a read or a bookkeeping store may follow it, never an alias of the link.
+            if used is None or (isinstance(used.ctx, ast.Load) and used.attr not in LINK_READS):
+                found.append((node.lineno, 'link.' + (used.attr if used else '')))
+        elif (isinstance(node, ast.Name) and node.id == 'link' and used is not None
+              and isinstance(used.ctx, ast.Load) and used.attr in ('call', 'camera')):
+            found.append((node.lineno, 'link.' + used.attr))
+        elif (isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == 'getattr'
+              and len(node.args) > 1 and isinstance(node.args[1], ast.Constant) and node.args[1].value == 'link'):
+            found.append((node.lineno, "getattr(…, 'link')"))
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str) and (
+                node.value == devicesession.LAUNCHER or node.value.endswith('/' + devicesession.LAUNCHER)):
+            found.append((node.lineno, node.value))
+    return found
+
+
+def test_no_module_writes_around_the_session():
+    found = [(relative, *offence) for relative, tree in sources('src', exclude=SESSION + STANDALONE + TRANSPORT_TABLES)
+             for offence in offences(tree)]
     assert found == []
 
 
-def test_the_session_scan_sees_a_write_around_the_session():
-    tree = ast.parse('camera.link.cp_write(key, value)\ncamera.link.call(camera.link.camera.saveBackup, 0x02cf)\n'
-                     'self.link.jiritsu(16, data)\nsession.temp(name, blob)\n')
-    attributes = [node.attr for node in ast.walk(tree) if isinstance(node, ast.Attribute)
-                  and (node.attr in RAW or (node.attr in LINK_WRITES and through_link(node)))]
-    assert sorted(attributes) == ['cp_write', 'jiritsu', 'saveBackup', 'temp']
+def test_only_invoke_launches_a_worker():
+    tree = ast.parse((ROOT / 'src/looks/looktool/devicesession.py').read_text(encoding='utf-8'))
+    callers = {function.name for function in ast.walk(tree) if isinstance(function, ast.FunctionDef)
+               for node in ast.walk(function)
+               if isinstance(node, ast.Attribute) and node.attr == '_launch' and isinstance(node.ctx, ast.Load)}
+    assert callers == {'invoke'}
+
+
+@pytest.mark.parametrize('code,offence', [
+    ('camera.link.cp_write(key, value)', 'link.cp_write'),
+    ('camera.link.call(camera.link.camera.saveBackup, 0x02cf)', 'saveBackup'),
+    ('self.link.jiritsu(16, data)', 'jiritsu'),
+    ('session.temp(name, blob)', 'temp'),
+    ('camera.link.call(camera.link.camera.setBackupPresetData, 1, data)', 'setBackupPresetData'),
+    ('camera.link.call(reader, key)', 'link.call'),
+    ('method = camera.link.camera.readBackup', 'link.camera'),
+    ('link.call(link.camera.readBackup, key)', 'link.call'),
+    ('s = camera.link\ns.cp_write(key, value)', 'link.'),
+    ('send(camera.link)', 'link.'),
+    ("s = getattr(camera, 'link')", "getattr(…, 'link')"),
+    ("camera.temp_write('libJit.so', blob)", 'libJit.so'),
+    ("camera.link.select('/tmp/jiritsu/libJit.so')", '/tmp/jiritsu/libJit.so'),
+    ('camera._launch(blob)', '_launch'),
+    ('camera.link.writeFile(path, data)', 'writeFile'),
+])
+def test_the_session_scan_sees_each_way_around_the_session(code, offence):
+    assert offence in [label for _, label in offences(ast.parse(code))]
+
+
+def test_the_session_scan_allows_reads_and_bookkeeping():
+    code = ('camera.link.read(path)\nraw = camera.link.cp_read(key)\nok = camera.link.healthy\n'
+            'self.identity = self.link.identity\nself.link.__enter__()\ncamera.link.mutating = True\n'
+            'self.link = transport.Session(expected)\nlink.camera = transport.SonySenserCamera(link.channel)\n'
+            'camera.temp_read(devicesession.LAUNCHER, True)\ncamera.property_write(key, value, keys)\n')
+    assert offences(ast.parse(code)) == []
+
+
+# The launcher: libJit.so is never staged, and a launch before model confirmation runs only runtime.so.
+
+@pytest.mark.parametrize('cls', [GateCamera, CheckpointGateCamera, SoundGateCamera])
+def test_staging_refuses_the_launcher_even_on_an_identified_build(cls):
+    camera = identified(cls)
+    with pytest.raises(ValueError, match=devicesession.NOT_STAGING):
+        camera.temp_write(devicesession.LAUNCHER, b'\x7fELF test worker')
+    with pytest.raises(ValueError, match=devicesession.NOT_STAGING):
+        camera._jiritsu_write(devicesession.LAUNCHER, b'\x7fELF test worker')
+    # The refusal names the launcher whatever else is wrong with the session.
+    camera.programs_pinned, camera.identity_pending = False, True
+    with pytest.raises(ValueError, match=devicesession.NOT_STAGING):
+        camera.temp_write(devicesession.LAUNCHER, b'\x7fELF test worker')
+    assert camera.link.calls == []
+
+
+def test_launch_before_model_confirmation_runs_only_the_pinned_runtime_probe():
+    runtime = (ROOT / 'src/fl23/assets/runtime.so').read_bytes()
+    camera = identified(GateCamera)
+    camera.identity_pending = True
+    camera.core.assets = lambda: {'files': {'runtime.so': hashlib.sha256(runtime).hexdigest()}}
+    with pytest.raises(ValueError, match='pinned read-only'):
+        camera._launch(b'\x7fELF other worker')
+    assert camera.link.writes() == []
+    camera._launch(runtime)
+    assert camera.link.writes() == [('jiritsu16', '/tmp/jiritsu/' + devicesession.LAUNCHER)]

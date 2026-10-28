@@ -132,13 +132,13 @@ class CurrentRequest:
 
 def prepare_current(camera,folder,command):
     """Replace inert sound staging over current bytes, with no old-job gate."""
+    from looktool.devicesession import LAUNCHER
     folder=Path(folder);folder.mkdir(parents=True,exist_ok=True)
     # Keep the OS/process mutex and the actual loader occupancy check.
     # Never run a second native plugin over an occupied execution entry.
-    if camera.temp_read('libJit.so',True) is not None:
+    if camera.temp_read(LAUNCHER,True) is not None:
         camera.mark_unknown()
-        link=getattr(camera,'link',None)
-        if link is not None:link.mutating=True
+        if hasattr(camera,'link'):camera.link.mutating=True
         raise RuntimeError('相机执行入口当前仍被占用，本次声音操作尚未开始。请等待正在执行的操作结束。')
     names=('shutter.staged.so','shutter.probe.result','a7c2.probe.result',
            'lut-runtime-staged.so','a7c2.runtime.result','lut-program-staged.so',
@@ -156,7 +156,7 @@ def prepare_current(camera,folder,command):
     for name,raw in actual.items():
         (folder/(name+'.before.private.bin')).write_bytes(raw)
     try:
-        if camera.temp_read('libJit.so',True) is not None:
+        if camera.temp_read(LAUNCHER,True) is not None:
             raise RuntimeError('相机开始了另一项操作，本次声音替换尚未执行。')
         for name,raw in actual.items():
             current=camera.read('/tmp/jiritsu/'+name,True)

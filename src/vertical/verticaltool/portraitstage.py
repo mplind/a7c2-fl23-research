@@ -26,6 +26,7 @@ class Stage:
 
     def reconcile(self):
         """Archive our former worker; a new plan operates on captured bytes."""
+        from looktool.devicesession import LAUNCHER
         names=('portrait.staged.so','portrait.request','portrait.result')
         values={name:self.camera.temp_read(name,True) for name in names}
         if not any(value is not None for value in values.values()):return
@@ -39,7 +40,7 @@ class Stage:
         request=values['portrait.request']
         if request is not None and (len(request)!=16 or request[:8]!=portraitworker.MAGIC):
             raise ValueError('Existing portrait request is not recognized; retain its diagnostics')
-        jit=self.camera.temp_read('libJit.so',True)
+        jit=self.camera.temp_read(LAUNCHER,True)
         if jit is not None and (staged is None or jit!=staged):
             raise ValueError('Another native operation owns libJit.so; retain its diagnostics')
         probe=self.camera.temp_read('a7c2.probe.result',True)
@@ -51,7 +52,7 @@ class Stage:
         self.owner.record('portrait_prior_worker_accounted_from_current_bytes',has_result=raw is not None)
         for name,value in values.items():
             if value is not None:self.camera.temp_remove(name)
-        if jit is not None:self.camera.temp_remove('libJit.so')
+        if jit is not None:self.camera.temp_remove(LAUNCHER)
 
     def invoke(self,mode):
         from looktool.devicesession import invoke
