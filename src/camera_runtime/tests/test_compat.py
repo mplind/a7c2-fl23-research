@@ -1,4 +1,4 @@
-"""Version-only source admission, LUT preservation and conflict tests. No USB."""
+"""Version and build admission, LUT preservation and conflict tests. No USB."""
 import os,sys,tempfile,unittest,struct
 from pathlib import Path
 from unittest.mock import patch
@@ -68,7 +68,7 @@ class Guards(unittest.TestCase):
 class OriginalFirmware(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.layout,cls.firmware,cls.build,_=compat.modules()
+        cls.layout,cls.firmware,cls.build,*_=compat.modules()
         folder=Path(os.environ['A7C2_FIRMWARE_ROOT'])/'a7c2-2.01/components'
         cls.ap=(folder/'appFw.so').read_bytes();cls.cp=(folder/'cpapp-b.bin').read_bytes()
         if [core.sha(cls.ap),core.sha(cls.cp)]!=core.ORIGINAL:raise AssertionError('Original source required')
@@ -103,30 +103,26 @@ class OriginalFirmware(unittest.TestCase):
         self.assertFalse(enabled)
         identity,enabled,repeated,f,r=compat.plan(source,after['cpapp-b.bin'])
         self.assertTrue(enabled);self.assertEqual(repeated['appFw.so'],source);self.assertIsNone(f)
-    def test_changes_outside_patched_positions_are_accepted_and_preserved(self):
+    def test_changes_outside_the_tool_regions_are_refused(self):
+        # Such programs are no supported build (buildprofile.identify): nothing is planned for them.
+        from looktool.buildprofile import UnsupportedFirmware
         source=self.layout._ap_target(self.ap,1)
         changed_ap=bytearray(source);changed_ap[0x70000]^=1
         changed_cp=bytearray(self.lutcp);changed_cp[0x70000]^=1
-        with patch.object(self.layout,'identify',side_effect=AssertionError('No source whitelist')):
-            identity,enabled,after,f,r=compat.plan(bytes(changed_ap),bytes(changed_cp))
-        self.assertFalse(identity['provenance_checked'])
-        self.assertEqual(after['appFw.so'][0x70000],changed_ap[0x70000])
-        self.assertTrue(after['cpapp-b.bin']==self.expected_native_update(bytes(changed_cp)))
-        self.assertEqual(self.firmware.apply(after,r),{'appFw.so':bytes(changed_ap),'cpapp-b.bin':bytes(changed_cp)})
+        for ap,cp in ((bytes(changed_ap),self.lutcp),(source,bytes(changed_cp))):
+            with self.assertRaises(UnsupportedFirmware):compat.plan(ap,cp)
     def test_actual_patch_position_conflict_is_not_overwritten(self):
         source=self.layout._ap_target(self.ap,1)
         wrong=bytearray(source);wrong[0x4b2ed19]=0x77
         with self.assertRaisesRegex(ValueError,'衝突'):compat.plan(bytes(wrong),self.lutcp)
         wrong=bytearray(self.lutcp);wrong[0x138814]^=1
         with self.assertRaisesRegex(ValueError,'衝突'):compat.plan(source,bytes(wrong))
-    def test_modified_stock_programs_also_do_not_require_source_hashes(self):
+    def test_modified_stock_programs_are_refused(self):
+        from looktool.buildprofile import UnsupportedFirmware
         changed_ap=bytearray(self.ap);changed_ap[0x70000]^=1
         changed_cp=bytearray(self.cp);changed_cp[0x70000]^=1
-        _,enabled,after,f,r=compat.plan(bytes(changed_ap),bytes(changed_cp))
-        self.assertFalse(enabled)
-        self.assertEqual(after['appFw.so'][0x70000],changed_ap[0x70000])
-        self.assertEqual(after['cpapp-b.bin'][0x70000],changed_cp[0x70000])
-        self.assertEqual(self.firmware.apply(after,r),{'appFw.so':bytes(changed_ap),'cpapp-b.bin':bytes(changed_cp)})
+        for ap,cp in ((bytes(changed_ap),self.cp),(self.ap,bytes(changed_cp))):
+            with self.assertRaises(UnsupportedFirmware):compat.plan(ap,cp)
     def test_job_worker_compiles_without_firmware_hash_checks(self):
         from looktool import checkpointworker
         source=self.layout._ap_target(self.ap,1)

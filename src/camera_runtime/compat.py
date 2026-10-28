@@ -1,6 +1,8 @@
-"""Version-scoped FL23 planning without a firmware-provenance whitelist.
+"""Version-scoped FL23 planning against the identified Sony 2.01 build.
 
-Only edited bytes have conflict guards; full readback compares bytes.
+The programs must be a supported build (buildprofile.identify). Only edited bytes have conflict
+guards, and each guard is that build's own stock bytes, not the public before_hex in patches.json;
+full readback compares bytes.
 """
 from pathlib import Path
 import sys
@@ -13,15 +15,20 @@ LEGACY_CONVERTER=bytes.fromhex('e1000035002800511f1400718800005400e4031140000039
 def modules():
     sys.path.insert(0,str(core.BASE.parent/'looks'))
     try:
-        from looktool import device_layout,firmware,nativebuild,worker
+        from looktool import buildprofile,device_layout,firmware,nativebuild,worker
     except ImportError as exc:
         raise ValueError('LUT 相容模式缺少依賴，請更新完整工具並重新開啟 FL23.cmd。') from exc
-    return device_layout,firmware,nativebuild,worker
+    return device_layout,firmware,nativebuild,worker,buildprofile
 
 
-def plan(ap,cp,version=core.VERSION,*,transitions=True):
+def plan(ap,cp,version=core.VERSION,*,transitions=True,build=None):
+    """FL2/FL3 for appFw.so `ap` and cpapp-b.bin `cp` of `build`, which is identified from them
+    when None. Programs of no supported build raise UnsupportedFirmware before anything is planned."""
     if version!=core.VERSION:raise ValueError('FL23 只適用於 ILCE-7CM2 2.01；請依相機版本頁填寫')
-    layout,firmware,_,_=modules()
+    layout,firmware,_,_,buildprofile=modules()
+    if build is None:build=buildprofile.identify(ap,cp)
+    # The post-reload check reads runtime.so's compiled offsets: refuse a build that moved them.
+    core.runtime_spans(build)
     before=dict(zip(core.PROGRAMS,[ap,cp]))
     # These are instruction-boundary checks, not file-source fingerprints.
     # A LUT converter already handles native FL2/FL3 and must not be replaced.
@@ -36,8 +43,12 @@ def plan(ap,cp,version=core.VERSION,*,transitions=True):
     for chip,name in enumerate(core.PROGRAMS):
         source=before[name];result=bytearray(source);spans=[]
         for w in manifest[chip]['writes']:
-            at=int(w['file_offset'],16);old,new=bytes.fromhex(w['before_hex']),bytes.fromhex(w['after_hex'])
+            # patches.json holds public-build offsets and bytes; the after bytes suit every build.
+            at=int(w['file_offset'],16);new=bytes.fromhex(w['after_hex'])
             if lut and at==0x3528804:continue
+            if chip==0:at=buildprofile.translate(at,build)
+            if at+len(new)>len(source):raise ValueError(f'補丁位置越界：{name} {at:#x}')
+            old=buildprofile.stock(build,name,at,len(new))
             if lut and chip==1:
                 native=next((entry for entry in layout.fl23_native_windows() if entry[0]==at),None)
                 if native is None:continue
@@ -47,7 +58,6 @@ def plan(ap,cp,version=core.VERSION,*,transitions=True):
                 result[at:at+len(new)]=new;changed=True
                 for offset in range(0,len(new),4096):spans.append((at+offset,min(4096,len(new)-offset)))
                 continue
-            if len(old)!=len(new) or at+len(old)>len(source):raise ValueError(f'補丁位置越界：{name} {at:#x}')
             current=source[at:at+len(old)]
             if current==new:continue
             if current!=old and not (chip==1 and current in layout.fl23_previous_values(at)):

@@ -1,15 +1,13 @@
 """Which Sony compile of ILCE-7CM2 2.01 a camera's program files are. Offline only.
 
-Real-firmware tests read the folder named by A7C2_BUILD_FIXTURES, which holds public-2.01/,
-body-2.01-20250923/ and hybrid-20261027/, each with appFw.so and cpapp-b.bin. They skip when the
-variable is unset and fail when it is set but a file isn't the one the 28 Oct findings recorded.
+Real-firmware tests read the folder named by A7C2_BUILD_FIXTURES through conftest.py's build_fixtures
+(see buildfixtures.py). They skip when the variable is unset and fail when it is set but a file isn't
+the one the 28 Oct findings recorded.
 Synthetic tests run everywhere on two 64 KiB builds shaped like those two.
 """
 import base64
-import hashlib
 import inspect
 import json
-import os
 from pathlib import Path
 import random
 from types import SimpleNamespace
@@ -17,104 +15,62 @@ import zlib
 
 import pytest
 
+from buildfixtures import DIGESTS, FINDINGS, PROGRAMS, SIZES, sha
 from looktool.buildprofile import BUILDS, Build, UnsupportedFirmware, identify, regions, stock, translate
 from looktool import buildprofile
 import build_body_reference
 
 ROOT = Path(__file__).resolve().parents[2]
 ASSETS = ROOT / 'src/looks/assets'
-PROGRAMS = ('appFw.so', 'cpapp-b.bin')
-SIZES = (99960744, 18090880)
-# Full-file SHA-256 (appFw.so, cpapp-b.bin), verified on the camera on 28 Oct 2026.
-FINDINGS = {
-    'public-2.01': ('2ea02f7ecbc5bb917316fe8ef4ce5ffd87eb66efaae78ba2ce11420552df539b',
-                    'f5a477588698ef965748903b8959a39ce4f59ffd4aee4d4234ef1670f56a1428'),
-    'body-2.01-20250923': ('77fa856ed5812124ffec507857ec48af43159357b2c8a341cb15f3d5c1076d54',
-                           '171f6d7c0b95c6bea3b64487d0b826f38a94ec92ca3984679a0ee2899e704efa'),
-}
-# The camera after the 27 Oct Factory Restore wrote public bytes into the body build
-# (camera-check/20261028T043722Z/report.json).
-HYBRID = ('4a75b330c13132674879e6838ae44e7a07467384454cdf4d393a376a00fd7b3e',
-          '171f6d7c0b95c6bea3b64487d0b826f38a94ec92ca3984679a0ee2899e704efa')
-FIXTURE_DIGESTS = {**FINDINGS, 'hybrid-20261027': HYBRID}
 STOCK_TABLE = bytes.fromhex('1200020406080a0c0e100000')
 PUBLIC, BODY = BUILDS
 EACH_BUILD = pytest.mark.parametrize('name, key', [('public', 'public-2.01'), ('body', 'body-2.01-20250923')])
-
-
-def sha(data):
-    return hashlib.sha256(data).hexdigest()
 
 
 def public_reference():
     return json.loads((ASSETS / PUBLIC.regions_file).read_text(encoding='utf-8'))
 
 
-@pytest.fixture(scope='module')
-def loaded():
-    """Every fixture program read once for the module, with its digests. Skips without the variable."""
-    folder = os.environ.get('A7C2_BUILD_FIXTURES')
-    if not folder:
-        pytest.skip('A7C2_BUILD_FIXTURES is not set')
-    result = {}
-    for name in FIXTURE_DIGESTS:
-        path = Path(folder) / name
-        ap, cp = ((path / program).read_bytes() for program in PROGRAMS)
-        result[name] = SimpleNamespace(folder=path, ap=ap, cp=cp, digests=(sha(ap), sha(cp)))
-    return result
-
-
-@pytest.fixture(scope='module')
-def fixtures(loaded):
-    """The same programs, refused outright when a file isn't the one the findings recorded."""
-    wrong = ['%s: %s, expected %s' % (name, loaded[name].digests, digests)
-             for name, digests in FIXTURE_DIGESTS.items() if loaded[name].digests != digests]
-    if wrong:
-        pytest.fail('A7C2_BUILD_FIXTURES holds other files: ' + '; '.join(wrong), pytrace=False)
-    return SimpleNamespace(public=loaded['public-2.01'], body=loaded['body-2.01-20250923'],
-                           hybrid=loaded['hybrid-20261027'])
-
-
 # Real firmware -------------------------------------------------------------------------------
 
-def test_fixture_hashes_match_findings(loaded):
-    for name, digests in FIXTURE_DIGESTS.items():
-        assert loaded[name].digests == digests, name
-        assert (len(loaded[name].ap), len(loaded[name].cp)) == SIZES, name
+def test_fixture_hashes_match_findings(build_fixture_files):
+    for name, digests in DIGESTS.items():
+        assert build_fixture_files[name].digests == digests, name
+        assert (len(build_fixture_files[name].ap), len(build_fixture_files[name].cp)) == SIZES, name
 
 
-def test_public_and_body_fixtures_identify(fixtures):
-    assert identify(fixtures.public.ap, fixtures.public.cp).key == 'public-2.01'
-    assert identify(fixtures.body.ap, fixtures.body.cp).key == 'body-2.01-20250923'
+def test_public_and_body_fixtures_identify(build_fixtures):
+    assert identify(build_fixtures.public.ap, build_fixtures.public.cp).key == 'public-2.01'
+    assert identify(build_fixtures.body.ap, build_fixtures.body.cp).key == 'body-2.01-20250923'
 
 
 @pytest.mark.parametrize('program, offset', [('appFw.so', 0x100000), ('cpapp-b.bin', 0x400000)])
-def test_one_byte_outside_the_regions_is_unsupported(fixtures, program, offset):
-    files = {'appFw.so': bytearray(fixtures.body.ap), 'cpapp-b.bin': bytearray(fixtures.body.cp)}
+def test_one_byte_outside_the_regions_is_unsupported(build_fixtures, program, offset):
+    files = {'appFw.so': bytearray(build_fixtures.body.ap), 'cpapp-b.bin': bytearray(build_fixtures.body.cp)}
     files[program][offset] ^= 1
     with pytest.raises(UnsupportedFirmware):
         identify(bytes(files['appFw.so']), bytes(files['cpapp-b.bin']))
 
 
-def test_the_27_oct_hybrid_is_refused(fixtures):
+def test_the_27_oct_hybrid_is_refused(build_fixtures):
     # public table bytes landed at 0x4c7cf7c, outside the body build's regions: never write to this
-    hybrid, public, body = fixtures.hybrid.ap, fixtures.public.ap, fixtures.body.ap
+    hybrid, public, body = build_fixtures.hybrid.ap, build_fixtures.public.ap, build_fixtures.body.ap
     assert hybrid[0x4c7cf7c:0x4c7cf88] == public[0x4c7cf7c:0x4c7cf88] != body[0x4c7cf7c:0x4c7cf88]
     with pytest.raises(UnsupportedFirmware):
-        identify(fixtures.hybrid.ap, fixtures.hybrid.cp)
+        identify(build_fixtures.hybrid.ap, build_fixtures.hybrid.cp)
 
 
-def test_programs_from_two_builds_are_refused(fixtures):
+def test_programs_from_two_builds_are_refused(build_fixtures):
     with pytest.raises(UnsupportedFirmware):
-        identify(fixtures.public.ap, fixtures.body.cp)
+        identify(build_fixtures.public.ap, build_fixtures.body.cp)
     with pytest.raises(UnsupportedFirmware):
-        identify(fixtures.body.ap, fixtures.public.cp)
+        identify(build_fixtures.body.ap, build_fixtures.public.cp)
 
 
 @EACH_BUILD
-def test_partially_written_regions_still_identify(fixtures, name, key):
+def test_partially_written_regions_still_identify(build_fixtures, name, key):
     """An interrupted FL2/FL3 install: every other write landed. Resume and restore still need the build."""
-    programs = getattr(fixtures, name)
+    programs = getattr(build_fixtures, name)
     manifest = json.loads((ROOT / 'src/camera_runtime/assets/patches.json').read_text(encoding='utf-8'))
     written = []
     for source, spec in zip((programs.ap, programs.cp), manifest):
@@ -128,53 +84,53 @@ def test_partially_written_regions_still_identify(fixtures, name, key):
 
 
 @EACH_BUILD
-def test_legacy_converter_identifies_its_build(fixtures, name, key):
+def test_legacy_converter_identifies_its_build(build_fixtures, name, key):
     """Leftovers of an older tool release still identify, so Factory Restore can clean them."""
     from looktool.devicesession import modules
     modules()
     import compat
-    programs = getattr(fixtures, name)
+    programs = getattr(build_fixtures, name)
     ap = bytearray(programs.ap)
     ap[0x3528804:0x3528804 + len(compat.LEGACY_CONVERTER)] = compat.LEGACY_CONVERTER
     assert bytes(ap) != programs.ap
     assert identify(bytes(ap), programs.cp).key == key
 
 
-def test_regions_hold_each_builds_own_stock_bytes(fixtures):
-    for build, programs in ((PUBLIC, fixtures.public), (BODY, fixtures.body)):
+def test_regions_hold_each_builds_own_stock_bytes(build_fixtures):
+    for build, programs in ((PUBLIC, build_fixtures.public), (BODY, build_fixtures.body)):
         files = dict(zip(PROGRAMS, (programs.ap, programs.cp)))
         for program, rows in regions(build).items():
             for at, raw in rows:
                 assert files[program][at:at + len(raw)] == raw, (build.key, program, hex(at))
 
 
-def test_translated_table_addresses_hold_the_same_bytes(fixtures):
+def test_translated_table_addresses_hold_the_same_bytes(build_fixtures):
     """The body's .rodata after 0x4c102e0 sits 16 bytes earlier, the look table included."""
     for offset in range(0x4c7cf7c, 0x4c7cf89):
-        assert fixtures.body.ap[translate(offset, BODY)] == fixtures.public.ap[offset], hex(offset)
+        assert build_fixtures.body.ap[translate(offset, BODY)] == build_fixtures.public.ap[offset], hex(offset)
 
 
-def test_committed_body_reference_is_what_the_script_produces(fixtures, tmp_path):
+def test_committed_body_reference_is_what_the_script_produces(build_fixtures, tmp_path):
     output = tmp_path / 'body.json'
-    build_body_reference.main(['--components', str(fixtures.body.folder), '--output', str(output)])
+    build_body_reference.main(['--components', str(build_fixtures.body.folder), '--output', str(output)])
     assert output.read_bytes() == (ASSETS / BODY.regions_file).read_bytes()
 
 
 @pytest.mark.parametrize('name', ['public', 'hybrid'])
-def test_body_reference_is_built_only_from_body_programs(fixtures, name):
-    programs = getattr(fixtures, name)
+def test_body_reference_is_built_only_from_body_programs(build_fixtures, name):
+    programs = getattr(build_fixtures, name)
     public = public_reference()
     with pytest.raises(ValueError, match='body-2.01-20250923'):
         build_body_reference.reference(programs.ap, programs.cp, public)
 
 
-def test_body_reference_refuses_a_region_across_the_table_edge(fixtures):
+def test_body_reference_refuses_a_region_across_the_table_edge(build_fixtures):
     """Moving only part of a region would mix the two builds' addresses."""
     public = public_reference()
     table = next(row for row in public['programs']['appFw.so']['regions'] if row['offset'] == 0x4c7cf7c)
     table.update(offset=0x4c7cf78, bytes=16)
     with pytest.raises(ValueError, match='0x4c7cf78'):
-        build_body_reference.reference(fixtures.body.ap, fixtures.body.cp, public)
+        build_body_reference.reference(build_fixtures.body.ap, build_fixtures.body.cp, public)
 
 
 # Committed build tables ----------------------------------------------------------------------

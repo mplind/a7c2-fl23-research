@@ -11,10 +11,13 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 import compat
 
 
+@pytest.mark.parametrize('build',['public-2.01','body-2.01-20250923'])
 @pytest.mark.parametrize('offset',[0x138832,0x1100b80])
 @pytest.mark.parametrize('lut',[False,True])
-def test_published_v2_native_fields_upgrade_and_reapply_without_touching_other_bytes(offset,lut):
-    layout,*_=compat.modules()
+def test_published_v2_native_fields_upgrade_and_reapply_without_touching_other_bytes(offset,lut,build):
+    layout,*_,buildprofile=compat.modules()
+    # Stand-in programs can't be identified, so the planner is told which build they play.
+    build=next(b for b in buildprofile.BUILDS if b.key==build)
     native=layout.fl23_native_windows()
     path=Path(compat.core.BASE)/'assets/fl23-native-history.json'
     history=json.loads(path.read_text(encoding='utf-8'))
@@ -34,14 +37,14 @@ def test_published_v2_native_fields_upgrade_and_reapply_without_touching_other_b
     fake=SimpleNamespace(runtime=lambda:dict(ap_templates=[''] if lut else ['nonmatching']),
         fl23_native_windows=lambda:native,fl23_previous_values=layout.fl23_previous_values)
     manifest=[dict(writes=[]),dict(writes=[current])]
-    with patch.object(compat,'modules',return_value=(fake,None,None,None)), \
+    with patch.object(compat,'modules',return_value=(fake,None,None,None,buildprofile)), \
          patch.object(compat.core,'read_json',return_value=manifest):
-        _,enabled,target,*_=compat.plan(b'AP',before,transitions=False)
+        _,enabled,target,*_=compat.plan(b'AP',before,transitions=False,build=build)
         assert not enabled
         expected=bytearray(before);expected[offset:offset+len(previous)]=bytes.fromhex(current['after_hex'])
         assert target['cpapp-b.bin']==bytes(expected)
         assert target['appFw.so']==b'AP'
-        assert compat.plan(b'AP',target['cpapp-b.bin'],transitions=False)[1]
+        assert compat.plan(b'AP',target['cpapp-b.bin'],transitions=False,build=build)[1]
         wrong=bytearray(before);wrong[offset+3]^=0x41
         with pytest.raises(ValueError,match='衝突'):
-            compat.plan(b'AP',bytes(wrong),transitions=False)
+            compat.plan(b'AP',bytes(wrong),transitions=False,build=build)

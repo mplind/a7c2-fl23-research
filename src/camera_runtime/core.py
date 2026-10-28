@@ -21,6 +21,9 @@ AP_KEYS=[0x02cf1287,0x02cf1289]
 COLOUR_SLOTS=[(55,23),(56,25)]
 NATIVE_PATHS={'libJit.so','a7c2.install.request','a7c2.install.result','a7c2.probe.result',
               'a7c2.wbi.request','a7c2.wbi.result','a7c2.runtime.result','a7c2-preview-staged.so'}
+# appFw.so spans that runtime.so (native/runtime.c) reads from RAM and from disk, at the public-build
+# offsets compiled into it. Together they hold every appFw.so FL2/FL3 write.
+RUNTIME_SPANS=((0x3528804,112),(0x4b2ed19,2),(0x59892b8,40),(0x5989370,40),(0x4b4a5e4,12),(0x4b3b544,12))
 
 def sha(data):return hashlib.sha256(data).hexdigest()
 def read_json(path):return json.loads(Path(path).read_text(encoding='utf-8'))
@@ -67,6 +70,17 @@ def patch_program(original,chip,reverse=False):
     for offset,before,after in spans:result[offset:offset+len(before)]=after
     if len(result)!=len(original):raise ValueError('候選檔長度被改動')
     return bytes(result)
+
+
+def runtime_spans(build):
+    """RUNTIME_SPANS in `build`'s own appFw.so addresses. runtime.so reads its compiled offsets on
+    every camera, so a build that moves any byte of a span is refused rather than checked at the
+    wrong bytes."""
+    from looktool.buildprofile import translate
+    for at,n in RUNTIME_SPANS:
+        moved=[offset for offset in range(at,at+n) if translate(offset,build)!=offset]
+        if moved:raise ValueError(f'{build.key} 的執行期檢查位置已移動：appFw.so {moved[0]:#x}；沒有寫入')
+    return RUNTIME_SPANS
 
 
 def merge_colors(unit01,unit0d):
@@ -147,7 +161,7 @@ def parse_native(name,raw,mode=None):
         v=struct.unpack_from('<8sIIqqqQII',raw)
         if v[:3]!=(b'A7RUN001',1,6) or v[3] or v[4] or v[7]!=16:raise ValueError('執行期身分／結果不符')
         spans=[]
-        for i,(offset,n) in enumerate([(0x3528804,112),(0x4b2ed19,2),(0x59892b8,40),(0x5989370,40),(0x4b4a5e4,12),(0x4b3b544,12)]):
+        for i,(offset,n) in enumerate(RUNTIME_SPANS):
             spans.append({'offset':offset,'length':n,'memory':raw[56+i*256:56+i*256+n].hex(),
                           'disk':raw[56+i*256+128:56+i*256+128+n].hex()})
         return {'spans':spans,'image_mode':raw[1592:1608].split(b'\0')[0].decode('ascii','replace'),

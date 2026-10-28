@@ -1,11 +1,36 @@
+import os
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(ROOT / 'src'), str(ROOT / 'src/looks'), str(ROOT / 'src/looks/tests')]
 
 
 import pytest
+
+import buildfixtures
+
+
+@pytest.fixture(scope='module')
+def build_fixture_files():
+    """Every A7C2_BUILD_FIXTURES program, read once for the module, with its digests (see
+    buildfixtures). Skips when the variable is unset."""
+    folder = os.environ.get('A7C2_BUILD_FIXTURES')
+    if not folder:
+        pytest.skip('A7C2_BUILD_FIXTURES is not set')
+    return buildfixtures.read(folder)
+
+
+@pytest.fixture(scope='module')
+def build_fixtures(build_fixture_files):
+    """The same programs as .public, .body and .hybrid, refused outright when a file isn't the one
+    the findings recorded."""
+    wrong = buildfixtures.mismatches(build_fixture_files)
+    if wrong:
+        pytest.fail('A7C2_BUILD_FIXTURES holds other files: ' + '; '.join(wrong), pytrace=False)
+    return SimpleNamespace(public=build_fixture_files['public-2.01'], body=build_fixture_files['body-2.01-20250923'],
+                           hybrid=build_fixture_files['hybrid-20261027'])
 
 
 @pytest.fixture(autouse=True)
