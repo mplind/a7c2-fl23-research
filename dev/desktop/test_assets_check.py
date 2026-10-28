@@ -77,3 +77,38 @@ def test_the_packaged_self_test_imports_the_window_and_its_chrome(monkeypatch):
         pass  # a checkout without the bundled libraries still imports everything first
     for name in ('desktopapp.theme', 'desktopapp.shell', 'desktopapp.window'):
         assert name in imported
+
+
+def offline_smoke():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location('offline_smoke_regions', ROOT / 'dev/desktop/offline_smoke.py')
+    smoke = importlib.util.module_from_spec(spec); spec.loader.exec_module(smoke)
+    return smoke
+
+
+def test_the_packaged_self_test_loads_every_builds_identity_regions():
+    from looktool import buildprofile
+    result = offline_smoke().check_identity_regions()
+    assert list(result) == [build.key for build in buildprofile.BUILDS]
+    for build in buildprofile.BUILDS:
+        rows = buildprofile.identity_regions(build)
+        assert result[build.key] == {program: len(found) for program, found in rows.items()}
+        assert all(result[build.key].values())
+
+
+def test_the_packaged_self_test_fails_without_the_vertical_display_files(monkeypatch, tmp_path):
+    # buildprofile imports the Vertical Display windows from VERTICAL = parents[2]/'vertical'; a package
+    # that leaves them out must fail its self-test, even where verticaltool was already imported.
+    from looktool import buildprofile
+    monkeypatch.setattr(buildprofile, 'VERTICAL', tmp_path / 'vertical')
+    with pytest.raises(AssertionError, match='Vertical Display'):
+        offline_smoke().check_identity_regions()
+
+
+def test_the_packaged_self_test_fails_without_a_builds_regions_file(monkeypatch):
+    import dataclasses
+    from looktool import buildprofile
+    public, body = buildprofile.BUILDS
+    monkeypatch.setattr(buildprofile, 'BUILDS', (public, dataclasses.replace(body, regions_file='factory-regions-missing.json')))
+    with pytest.raises(FileNotFoundError, match='factory-regions-missing.json'):
+        offline_smoke().check_identity_regions()

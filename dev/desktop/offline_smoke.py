@@ -161,6 +161,22 @@ def check_feature_modules():
     return dict(film_looks=len(looks), shutter_sounds=len(sounds))
 
 
+def check_identity_regions():
+    """Every supported build's identity regions, loaded as the firmware gate loads them: the build's
+    regions file under src/looks/assets, and the Vertical Display windows buildprofile imports from its
+    VERTICAL folder (parents[2]/'vertical'). A file the package left out fails here, not in a camera job,
+    even where verticaltool was already imported from somewhere else."""
+    from looktool import buildprofile
+    layout = buildprofile.VERTICAL / 'verticaltool/portraitlayout.py'
+    assert layout.is_file(), 'The Vertical Display files are missing from the package: ' + str(layout)
+    result = {}
+    for build in buildprofile.BUILDS:
+        rows = buildprofile.identity_regions(build)
+        assert rows['appFw.so'] and rows['cpapp-b.bin'], 'No identity regions for ' + build.key
+        result[build.key] = {program: len(found) for program, found in rows.items()}
+    return result
+
+
 # The app icon's sizes Qt reads, in pixels. iconutil stores 16 and 32 px as ARGB images (ic04, ic05),
 # which Qt's icns plugin skips; Qt draws those from the 32 px image (16 px @2x) instead.
 APP_ICON_SIZES = (32, 64, 128, 256, 512, 1024)
@@ -189,6 +205,8 @@ def run():
     from desktopapp.worker import setup_runtime
     from desktopapp.paths import ROOT
     setup_runtime()
+    # First, before anything below imports verticaltool from src/vertical itself.
+    identity_regions = check_identity_regions()
     from desktopapp import reloadguide
     from desktopapp import connectionguide
     from desktopapp.exiftool import ensure
@@ -336,6 +354,7 @@ def run():
         assert forward['stream_install'] and Path(forward['path']).read_bytes()[:4]==b'\x7fELF'
     features = check_feature_modules()
     return {'camera_io': False, 'project_imports': 'passed', **features, 'app_icon': check_app_icon(),
+            'identity_regions': identity_regions,
             'bundled_exiftool':exif_result.stdout.strip(), 'assets': 'passed', 'builtin_factory_reference': 'passed',
             'native_cross_compile': 'passed', 'native_assembler_disassembler':'passed',
             'one_click_offline_sequence':'passed','look_batch_defaults':'passed','streaming_names_compile':'passed',
