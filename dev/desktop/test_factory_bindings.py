@@ -102,7 +102,7 @@ def test_actual_factory_descriptors_reset_all_six_fl_bases_and_current_selection
             data=bytearray(records[1][key].data);data[0x80:0x88]=marker
             records[1][key]=records[1][key]._replace(data=bytes(data))
     current=dict(programs,**{'resources/'+n:stock_names() for n in nameworker.filenames()})
-    target,wanted,_=direct.plan(current,ram,'factory_reset',factory=official.builtin())
+    target,wanted,_=direct.plan(current,ram,'factory_reset',factory=official.load('builtin'))
     assert all(wanted[0][key]==b'\0' for key in keys+[0x02cf0cbb,*checkpoint.AP_KEYS])
     camera=SimpleNamespace(records=lambda raw:ram if raw==b'ram' else saved)
     prepared=direct.DirectJob('unused-offline-job').settings(camera,

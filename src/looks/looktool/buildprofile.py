@@ -4,8 +4,11 @@ Each supported build has a full-file SHA-256 for appFw.so and cpapp-b.bin, its o
 tool-owned regions holding that build's stock bytes, and the three facts that differ between builds.
 A pair of program files is identified by writing a build's stock bytes over every region a tool may
 change (identity_regions), which undoes any tool change, finished or interrupted, and comparing the
-whole-file digests. Only the program files take part: settings and calibration never do. Offline
-only; no camera access.
+whole-file digests. Only the program files take part: settings and calibration never do.
+
+Bytes saved for a later restore (backups, a job's saved windows) record the build they were read
+from, and a restore refuses a camera of another build (saved_build, same_build). Offline only; no
+camera access.
 """
 import base64
 import binascii
@@ -20,21 +23,45 @@ import zlib
 ASSETS = Path(__file__).resolve().parents[1] / 'assets'
 VERTICAL = Path(__file__).resolve().parents[2] / 'vertical'
 PROGRAMS = ('appFw.so', 'cpapp-b.bin')
+SCHEMA = 'a7c2-factory-regions/1'
 PUBLIC_LOOK_TABLE = 0x4c7cf7c
 LOOK_TABLE_BYTES = 12
+# Refusals, each a Chinese source string with its English in desktopapp/en.py. The formatted ones are
+# matched back by refusal() so the window can show them translated.
 UNSUPPORTED = '此相机的固件版本不受支持，未写入任何内容。（appFw.so %s…，cpapp-b.bin %s…）'
-_UNSUPPORTED_MESSAGE = re.compile(re.escape(UNSUPPORTED).replace('%s', '([0-9a-f]{16})'))
+SAVED_OTHER_BUILD = '所保存的内容来自固件版本 %s，而相机是 %s，未写入任何内容。'
+SAVED_UNIDENTIFIED = '无法确定所保存的内容来自哪个固件版本，未写入任何内容。'
+REFERENCE_OTHER_BUILD = '所选原厂文件是固件版本 %s，而相机是 %s，未写入任何内容。'
+REFERENCE_UNSUPPORTED = '所选原厂文件不是受支持的固件版本，未写入任何内容。'
+JOB_OTHER_BUILD = '此任务记录的固件版本是 %s，而相机现在是 %s，没有核对或写入任何内容。'
+_KEY = '[0-9a-z][0-9a-z.-]*'
+_REFUSALS = {template: re.compile(re.escape(template).replace('%s', '(%s)' % value)) for template, value in (
+    (UNSUPPORTED, '[0-9a-f]{16}'), (SAVED_OTHER_BUILD, _KEY), (REFERENCE_OTHER_BUILD, _KEY), (JOB_OTHER_BUILD, _KEY))}
 
 
 class UnsupportedFirmware(ValueError):
     """The program files are not a supported build, so nothing may be written to this camera."""
 
 
+class OtherBuild(ValueError):
+    """Saved bytes or a factory reference belong to another build than the camera's, or to no
+    supported build, so nothing may be written from them."""
+
+
+def refusal(message):
+    """(template, values) when `message` is one of the formatted build refusals above, filled in, so
+    the window can show it translated; None for any other message."""
+    for template, pattern in _REFUSALS.items():
+        match = pattern.fullmatch(message)
+        if match:
+            return template, match.groups()
+    return None
+
+
 def unsupported_digests(message):
-    """The two digest prefixes an UNSUPPORTED refusal names, so the window can show it translated;
-    None for any other message."""
-    match = _UNSUPPORTED_MESSAGE.fullmatch(message)
-    return match.groups() if match else None
+    """The two digest prefixes an UNSUPPORTED refusal names; None for any other message."""
+    found = refusal(message)
+    return found[1] if found and found[0] == UNSUPPORTED else None
 
 
 @dataclass(frozen=True)
@@ -67,20 +94,63 @@ BUILDS = (
 )
 
 
+def by_key(key):
+    """The supported Build named `key`, or None."""
+    return next((build for build in BUILDS if build.key == key), None)
+
+
+def regions_document(build):
+    """The parsed regions file of `build` (its regions_file under src/looks/assets)."""
+    return json.loads((ASSETS / build.regions_file).read_text(encoding='utf-8'))
+
+
 def regions(build):
     """{'appFw.so': [(offset, stock bytes), …], 'cpapp-b.bin': […]}: the build's regions file, the
     tool-owned regions Factory Restore writes back, in file order, holding that build's own stock
     bytes. Vertical Display's windows are not among them: the vertical tool puts those back itself
     (direct.plan), and identity_regions adds them for identification."""
-    name = build.regions_file
-    data = json.loads((ASSETS / name).read_text(encoding='utf-8'))
-    if (data.get('schema'), data.get('model'), data.get('version')) != ('a7c2-factory-regions/1', 'ILCE-7CM2', '2.01'):
-        raise ValueError('%s is not an ILCE-7CM2 2.01 regions file' % name)
+    return decode(regions_document(build), build, build.regions_file)
+
+
+def decode(document, build, where):
+    """{'appFw.so': [(offset, bytes), …], 'cpapp-b.bin': […]} of regions document `document` (schema
+    a7c2-factory-regions/1, ILCE-7CM2 2.01) for `build`'s program sizes, in file order. This is the one
+    decoder of regions documents: the regions files and Factory Restore's regional references. Refuses
+    a program of another size and a region that is out of file order, overlaps another, lies outside its
+    program, has a non-integer offset or size, or isn't strict base64 of zlib data of its stated size.
+    `where` names the document in errors."""
+    if not isinstance(document, dict) or (document.get('schema'), document.get('model'), document.get('version')) != (SCHEMA, 'ILCE-7CM2', '2.01'):
+        raise ValueError('%s is not an ILCE-7CM2 2.01 regions file' % where)
     try:
-        return {program: _stock_regions(data['programs'][program], size, '%s: %s' % (name, program), build.key)
+        return {program: _stock_regions(document['programs'][program], size, '%s: %s' % (where, program), build.key)
                 for program, size in zip(PROGRAMS, (build.ap_bytes, build.cp_bytes))}
     except (KeyError, TypeError, binascii.Error, zlib.error) as exc:
-        raise ValueError('%s is damaged: %r' % (name, exc)) from exc
+        raise ValueError('%s is damaged: %r' % (where, exc)) from exc
+
+
+def color_units(document, where):
+    """{CP setting key: {(offset, size): bytes}} of the FL23 colour-unit subranges a regional factory
+    reference holds, decoded as strictly as its program regions."""
+    try:
+        return {int(key): {(at, len(raw)): raw for at, raw in (_inflate(region, '%s: %s' % (where, key)) for region in rows)}
+                for key, rows in document['color_units'].items()}
+    except (KeyError, TypeError, binascii.Error, zlib.error) as exc:
+        raise ValueError('%s is damaged: %r' % (where, exc)) from exc
+
+
+def encode(raw):
+    """A region's zlib_base64 field: what decode reads back as `raw`."""
+    return base64.b64encode(zlib.compress(raw, 9)).decode('ascii')
+
+
+def _inflate(region, where):
+    at, count = region['offset'], region['bytes']
+    if type(at) is not int or type(count) is not int or at < 0 or count <= 0:
+        raise ValueError('%s: invalid region offset or size %r+%r' % (where, at, count))
+    raw = zlib.decompress(base64.b64decode(region['zlib_base64'], validate=True))
+    if len(raw) != count:
+        raise ValueError('%s: region at %#x holds %d bytes, not %d' % (where, at, len(raw), count))
+    return at, raw
 
 
 def _stock_regions(spec, size, where, key):
@@ -88,13 +158,12 @@ def _stock_regions(spec, size, where, key):
         raise ValueError('%s is %d bytes, but %s has %d' % (where, spec['bytes'], key, size))
     rows, end = [], 0
     for region in spec['regions']:
-        at, count = region['offset'], region['bytes']
-        raw = zlib.decompress(base64.b64decode(region['zlib_base64'], validate=True))
+        at, raw = _inflate(region, where)
         # Regions are in file order, never overlap and lie inside the program.
-        if len(raw) != count or count <= 0 or at < end or at + count > size:
+        if at < end or at + len(raw) > size:
             raise ValueError('%s: invalid region at %#x' % (where, at))
         rows.append((at, raw))
-        end = at + count
+        end = at + len(raw)
     return rows
 
 
@@ -158,6 +227,32 @@ def identify(ap, cp):
             return build
     observed = hashlib.sha256(ap).hexdigest(), hashlib.sha256(cp).hexdigest()
     raise UnsupportedFirmware(UNSUPPORTED % (observed[0][:16], observed[1][:16]))
+
+
+def saved_build(recorded, programs):
+    """The build that saved bytes (a backup, a job's saved windows) were read from. `recorded` is the
+    build key stored with them when they were saved. Bytes saved before keys were stored have None, and
+    are identified from `programs`, the {'appFw.so': …, 'cpapp-b.bin': …} saved with them (None when
+    none were). Raises OtherBuild (SAVED_UNIDENTIFIED) when neither names a supported build."""
+    if recorded is not None:
+        build = by_key(recorded)
+    elif programs is not None and all(name in programs for name in PROGRAMS):
+        try:
+            build = identify(programs['appFw.so'], programs['cpapp-b.bin'])
+        except UnsupportedFirmware:
+            build = None
+    else:
+        build = None
+    if build is None:
+        raise OtherBuild(SAVED_UNIDENTIFIED)
+    return build
+
+
+def same_build(saved, camera, refused=SAVED_OTHER_BUILD):
+    """Refuse, with OtherBuild naming both keys in `refused`, unless build `saved` is the camera's
+    identified build `camera`. Called before a restore writes anything."""
+    if saved.key != camera.key:
+        raise OtherBuild(refused % (saved.key, camera.key))
 
 
 def stock(build, program, offset, size):

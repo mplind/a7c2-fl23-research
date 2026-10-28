@@ -48,6 +48,14 @@ class FactoryRecoveryTests(unittest.TestCase):
                 self.assertEqual(self.temps, {})
                 self.assertEqual(before, {p: p.read_bytes() for p in self.failed.rglob('*') if p.is_file()})
 
+    def test_continuation_plans_for_the_cameras_identified_build(self):
+        from looktool.buildprofile import BUILDS
+        self.camera.carries = BUILDS[1]    # the body build, not the simulation's default
+        with patch.object(direct, 'plan', side_effect=self.target) as planned:
+            result = self.job().continue_factory(self.failed, power_confirmed=True, factory_values={})
+        self.assertIs(planned.call_args.kwargs['build'], BUILDS[1])
+        self.assertEqual(result['firmware_build'], BUILDS[1].key)
+
     def test_missing_result_does_not_clear_worker_or_start_writes(self):
         self.temps.pop('checkpoint.names.result')
         before = dict(self.temps)

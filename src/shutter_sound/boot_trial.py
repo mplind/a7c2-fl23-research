@@ -2,7 +2,8 @@
 
 Install uses the current converted format0 bytes; RAM audition is optional.
 Files are installed and read back before the AP hook. Restore removes the AP
-hook and reads it back before deleting the private files. No automatic retries
+hook and reads it back before deleting the private files, and only on a camera
+of the firmware build the job saved its windows from. No automatic retries
 or restoration after unknown outcomes. Not a released/public camera feature.
 """
 import argparse
@@ -10,6 +11,7 @@ import json
 from pathlib import Path
 import struct
 import re
+import zipfile
 
 import boot_sound
 import candidate
@@ -274,8 +276,10 @@ def install(root, backup_copy, native_job, audio_job, payload, battery, zig=None
                 trial.change(support,zig=zig,camera_factory=camera_factory)
                 state['current_native_support']=str(support)
                 before=trial.capture(camera)
-            # capture identified the programs just read: plan against that build only.
+            # capture identified the programs just read: plan against that build only, and record it
+            # so a restore from this job's saved windows refuses a camera of another build.
             build=camera.require_build()
+            state['firmware_build']=build.key
             installed=False
             if len(before['appFw.so'])>boot_sound.PATH+len(boot_sound.OLD_PATH):
                 try:installed=boot_sound.installed(before['appFw.so'],build=build)
@@ -325,17 +329,38 @@ def install(root, backup_copy, native_job, audio_job, payload, battery, zig=None
     return state
 
 
+def saved_build(root, state):
+    """The build job `state` (in folder `root`) saved its windows from: the one install recorded, or
+    for a job saved before builds were recorded, the build of the programs in its before.private.zip.
+    Raises OtherBuild when neither names a supported build (a sound-resource replacement saves no
+    programs)."""
+    from looktool import buildprofile
+    programs = None
+    archive = root / 'before.private.zip'
+    if state.get('firmware_build') is None and archive.is_file():
+        with zipfile.ZipFile(archive) as saved:
+            names = set(saved.namelist())
+            if names >= set(buildprofile.PROGRAMS):
+                programs = {name: saved.read(name) for name in buildprofile.PROGRAMS}
+    return buildprofile.saved_build(state.get('firmware_build'), programs)
+
+
 def restore(root, zig=None, camera_factory=trial.factory):
+    from looktool import buildprofile
     root = Path(root)
     state = json.loads((root / 'job.private.json').read_text(encoding='utf-8'))
     if state['phase'] not in ('installed_cold_test_pending', 'loaded_owner_confirmation_pending', 'owner_confirmed_working'):
         raise ValueError('Inspect the original job before restoration; unknown operations are not repeated')
+    # The saved windows hold one build's stock bytes; a job of no identifiable build is refused unopened.
+    saved = saved_build(root, state)
     components = state['components']
     state['phase'] = 'restoring_boot_hook_first'
     trial.save(root, state)
     try:
         with camera_factory(state['identity']) as camera:
             before = trial.capture(camera)
+            # Never put another build's stock bytes back into this camera's programs.
+            buildprofile.same_build(saved, camera.require_build())
             camera.programs_pinned = True
             runtime = probe(camera, root, state, components)
             reverse = [(w['offset'], bytes.fromhex(w['after_hex']), bytes.fromhex(w['before_hex']))

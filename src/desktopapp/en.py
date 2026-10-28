@@ -566,4 +566,10 @@ STRINGS = {
     # The firmware identity gate (looktool.devicesession, looktool.buildprofile.UNSUPPORTED).
     '此相机的固件版本不受支持，未写入任何内容。（appFw.so %s…，cpapp-b.bin %s…）': "This camera's firmware build isn't supported. Nothing was written. (appFw.so %s…, cpapp-b.bin %s…)",
     '尚未识别此相机的固件版本，未写入任何内容。': "This camera's firmware build hasn't been identified, so nothing was written",
+    # Restores from saved bytes, and Factory Restore references, of another build (looktool.buildprofile).
+    '所保存的内容来自固件版本 %s，而相机是 %s，未写入任何内容。': 'The saved bytes come from firmware build %s, but the camera is %s. Nothing was written',
+    '无法确定所保存的内容来自哪个固件版本，未写入任何内容。': "The firmware build the saved bytes come from can't be identified, so nothing was written",
+    '所选原厂文件是固件版本 %s，而相机是 %s，未写入任何内容。': 'The selected Sony firmware file is build %s, but the camera is %s. Nothing was written',
+    '所选原厂文件不是受支持的固件版本，未写入任何内容。': "The selected Sony firmware file isn't a supported firmware build, so nothing was written",
+    '此任务记录的固件版本是 %s，而相机现在是 %s，没有核对或写入任何内容。': 'This job recorded firmware build %s, but the camera is now %s. Nothing was verified or written',
 }

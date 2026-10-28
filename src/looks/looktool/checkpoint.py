@@ -1,4 +1,5 @@
-"""Self-contained initial project checkpoints. No firmware fingerprint admission.
+"""Self-contained initial project checkpoints. Each records the firmware build its programs were
+identified as (buildprofile), and a restore refuses a camera of another build (checkpointjob.Rollback).
 
 Archives are private: they contain the owner's programs and body settings.
 ZIP CRC detects damaged storage; firmware verification uses direct bytes.
@@ -31,7 +32,10 @@ def archive_path(path):
     path=Path(path)
     return path/'checkpoint.private.zip' if path.is_dir() else path
 
-def write(path,values,identity,*,provenance,limitations=()):
+def write(path,values,identity,*,provenance,limitations=(),build=None):
+    """Save a checkpoint of `values`. `build` is the firmware build their programs were identified as
+    (buildprofile), recorded so a restore can refuse a camera of another build; None only where no
+    identification exists (the standalone tools), and such a checkpoint is identified from its programs."""
     path=Path(path)
     if path.exists():raise ValueError('Preserve the existing initial checkpoint: '+str(path))
     if set(values)!=inventory():raise ValueError('Checkpoint needs both programs, saved/live settings and all 68 resources')
@@ -40,6 +44,7 @@ def write(path,values,identity,*,provenance,limitations=()):
         'provenance':provenance,'limitations':list(limitations),
         'scope':'AP/CP programs, 68 name resources, FL23 bindings/color units, six custom-look recipes; not a full camera filesystem or calibration reset',
         'files':sorted(values)}
+    if build is not None:manifest['firmware_build']=build.key
     path.parent.mkdir(parents=True,exist_ok=True)
     temporary=path.with_name(path.name+'.new')
     with temporary.open('xb') as stream:

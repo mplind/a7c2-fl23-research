@@ -5,12 +5,10 @@ build's address. Each region's bytes are the body's stock bytes there; color_uni
 Reads computer files only: no camera access.
 """
 import argparse
-import base64
 import hashlib
 import json
 from pathlib import Path
 import sys
-import zlib
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(ROOT / 'src/looks')]
@@ -18,10 +16,6 @@ from looktool import buildprofile
 
 PUBLIC, BODY = (next(build for build in buildprofile.BUILDS if build.key == key)
                 for key in ('public-2.01', 'body-2.01-20250923'))
-
-
-def encode(raw):
-    return base64.b64encode(zlib.compress(raw, 9)).decode('ascii')
 
 
 def reference(ap, cp, public):
@@ -47,7 +41,7 @@ def reference(ap, cp, public):
             raw = programs[name][at:at + size]
             if len(raw) != size:
                 raise ValueError('Region %s %#x+%d lies outside the program' % (name, at, size))
-            rows.append({'offset': at, 'bytes': size, 'zlib_base64': encode(raw)})
+            rows.append({'offset': at, 'bytes': size, 'zlib_base64': buildprofile.encode(raw)})
         output['programs'][name] = {'bytes': len(programs[name]), 'regions': rows}
     return output
 

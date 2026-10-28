@@ -14,11 +14,18 @@ from .paths import ROOT, data_root, write_json
 MODEL = 0x20030014
 FILES = ('appFw.so', 'cpapp-b.bin', 'CX89700_ALLLANG.bin')
 VENDOR = ROOT / 'src/desktopapp/vendor'
+BUILTIN = 'builtin'
 
 
 def load(folder=None):
-    if folder is None or str(folder) == 'builtin':
-        return builtin()
+    """The reference Factory Restore writes from. BUILTIN (or None) is the built-in regions of every
+    supported build, {'builtin': {build key: builtin(build)}}: the planner (looktool.direct) takes the
+    camera's own once its programs are identified. Any other folder is a prepared full Sony 2.01
+    reference; its program files are identified, and the build they are is recorded as
+    'firmware_build', so the planner uses it only on a camera of that build."""
+    from looktool import buildprofile
+    if folder is None or str(folder) == BUILTIN:
+        return {BUILTIN: {build.key: builtin(build) for build in buildprofile.BUILDS}}
     folder = Path(folder or data_root() / 'factory-2.01')
     pointer = folder / 'current.json'
     if pointer.is_file():
@@ -31,11 +38,18 @@ def load(folder=None):
         raise ValueError('Incomplete original firmware cache; prepare the Sony file again')
     if values['appFw.so'][:4] != b'\x7fELF' or values['appFw.so'][18:20] != b'\xb7\x00':
         raise ValueError('Original application must be AArch64 ELF')
+    try:
+        values['firmware_build'] = buildprofile.identify(values['appFw.so'], values['cpapp-b.bin']).key
+    except buildprofile.UnsupportedFirmware:
+        raise buildprofile.OtherBuild(buildprofile.REFERENCE_UNSUPPORTED) from None
     return values
 
 
-def builtin():
-    return json.loads((ROOT / 'src/looks/assets/factory-regions-2.01.json').read_text(encoding='utf-8'))
+def builtin(build):
+    """The built-in regions document of `build` (its regions_file), recording build.key as
+    'firmware_build'."""
+    from looktool import buildprofile
+    return dict(buildprofile.regions_document(build), firmware_build=build.key)
 
 
 def _vendor():

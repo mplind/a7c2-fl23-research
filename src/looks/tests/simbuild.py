@@ -29,3 +29,15 @@ def identified(camera, build=PUBLIC):
     with patch.object(buildprofile, 'identify', return_value=build):
         camera.identify_programs(b'stand-in appFw.so', b'stand-in cpapp-b.bin')
     return camera
+
+
+def saved_as(build, programs):
+    """Patch buildprofile.identify so that stand-in programs `programs` ({'appFw.so': …,
+    'cpapp-b.bin': …}: a backup or job saved before builds were recorded, or a prepared Sony
+    reference) identify as `build`. Any other pair is refused, as the real identification refuses
+    stand-ins."""
+    def identify(ap, cp):
+        if (ap, cp) != (programs['appFw.so'], programs['cpapp-b.bin']):
+            raise buildprofile.UnsupportedFirmware(buildprofile.UNSUPPORTED % ('0' * 16, '0' * 16))
+        return build
+    return patch.object(buildprofile, 'identify', side_effect=identify)

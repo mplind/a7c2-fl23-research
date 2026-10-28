@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 from looktool import checkpoint,checkpointworker,checkpointjob,devicesession,firmware,nameworker,resources
-from simbuild import CarriesBuild
+from simbuild import PUBLIC,CarriesBuild,saved_as
 from test_device_components import resource_fixture
 from test_device_job import Prop,core
 
@@ -114,7 +114,8 @@ class CheckpointTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup);self.root=Path(self.tmp.name)
         self.original=values();self.archive=self.root/'backup2/checkpoint.private.zip'
-        checkpoint.write(self.archive,self.original,BODY,provenance={'type':'test-initial'})
+        # A backup saved now records the build its programs were identified as (the stand-ins play public).
+        checkpoint.write(self.archive,self.original,BODY,provenance={'type':'test-initial'},build=PUBLIC)
         self.compiler=patch.object(checkpointworker,'compile_worker',side_effect=fake_compile);self.compiler.start();self.addCleanup(self.compiler.stop)
         self.keys=patch.object(checkpoint,'recipe_keys',return_value=KEYS);self.keys.start();self.addCleanup(self.keys.stop)
     def camera_after_updates(self):
@@ -201,7 +202,9 @@ class CheckpointTests(unittest.TestCase):
         backup=self.legacy_folder();c=self.camera_after_updates()
         # No original workspace, LUT jobs or checkpoint ZIP exist.
         job=SimRollback(self.root/'legacy-restore',factory=c)
-        with patch('looktool.devicesession.modules',return_value=(None,SimpleNamespace(backup_records=records))):
+        # A legacy backup records no build: its own (stand-in, public) programs are identified.
+        with patch('looktool.devicesession.modules',return_value=(None,SimpleNamespace(backup_records=records))), \
+             saved_as(PUBLIC,self.original):
             state=job.run(backup,100,'2.01')
         self.assertEqual(state['phase'],'RESTORED_AWAITING_RELOAD')
         self.assertEqual(job.verify(True)['phase'],'COMPLETE')
@@ -214,7 +217,8 @@ class CheckpointTests(unittest.TestCase):
         backup=self.legacy_folder();c=Camera(self.original)
         c.files['/usr/lib/appFw.so']=bytes([1])*len(self.original['appFw.so'])
         job=SimRollback(self.root/'legacy-only-fl23',factory=c)
-        with patch('looktool.devicesession.modules',return_value=(None,SimpleNamespace(backup_records=records))):
+        with patch('looktool.devicesession.modules',return_value=(None,SimpleNamespace(backup_records=records))), \
+             saved_as(PUBLIC,self.original):
             job.run(backup,100,'2.01')
         self.assertEqual(c.files['/usr/lib/appFw.so'],self.original['appFw.so'])
         self.assertFalse(any(kind=='names' for kind,mode in c.native_calls))

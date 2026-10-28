@@ -5,13 +5,11 @@ Real-firmware tests read the folder named by A7C2_BUILD_FIXTURES through conftes
 the one the 28 Oct findings recorded.
 Synthetic tests run everywhere on two 64 KiB builds shaped like those two.
 """
-import base64
 import inspect
 import json
 from pathlib import Path
 import random
 from types import SimpleNamespace
-import zlib
 
 import pytest
 
@@ -223,10 +221,9 @@ SIZE = 64 * 1024
 
 def write_regions(path, programs, spans):
     """A regions file in the shipped format holding `programs`' bytes at each (offset, size)."""
-    encode = lambda raw: base64.b64encode(zlib.compress(raw, 9)).decode('ascii')
     data = {'schema': 'a7c2-factory-regions/1', 'model': 'ILCE-7CM2', 'version': '2.01', 'color_units': {},
             'programs': {name: {'bytes': len(programs[name]), 'regions': [
-                {'offset': at, 'bytes': size, 'zlib_base64': encode(programs[name][at:at + size])}
+                {'offset': at, 'bytes': size, 'zlib_base64': buildprofile.encode(programs[name][at:at + size])}
                 for at, size in spans[name]]} for name in PROGRAMS}}
     path.write_text(json.dumps(data), encoding='utf-8')
 

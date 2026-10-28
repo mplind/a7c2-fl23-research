@@ -4,14 +4,12 @@ Original firmware is a reference, not another body's backup. Only transaction
 windows and target settings are retained; no complete body backup is created.
 """
 import copy
-import base64
 from contextlib import contextmanager
 from datetime import datetime
 import json
 from pathlib import Path
 import struct
 import uuid
-import zlib
 from . import checkpoint, checkpointworker, device_layout, devicesettings, nameworker, resources
 from . import buildprofile, nativebuild, photoformat, photoio, six
 from .checkpointjob import CheckpointCamera, Rollback, program_difference
@@ -52,34 +50,62 @@ def color_regions():
     return result
 
 
-def plan(current, records, mode, *, factory=None, slot=None, look=None, name=None):
-    """Pure planning: preserve every field outside the declared project scope."""
+def factory_reference(factory, build):
+    """The reference a factory reset of a camera of `build` writes from. `factory` is what
+    desktopapp.official.load gave: the built-in set, from which the camera's own build's regions are
+    taken, or one reference recorded as the build it is ('firmware_build'), which must be the camera's.
+    Another build's reference is refused (OtherBuild) before anything is planned."""
+    if 'builtin' in factory:
+        chosen = factory['builtin'].get(build.key)
+        if chosen is None:
+            raise ValueError('No built-in factory reference for %s; nothing was planned or written' % build.key)
+    else:
+        chosen = factory
+    recorded = chosen.get('firmware_build')
+    if recorded is None:
+        raise ValueError('The factory reference records no firmware build; nothing was planned or written')
+    if recorded != build.key:
+        raise buildprofile.OtherBuild(buildprofile.REFERENCE_OTHER_BUILD % (recorded, build.key))
+    return chosen
+
+
+def plan(current, records, mode, *, factory=None, slot=None, look=None, name=None, build=None):
+    """Pure planning: preserve every field outside the declared project scope. A factory reset writes
+    from `factory`'s reference for `build`, the camera's identified build (identified from `current`
+    when None), and from no other build's."""
     _, core = modules()
     ap, cp = current['appFw.so'], current['cpapp-b.bin']
     target = dict(current)
     wanted = [{}, {}]
     rename = None
+    if mode == 'factory_reset':
+        if factory is None:
+            raise ValueError('Prepare the original Sony 2.01 reference first')
+        if build is None:
+            build = buildprofile.identify(ap, cp)
+        factory = factory_reference(factory, build)
     if mode in ('factory_reset', 'fl23_enable'):
         for key, start, count in ((0x02a40001, 0x1200, 80), (0x02a4000d, 0x196, 74)):
             mapping = records[1][key].data[start:start + count]
             if len(mapping) != count or any(value in (23, 25) for index, value in enumerate(mapping) if index not in (55, 56)):
                 raise ValueError('FL23 color positions are referenced by another native look; calibration was not changed')
     if mode == 'factory_reset':
-        if factory is None:
-            raise ValueError('Prepare the original Sony 2.01 reference first')
-        regional = factory.get('schema') == 'a7c2-factory-regions/1'
-        for program in checkpoint.PROGRAM_PATHS:
+        regional = factory.get('schema') == buildprofile.SCHEMA
+        if regional:
+            # buildprofile's own decoder: file order, no overlap, strict encoding, stated sizes.
+            stock = buildprofile.decode(factory, build, 'Original reference')
+            units = buildprofile.color_units(factory, 'Original reference')
+            missing = [(key, start, size) for key, spans in color_regions().items() for start, size in spans
+                       if (start, size) not in units.get(key, {})]
+            if missing:
+                raise ValueError('Original reference lacks color regions %s' % ', '.join('%#x %#x+%d' % row for row in missing))
+        for program, size in zip(buildprofile.PROGRAMS, (build.ap_bytes, build.cp_bytes)):
             if regional:
-                spec = factory['programs'][program]
-                if factory['model'] != 'ILCE-7CM2' or factory['version'] != '2.01' or len(current[program]) != spec['bytes']:
+                if len(current[program]) != size:
                     raise ValueError('Original reference model/version/program size differs')
                 result = bytearray(current[program])
-                for region in spec['regions']:
-                    raw = zlib.decompress(base64.b64decode(region['zlib_base64']))
-                    at, size = region['offset'], region['bytes']
-                    if len(raw) != size or not 0 <= at <= at + size <= len(result):
-                        raise ValueError('Invalid original reference region')
-                    result[at:at + size] = raw
+                for at, raw in stock[program]:
+                    result[at:at + len(raw)] = raw
                 target[program] = bytes(result)
             else:
                 if len(current[program]) != len(factory[program]):
@@ -100,11 +126,7 @@ def plan(current, records, mode, *, factory=None, slot=None, look=None, name=Non
             value = bytearray(records[1][key].data)
             for start, size in spans:
                 if regional:
-                    region = next(r for r in factory['color_units'][str(key)] if r['offset'] == start and r['bytes'] == size)
-                    raw = zlib.decompress(base64.b64decode(region['zlib_base64']))
-                    if len(raw) != size:
-                        raise ValueError('Original color-region length differs')
-                    value[start:start + size] = raw
+                    value[start:start + size] = units[key][(start, size)]
                 else:
                     value[start:start + size] = original_records[1][key].data[start:start + size]
             wanted[1][key] = bytes(value)
@@ -196,7 +218,10 @@ class DirectJob(Rollback):
         self.vertical_stage = None
 
     def capture(self, camera):
+        """Fresh camera bytes. Their programs have just been identified: the job records that build,
+        and its plans (a factory reset's reference among them) are for that build only."""
         current=super().capture(camera)
+        self.state['firmware_build']=camera.require_build().key
         self._runtime_binding_ap=current['appFw.so']
         self._synced_look_bases={}
         return current
@@ -407,7 +432,7 @@ class DirectJob(Rollback):
                 current = self.capture(camera)
                 directresume.program_bytes(current, prior_root, prior)
                 target, wanted, _ = plan(current, camera.records(current['settings-ram.bin']),
-                    'factory_reset', factory=factory_values)
+                    'factory_reset', factory=factory_values, build=camera.require_build())
                 if any(current[p] != target[p] for p in checkpoint.PROGRAM_PATHS):
                     raise ValueError('Factory program regions differ; continuation will not write programs')
                 prepared = self.settings(camera, current, wanted)
@@ -491,7 +516,7 @@ class DirectJob(Rollback):
                     target, wanted, rename = bundle.plan(current, camera.records(current['settings-ram.bin']), bundle_options, bundle_rows)
                 else:
                     target, wanted, rename = plan(current, camera.records(current['settings-ram.bin']), mode,
-                        factory=factory_values, slot=slot, look=look, name=name)
+                        factory=factory_values, slot=slot, look=look, name=name, build=camera.require_build())
                 # Preserve the independent saved calibration when reconstructing
                 # CP units; only the declared FL23 subranges use factory data.
                 prepared = self.settings(camera, current, wanted)
@@ -681,7 +706,7 @@ class DirectJob(Rollback):
                 current = self.capture(camera)
                 factoryrecover.known_programs(current, history)
                 target, wanted, _ = plan(current, camera.records(current['settings-ram.bin']),
-                    'factory_reset', factory=factory_values)
+                    'factory_reset', factory=factory_values, build=camera.require_build())
                 prepared = self.settings(camera, current, wanted)
                 programs = checkpointworker.build_programs(current, target, self.root / 'worker', self.zig,
                     window_priority=lambda row:(row[0],row[1]))
@@ -769,15 +794,21 @@ class DirectJob(Rollback):
         if (self.root / 'reference.a7look').exists():
             from . import lookfile
             look = lookfile.read(self.root / 'reference.a7look')
+        recorded = self.state.get('firmware_build')
         with self.factory(self.state['identity']) as camera:
             current = self.capture(camera)
+            build = camera.require_build()
+            # Verify against the build this job was planned for, with that build's reference. A job saved
+            # before builds were recorded has none, and is verified against the camera's.
+            if recorded is not None and recorded != build.key:
+                raise ContentChanged(buildprofile.JOB_OTHER_BUILD % (recorded, build.key))
             if self.state['mode'] == 'install_all':
                 from . import bundle
                 options, selected = bundle.documents(self.state['bundle_options'])
                 target, wanted, _ = bundle.plan(current, camera.records(current['settings-ram.bin']), options, selected)
             else:
                 target, wanted, _ = plan(current, camera.records(current['settings-ram.bin']), self.state['mode'],
-                    factory=factory_values, slot=self.state['slot'], look=look, name=self.state['name'])
+                    factory=factory_values, slot=self.state['slot'], look=look, name=self.state['name'], build=build)
             for program in checkpoint.PROGRAM_PATHS:
                 difference=program_difference(target[program],current[program])
                 if difference:

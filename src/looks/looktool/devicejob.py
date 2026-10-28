@@ -196,7 +196,9 @@ class Job:
         from . import checkpoint
         initial=second.parent/'initial-checkpoints'/backupstore.body_key(camera.identity)/'checkpoint.private.zip'
         if not initial.exists():
-            checkpoint.write(initial,values,camera.identity,provenance={'type':'before-first-lut-import','source_layout':self.state['layout']['kind'] if 'kind' in self.state['layout'] else self.state['layout']})
+            # A session that pinned the programs identified their build; record it for a later restore.
+            build=camera.require_build() if hasattr(camera,'pin_programs') else None
+            checkpoint.write(initial,values,camera.identity,build=build,provenance={'type':'before-first-lut-import','source_layout':self.state['layout']['kind'] if 'kind' in self.state['layout'] else self.state['layout']})
         self.state['initial_checkpoint']=str(initial)
         values['boot-id.bin']=runtime['boot_id'].encode('ascii')
         self.state.update(backup_format=2,backup_body=backupstore.body_key(camera.identity),

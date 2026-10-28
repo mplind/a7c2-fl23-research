@@ -202,7 +202,7 @@ class Lab:
                 if fresh:
                     current = helper.capture(camera)
                     self.check_owner_layout(current)
-                    checkpoint.write(self.root/'before-lab.private.zip', current, camera.identity,
+                    checkpoint.write(self.root/'before-lab.private.zip', current, camera.identity, build=camera.require_build(),
                                      provenance={'type': 'before-native-photo-lab'})
                     checkpoint.copy(self.root/'before-lab.private.zip',
                                     Path(self.state['backup_copy'])/'before-lab.private.zip')

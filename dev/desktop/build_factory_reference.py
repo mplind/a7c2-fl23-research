@@ -1,16 +1,14 @@
 """Build generic original bytes for project-owned regions, never body backups."""
 import argparse
-import base64
 import json
 from pathlib import Path
 import sys
-import zlib
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(ROOT / 'src'), str(ROOT / 'src/looks'), str(ROOT / 'src/shutter_sound')]
 from desktopapp.worker import setup_runtime
 setup_runtime()
-from looktool import checkpointworker, device_layout, photoio, photobuild, six
+from looktool import buildprofile, checkpointworker, device_layout, photoio, photobuild, six
 from looktool.devicesession import modules
 
 
@@ -74,20 +72,19 @@ def main():
               'source': 'Sony ILCE-7CM2 2.01 official FDAT, model 0x20030014',
               'scope': 'Only supported project program regions and FL23 color-unit subranges; not full firmware or body calibration',
               'programs': {}, 'color_units': {}}
-    encode = lambda raw: base64.b64encode(zlib.compress(raw, 9)).decode('ascii')
     for name, spans in regions.items():
         rows = []
         for at, size in spans:
             raw = programs[name][at:at + size]
             if len(raw) != size:
                 raise ValueError('Reference region outside original file')
-            rows.append({'offset': at, 'bytes': size, 'zlib_base64': encode(raw)})
+            rows.append({'offset': at, 'bytes': size, 'zlib_base64': buildprofile.encode(raw)})
         output['programs'][name] = {'bytes': len(programs[name]), 'regions': rows}
     from looktool.direct import color_regions
     records = modules()[1].backup_records((args.components / 'CX89700_ALLLANG.bin').read_bytes())
     for key, spans in color_regions().items():
         output['color_units'][str(key)] = [{'offset': at, 'bytes': size,
-            'zlib_base64': encode(records[1][key].data[at:at + size])} for at, size in spans]
+            'zlib_base64': buildprofile.encode(records[1][key].data[at:at + size])} for at, size in spans]
     args.output.write_text(json.dumps(output, indent=2) + '\n', encoding='utf-8')
     print({'file': str(args.output), 'bytes': args.output.stat().st_size,
            'regions': {n: len(v['regions']) for n, v in output['programs'].items()}, 'camera_io': False})

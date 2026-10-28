@@ -90,6 +90,9 @@ def run(action, args, job):
         if not args.get('workspace'):
             raise ValueError('先完成一次本页操作，再核对重新加载状态。')
         obj = DirectJob(Path(args['workspace']))
+        # official.load('builtin') holds every build's built-in regions; the planner takes the camera's
+        # own after its programs are identified. A full Sony reference records its own build, and is
+        # refused on a camera of another. A factory job records its build, and verify reloads it.
         reference, reference_path = None, args.get('factory') or 'builtin'
         if mode == 'factory_reset':
             from looktool.factoryrecover import pending

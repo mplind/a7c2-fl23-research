@@ -250,8 +250,12 @@ def run():
     sys.path.insert(0, str(ROOT / 'src/desktopapp/vendor'))
     from fwtool.sony import dat, fdat
     from fwtool.archive import ext2, fat
-    from desktopapp.official import builtin
-    assert builtin()['version'] == '2.01'
+    from desktopapp import official
+    from looktool import buildprofile
+    # Every supported build's built-in Factory Restore reference is bundled and decodes as its restore set.
+    for key, reference in official.load('builtin')['builtin'].items():
+        build = buildprofile.by_key(key)
+        assert buildprofile.decode(reference, build, key) == buildprofile.regions(build)
     sys.path[:0] = [str(ROOT / 'src/vertical'), str(ROOT / 'src/shutter_sound')]
     importlib.import_module('verticaltool.device')
     importlib.import_module('looktool.portraitjob')

@@ -89,6 +89,14 @@ class DirectResumeTests(unittest.TestCase):
         self.assertEqual(before, {str(p): p.read_bytes() for p in self.failed.rglob('*') if p.is_file()})
         self.assertEqual(list(self.root.rglob('*.zip')), [])
 
+    def test_names_continuation_plans_for_the_cameras_identified_build(self):
+        from looktool.buildprofile import BUILDS
+        self.camera.carries = BUILDS[1]    # the body build, not the simulation's default
+        with patch.object(direct, 'plan', side_effect=self.target) as planned:
+            result = self.job().resume_factory_names(self.failed, power_confirmed=True, factory_values={})
+        self.assertIs(planned.call_args.kwargs['build'], BUILDS[1])
+        self.assertEqual(result['firmware_build'], BUILDS[1].key)
+
     def test_program_mismatch_does_not_remove_temp_or_invoke_native(self):
         self.camera.files['/usr/lib/appFw.so'] = b'\xff' + self.camera.files['/usr/lib/appFw.so'][1:]
         before = dict(self.temps)

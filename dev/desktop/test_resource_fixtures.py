@@ -15,6 +15,8 @@ import pytest
 import buildfixtures
 import extract_resources
 from desktopapp import official
+from looktool import buildprofile
+from simbuild import PUBLIC, saved_as
 
 NAMES = ['string_alpha_horizontal.uxc', 'string_beta_vertical.uxc']
 
@@ -162,14 +164,17 @@ def test_main_decodes_the_source_and_saves_every_listed_name_file(tmp_path, monk
 
 # official.prepare over the same walk -------------------------------------------------------
 
-def test_prepare_writes_the_three_reference_files_and_stops_reading(tmp_path, monkeypatch):
-    program = b'\x7fELF' + bytes(14) + b'\xb7\x00' + bytes(12)
-    found = [('0700_part_image/a/lib/appFw.so', program), ('cpapp-b.bin', b'cp'),
-             ('0700_part_image/b/CX89700_ALLLANG.bin', b'settings')]
+PROGRAM = b'\x7fELF' + bytes(14) + b'\xb7\x00' + bytes(12)
+FOUND = [('0700_part_image/a/lib/appFw.so', PROGRAM), ('cpapp-b.bin', b'cp'),
+         ('0700_part_image/b/CX89700_ALLLANG.bin', b'settings')]
 
+
+@pytest.fixture
+def sony_file(tmp_path, monkeypatch):
+    """A BODYDATA.DAT whose firmware walk (official.firmware, official.files) yields FOUND."""
     def files(archive, wanted):
         assert archive == 'archive' and set(wanted) == set(official.FILES)
-        for path, data in found:
+        for path, data in FOUND:
             yield path, io.BytesIO(data)
         raise AssertionError('prepare read past the last file it needed')
 
@@ -180,14 +185,27 @@ def test_prepare_writes_the_three_reference_files_and_stops_reading(tmp_path, mo
     monkeypatch.setattr(official, 'firmware', firmware)
     monkeypatch.setattr(official, 'files', files)
     (tmp_path / 'BODYDATA.DAT').write_bytes(b'')
-    result = official.prepare(tmp_path / 'BODYDATA.DAT', tmp_path / 'cache')
+    return tmp_path / 'BODYDATA.DAT'
+
+
+def test_prepare_writes_the_three_reference_files_and_stops_reading(tmp_path, sony_file):
+    # The stand-in programs play Sony's public 2.01, the build a prepared reference records.
+    with saved_as(PUBLIC, {'appFw.so': PROGRAM, 'cpapp-b.bin': b'cp'}):
+        result = official.prepare(sony_file, tmp_path / 'cache')
+        loaded = official.load(tmp_path / 'cache')
     assert result == {'cache': str(tmp_path / 'cache'), 'model': 'ILCE-7CM2', 'firmware': '2.01', 'camera_io': False}
     generation = json.loads((tmp_path / 'cache/current.json').read_text(encoding='utf-8'))['generation']
     folder = tmp_path / 'cache' / generation
     assert {name: (folder / name).read_bytes() for name in official.FILES} == {
-        'appFw.so': program, 'cpapp-b.bin': b'cp', 'CX89700_ALLLANG.bin': b'settings'}
+        'appFw.so': PROGRAM, 'cpapp-b.bin': b'cp', 'CX89700_ALLLANG.bin': b'settings'}
     assert json.loads((folder / 'reference.json').read_text(encoding='utf-8'))['decoder'] == 'CXD90057_k8'
-    assert official.load(tmp_path / 'cache')['cpapp-b.bin'] == b'cp'
+    assert loaded['cpapp-b.bin'] == b'cp' and loaded['firmware_build'] == PUBLIC.key
+
+
+def test_a_prepared_file_of_no_supported_build_never_becomes_the_reference(tmp_path, sony_file):
+    with pytest.raises(buildprofile.OtherBuild, match=buildprofile.REFERENCE_UNSUPPORTED):
+        official.prepare(sony_file, tmp_path / 'cache')    # the stand-in programs are no supported build
+    assert not (tmp_path / 'cache/current.json').exists()
 
 
 def test_files_reads_members_and_partition_images(monkeypatch):

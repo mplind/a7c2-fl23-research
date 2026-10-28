@@ -1,9 +1,10 @@
-"""Restore an initial checkpoint over the current FL23/LUT state."""
+"""Restore an initial checkpoint over the current FL23/LUT state, only on a camera of the build
+the checkpoint was saved from."""
 import json
 from pathlib import Path
 import struct
 import uuid
-from . import checkpoint, checkpointworker, devicesettings, nameworker, nativebuild
+from . import buildprofile, checkpoint, checkpointworker, devicesettings, nameworker, nativebuild
 from .devicesession import Camera, invoke
 from .backupstore import write_json
 
@@ -157,23 +158,30 @@ class Rollback:
         from .power import require_power
         power=require_power(battery,confirmed=power_confirmed)
         manifest,target=checkpoint.load_target(archive)
+        # The build the backup was saved from, or for one saved before builds were recorded, the build
+        # its own programs are. A backup of no supported build is refused before the camera is opened.
+        saved=buildprofile.saved_build(manifest.get('firmware_build'),target)
         if self.root.exists() and any(self.root.iterdir()):raise ValueError('Use a new rollback work directory; preserve previous results')
         self.root.mkdir(parents=True,exist_ok=True)
         print('Rollback work:',self.root,flush=True)
         self.state={'schema':'a7c2-checkpoint-rollback/1','identity':manifest['identity'],'journal':[],
-            'target':str(Path(archive).resolve()),'limitations':manifest['limitations'],'power_confirmation':power}
+            'target':str(Path(archive).resolve()),'limitations':manifest['limitations'],'power_confirmation':power,
+            'firmware_build':saved.key}
         self.save('READING')
         try:
             with self.factory(manifest['identity']) as camera:
                 checkpoint.same_body(manifest['identity'],camera.identity)
                 current=self.capture(camera)
-                checkpoint.write(self.root/'before.private.zip',current,camera.identity,provenance={'type':'before-full-rollback'})
+                # Another build's programs must never be written back over this camera's.
+                buildprofile.same_build(saved,camera.require_build())
+                checkpoint.write(self.root/'before.private.zip',current,camera.identity,build=camera.require_build(),
+                    provenance={'type':'before-full-rollback'})
                 # Old FL23 backups carry their own body serial/programs/settings.
                 # Reconstruct appended names from current native records; never
                 # ask for a LUT job or an unrelated working directory.
                 if manifest.get('legacy_raw'):
                     target=checkpoint.complete_legacy_names(target,current)
-                    checkpoint.write(self.root/'target.private.zip',target,manifest['identity'],
+                    checkpoint.write(self.root/'target.private.zip',target,manifest['identity'],build=saved,
                         provenance=manifest['provenance'],limitations=manifest['limitations'])
                     self.record('legacy_fl23_target_completed_without_lut_job')
                 else:checkpoint.copy(checkpoint.archive_path(archive),self.root/'target.private.zip')
