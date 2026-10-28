@@ -1,0 +1,384 @@
+"""Which Sony compile of ILCE-7CM2 2.01 a camera's program files are. Offline only.
+
+Real-firmware tests read the folder named by A7C2_BUILD_FIXTURES, which holds public-2.01/,
+body-2.01-20250923/ and hybrid-20261027/, each with appFw.so and cpapp-b.bin. They skip when the
+variable is unset and fail when it is set but a file isn't the one the 28 Oct findings recorded.
+Synthetic tests run everywhere on two 64 KiB builds shaped like those two.
+"""
+import base64
+import hashlib
+import inspect
+import json
+import os
+from pathlib import Path
+import random
+from types import SimpleNamespace
+import zlib
+
+import pytest
+
+from looktool.buildprofile import BUILDS, Build, UnsupportedFirmware, identify, regions, stock, translate
+from looktool import buildprofile
+import build_body_reference
+
+ROOT = Path(__file__).resolve().parents[2]
+ASSETS = ROOT / 'src/looks/assets'
+PROGRAMS = ('appFw.so', 'cpapp-b.bin')
+SIZES = (99960744, 18090880)
+# Full-file SHA-256 (appFw.so, cpapp-b.bin), verified on the camera on 28 Oct 2026.
+FINDINGS = {
+    'public-2.01': ('2ea02f7ecbc5bb917316fe8ef4ce5ffd87eb66efaae78ba2ce11420552df539b',
+                    'f5a477588698ef965748903b8959a39ce4f59ffd4aee4d4234ef1670f56a1428'),
+    'body-2.01-20250923': ('77fa856ed5812124ffec507857ec48af43159357b2c8a341cb15f3d5c1076d54',
+                           '171f6d7c0b95c6bea3b64487d0b826f38a94ec92ca3984679a0ee2899e704efa'),
+}
+# The camera after the 27 Oct Factory Restore wrote public bytes into the body build
+# (camera-check/20261028T043722Z/report.json).
+HYBRID = ('4a75b330c13132674879e6838ae44e7a07467384454cdf4d393a376a00fd7b3e',
+          '171f6d7c0b95c6bea3b64487d0b826f38a94ec92ca3984679a0ee2899e704efa')
+FIXTURE_DIGESTS = {**FINDINGS, 'hybrid-20261027': HYBRID}
+STOCK_TABLE = bytes.fromhex('1200020406080a0c0e100000')
+PUBLIC, BODY = BUILDS
+EACH_BUILD = pytest.mark.parametrize('name, key', [('public', 'public-2.01'), ('body', 'body-2.01-20250923')])
+
+
+def sha(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def public_reference():
+    return json.loads((ASSETS / PUBLIC.regions_file).read_text(encoding='utf-8'))
+
+
+@pytest.fixture(scope='module')
+def loaded():
+    """Every fixture program read once for the module, with its digests. Skips without the variable."""
+    folder = os.environ.get('A7C2_BUILD_FIXTURES')
+    if not folder:
+        pytest.skip('A7C2_BUILD_FIXTURES is not set')
+    result = {}
+    for name in FIXTURE_DIGESTS:
+        path = Path(folder) / name
+        ap, cp = ((path / program).read_bytes() for program in PROGRAMS)
+        result[name] = SimpleNamespace(folder=path, ap=ap, cp=cp, digests=(sha(ap), sha(cp)))
+    return result
+
+
+@pytest.fixture(scope='module')
+def fixtures(loaded):
+    """The same programs, refused outright when a file isn't the one the findings recorded."""
+    wrong = ['%s: %s, expected %s' % (name, loaded[name].digests, digests)
+             for name, digests in FIXTURE_DIGESTS.items() if loaded[name].digests != digests]
+    if wrong:
+        pytest.fail('A7C2_BUILD_FIXTURES holds other files: ' + '; '.join(wrong), pytrace=False)
+    return SimpleNamespace(public=loaded['public-2.01'], body=loaded['body-2.01-20250923'],
+                           hybrid=loaded['hybrid-20261027'])
+
+
+# Real firmware -------------------------------------------------------------------------------
+
+def test_fixture_hashes_match_findings(loaded):
+    for name, digests in FIXTURE_DIGESTS.items():
+        assert loaded[name].digests == digests, name
+        assert (len(loaded[name].ap), len(loaded[name].cp)) == SIZES, name
+
+
+def test_public_and_body_fixtures_identify(fixtures):
+    assert identify(fixtures.public.ap, fixtures.public.cp).key == 'public-2.01'
+    assert identify(fixtures.body.ap, fixtures.body.cp).key == 'body-2.01-20250923'
+
+
+@pytest.mark.parametrize('program, offset', [('appFw.so', 0x100000), ('cpapp-b.bin', 0x400000)])
+def test_one_byte_outside_the_regions_is_unsupported(fixtures, program, offset):
+    files = {'appFw.so': bytearray(fixtures.body.ap), 'cpapp-b.bin': bytearray(fixtures.body.cp)}
+    files[program][offset] ^= 1
+    with pytest.raises(UnsupportedFirmware):
+        identify(bytes(files['appFw.so']), bytes(files['cpapp-b.bin']))
+
+
+def test_the_27_oct_hybrid_is_refused(fixtures):
+    # public table bytes landed at 0x4c7cf7c, outside the body build's regions: never write to this
+    hybrid, public, body = fixtures.hybrid.ap, fixtures.public.ap, fixtures.body.ap
+    assert hybrid[0x4c7cf7c:0x4c7cf88] == public[0x4c7cf7c:0x4c7cf88] != body[0x4c7cf7c:0x4c7cf88]
+    with pytest.raises(UnsupportedFirmware):
+        identify(fixtures.hybrid.ap, fixtures.hybrid.cp)
+
+
+def test_programs_from_two_builds_are_refused(fixtures):
+    with pytest.raises(UnsupportedFirmware):
+        identify(fixtures.public.ap, fixtures.body.cp)
+    with pytest.raises(UnsupportedFirmware):
+        identify(fixtures.body.ap, fixtures.public.cp)
+
+
+@EACH_BUILD
+def test_partially_written_regions_still_identify(fixtures, name, key):
+    """An interrupted FL2/FL3 install: every other write landed. Resume and restore still need the build."""
+    programs = getattr(fixtures, name)
+    manifest = json.loads((ROOT / 'src/camera_runtime/assets/patches.json').read_text(encoding='utf-8'))
+    written = []
+    for source, spec in zip((programs.ap, programs.cp), manifest):
+        result = bytearray(source)
+        for write in spec['writes'][::2]:
+            at, after = int(write['file_offset'], 16), bytes.fromhex(write['after_hex'])
+            result[at:at + len(after)] = after
+        written.append(bytes(result))
+    assert sha(written[0]) != programs.digests[0] and sha(written[1]) != programs.digests[1]
+    assert identify(*written).key == key
+
+
+@EACH_BUILD
+def test_legacy_converter_identifies_its_build(fixtures, name, key):
+    """Leftovers of an older tool release still identify, so Factory Restore can clean them."""
+    from looktool.devicesession import modules
+    modules()
+    import compat
+    programs = getattr(fixtures, name)
+    ap = bytearray(programs.ap)
+    ap[0x3528804:0x3528804 + len(compat.LEGACY_CONVERTER)] = compat.LEGACY_CONVERTER
+    assert bytes(ap) != programs.ap
+    assert identify(bytes(ap), programs.cp).key == key
+
+
+def test_regions_hold_each_builds_own_stock_bytes(fixtures):
+    for build, programs in ((PUBLIC, fixtures.public), (BODY, fixtures.body)):
+        files = dict(zip(PROGRAMS, (programs.ap, programs.cp)))
+        for program, rows in regions(build).items():
+            for at, raw in rows:
+                assert files[program][at:at + len(raw)] == raw, (build.key, program, hex(at))
+
+
+def test_translated_table_addresses_hold_the_same_bytes(fixtures):
+    """The body's .rodata after 0x4c102e0 sits 16 bytes earlier, the look table included."""
+    for offset in range(0x4c7cf7c, 0x4c7cf89):
+        assert fixtures.body.ap[translate(offset, BODY)] == fixtures.public.ap[offset], hex(offset)
+
+
+def test_committed_body_reference_is_what_the_script_produces(fixtures, tmp_path):
+    output = tmp_path / 'body.json'
+    build_body_reference.main(['--components', str(fixtures.body.folder), '--output', str(output)])
+    assert output.read_bytes() == (ASSETS / BODY.regions_file).read_bytes()
+
+
+@pytest.mark.parametrize('name', ['public', 'hybrid'])
+def test_body_reference_is_built_only_from_body_programs(fixtures, name):
+    programs = getattr(fixtures, name)
+    public = public_reference()
+    with pytest.raises(ValueError, match='body-2.01-20250923'):
+        build_body_reference.reference(programs.ap, programs.cp, public)
+
+
+def test_body_reference_refuses_a_region_across_the_table_edge(fixtures):
+    """Moving only part of a region would mix the two builds' addresses."""
+    public = public_reference()
+    table = next(row for row in public['programs']['appFw.so']['regions'] if row['offset'] == 0x4c7cf7c)
+    table.update(offset=0x4c7cf78, bytes=16)
+    with pytest.raises(ValueError, match='0x4c7cf78'):
+        build_body_reference.reference(fixtures.body.ap, fixtures.body.cp, public)
+
+
+# Committed build tables ----------------------------------------------------------------------
+
+def test_builds_carry_the_findings_fingerprints():
+    assert [build.key for build in BUILDS] == ['public-2.01', 'body-2.01-20250923']
+    for build in BUILDS:
+        assert (build.ap_sha256, build.cp_sha256) == FINDINGS[build.key]
+        assert (build.ap_bytes, build.cp_bytes) == SIZES
+
+
+def test_identification_reads_programs_only():
+    """Custom slots and calibration differ between bodies of one build; identify never sees them."""
+    assert list(inspect.signature(identify).parameters) == ['ap', 'cp']
+
+
+def test_body_regions_differ_from_public_only_at_the_three_facts():
+    public, body = regions(PUBLIC), regions(BODY)
+    assert public['cpapp-b.bin'] == body['cpapp-b.bin']
+    assert (len(public['appFw.so']), len(public['cpapp-b.bin'])) == (24, 39)
+    moved = {0x4c7cf7c: 0x4c7cf6c}
+    assert [moved.get(at, at) for at, _ in public['appFw.so']] == [at for at, _ in body['appFw.so']]
+    differing = set()
+    for (at, old), (_, new) in zip(public['appFw.so'], body['appFw.so']):
+        assert len(old) == len(new), hex(at)
+        differing |= {at + i for i, (a, b) in enumerate(zip(old, new)) if a != b}
+    # add x0,x0,#0xac3 against #0xab3, and add x0,x0,#0xf7c against #0xf6c; the table bytes are equal
+    assert differing == {0x3060a2d, 0x3060a2e, 0x3528811}
+
+
+@pytest.mark.parametrize('build, converter, boot_log, table', [
+    (PUBLIC, '00f03d91', '000c2b91', 0x4c7cf7c),
+    (BODY, '00b03d91', '00cc2a91', 0x4c7cf6c),
+])
+def test_build_facts_are_each_builds_stock_bytes(build, converter, boot_log, table):
+    assert stock(build, 'appFw.so', 0x3528810, 4) == build.converter_add == bytes.fromhex(converter)
+    assert stock(build, 'appFw.so', 0x3060a2c, 4) == build.boot_log_add == bytes.fromhex(boot_log)
+    assert build.look_table == table
+    assert stock(build, 'appFw.so', table, 12) == STOCK_TABLE
+
+
+def test_body_reference_keeps_the_public_color_units():
+    public, body = public_reference(), json.loads((ASSETS / BODY.regions_file).read_text(encoding='utf-8'))
+    assert body['color_units'] == public['color_units']
+    assert {key: body[key] for key in ('schema', 'model', 'version')} == \
+        {'schema': 'a7c2-factory-regions/1', 'model': 'ILCE-7CM2', 'version': '2.01'}
+
+
+def test_stock_reads_up_to_both_edges_of_a_region():
+    assert stock(PUBLIC, 'appFw.so', 0x35287f0, 4) == bytes.fromhex('1f400071')
+    assert stock(PUBLIC, 'appFw.so', 0x3528870, 4) == bytes.fromhex('c0035fd6')
+    assert len(stock(PUBLIC, 'appFw.so', 0x35287f0, 132)) == 132
+
+
+@pytest.mark.parametrize('build, program, offset, size', [
+    (BODY, 'appFw.so', 0x4c7cf7c, 12),     # the public table address holds no body stock
+    (PUBLIC, 'appFw.so', 0x4c7cf6c, 12),   # nor the body's address any public stock
+    (PUBLIC, 'appFw.so', 0x3528870, 8),    # runs past the end of the converter region
+    (PUBLIC, 'appFw.so', 0x35287ec, 8),    # starts before it
+    (PUBLIC, 'cpapp-b.bin', 0x3528810, 4),  # an appFw.so address in the other program
+    (PUBLIC, 'appFw.so', 0x3528810, 0),
+    (PUBLIC, 'appFw.so', 0x3528810, -4),
+    (PUBLIC, 'BODYDATA.DAT', 0x3528810, 4),
+])
+def test_stock_outside_one_region_is_refused(build, program, offset, size):
+    with pytest.raises(ValueError):
+        stock(build, program, offset, size)
+
+
+@pytest.mark.parametrize('offset, public, body', [
+    (0x4c7cf6c, 0x4c7cf6c, 0x4c7cf6c),
+    (0x4c7cf7b, 0x4c7cf7b, 0x4c7cf7b),
+    (0x4c7cf7c, 0x4c7cf7c, 0x4c7cf6c),
+    (0x4c7cf87, 0x4c7cf87, 0x4c7cf77),
+    (0x4c7cf88, 0x4c7cf88, 0x4c7cf78),  # the end bound moves too, so a slice of the table stays 12 bytes
+    (0x4c7cf89, 0x4c7cf89, 0x4c7cf89),
+    (0x3528810, 0x3528810, 0x3528810),
+    (0x3060a2c, 0x3060a2c, 0x3060a2c),
+    (0x59896f0, 0x59896f0, 0x59896f0),
+    (0, 0, 0),
+])
+def test_translate_moves_only_the_look_table(offset, public, body):
+    assert (translate(offset, PUBLIC), translate(offset, BODY)) == (public, body)
+
+
+# Synthetic builds ----------------------------------------------------------------------------
+
+SIZE = 64 * 1024
+
+
+def write_regions(path, programs, spans):
+    """A regions file in the shipped format holding `programs`' bytes at each (offset, size)."""
+    encode = lambda raw: base64.b64encode(zlib.compress(raw, 9)).decode('ascii')
+    data = {'schema': 'a7c2-factory-regions/1', 'model': 'ILCE-7CM2', 'version': '2.01', 'color_units': {},
+            'programs': {name: {'bytes': len(programs[name]), 'regions': [
+                {'offset': at, 'bytes': size, 'zlib_base64': encode(programs[name][at:at + size])}
+                for at, size in spans[name]]} for name in PROGRAMS}}
+    path.write_text(json.dumps(data), encoding='utf-8')
+
+
+@pytest.fixture
+def two_builds(tmp_path, monkeypatch):
+    """Builds a and b shaped like public and body: b's data after 0x4000 sits 16 bytes earlier, so its
+    12-byte table is at 0x7ff0 instead of 0x8000; one instruction in a shared region differs, and so
+    does a build stamp outside every region of cpapp-b.bin."""
+    rng = random.Random(201)
+    a_ap, a_cp = rng.randbytes(SIZE), rng.randbytes(SIZE)
+    b_ap = bytearray(a_ap[:0x4000] + a_ap[0x4010:] + rng.randbytes(16))
+    b_ap[0x1004:0x1008] = bytes.fromhex('00b03d91')
+    b_cp = bytearray(a_cp)
+    b_cp[0x9000:0x9008] = b'20250923'
+    result = {}
+    for key, ap, cp, table in (('a', a_ap, a_cp, 0x8000), ('b', bytes(b_ap), bytes(b_cp), 0x7ff0)):
+        spans = {'appFw.so': [(0x1000, 16), (table, 12)], 'cpapp-b.bin': [(0x3000, 8), (SIZE - 16, 16)]}
+        write_regions(tmp_path / (key + '.json'), dict(zip(PROGRAMS, (ap, cp))), spans)
+        build = Build(key=key, label_zh=key, ap_sha256=sha(ap), cp_sha256=sha(cp), ap_bytes=SIZE, cp_bytes=SIZE,
+                      look_table=table, converter_add=ap[0x1004:0x1008], boot_log_add=ap[0x1008:0x100c],
+                      regions_file=key + '.json')
+        result[key] = SimpleNamespace(build=build, ap=ap, cp=cp, spans=spans, path=tmp_path / (key + '.json'))
+    monkeypatch.setattr(buildprofile, 'ASSETS', tmp_path)
+    monkeypatch.setattr(buildprofile, 'BUILDS', (result['a'].build, result['b'].build))
+    return SimpleNamespace(**result)
+
+
+def installed(programs, fill=0xee):
+    """The programs with every region overwritten, as a finished tool install leaves them."""
+    files = [bytearray(programs.ap), bytearray(programs.cp)]
+    for data, name in zip(files, PROGRAMS):
+        for at, size in programs.spans[name]:
+            data[at:at + size] = bytes([fill]) * size
+    return files
+
+
+@pytest.mark.parametrize('key', ['a', 'b'])
+def test_each_synthetic_build_identifies_stock_or_installed(two_builds, key):
+    programs = getattr(two_builds, key)
+    assert identify(programs.ap, programs.cp) is programs.build
+    ap, cp = installed(programs)
+    assert sha(ap) != programs.build.ap_sha256 and sha(cp) != programs.build.cp_sha256
+    assert identify(bytes(ap), bytes(cp)) is programs.build
+
+
+def test_another_builds_table_outside_these_regions_is_refused(two_builds):
+    """The 27 Oct shape: a's table bytes written at a's address, which b doesn't own."""
+    ap = bytearray(two_builds.b.ap)
+    ap[0x8000:0x800c] = two_builds.a.ap[0x8000:0x800c]
+    assert bytes(ap) != two_builds.b.ap
+    with pytest.raises(UnsupportedFirmware):
+        identify(bytes(ap), two_builds.b.cp)
+
+
+def test_refusal_names_the_observed_digests(two_builds):
+    ap, cp = installed(two_builds.b)
+    ap[0x100] ^= 1
+    with pytest.raises(UnsupportedFirmware) as refused:
+        identify(bytes(ap), bytes(cp))
+    message = str(refused.value)
+    assert sha(ap)[:16] in message and sha(cp)[:16] in message
+
+
+@pytest.mark.parametrize('ap_extra, cp_extra', [(1, 0), (0, -1), (0, -16), (-SIZE, -SIZE)],
+                         ids=['longer', 'shorter', 'short read ending where the last region starts', 'empty'])
+def test_programs_of_another_size_are_refused(two_builds, ap_extra, cp_extra):
+    """A short read must never be completed by normalisation into a build's stock file."""
+    ap = two_builds.a.ap + bytes(ap_extra) if ap_extra >= 0 else two_builds.a.ap[:ap_extra]
+    cp = two_builds.a.cp + bytes(cp_extra) if cp_extra >= 0 else two_builds.a.cp[:cp_extra]
+    with pytest.raises(UnsupportedFirmware):
+        identify(ap, cp)
+
+
+def test_identify_leaves_its_inputs_unchanged(two_builds):
+    ap, cp = installed(two_builds.b)
+    before = (bytes(ap), bytes(cp))
+    assert identify(ap, cp) is two_builds.b.build
+    assert (bytes(ap), bytes(cp)) == before
+
+
+def test_regions_are_each_builds_own_stock_in_file_order(two_builds):
+    found = regions(two_builds.b.build)
+    assert found == {'appFw.so': [(0x1000, two_builds.b.ap[0x1000:0x1010]), (0x7ff0, two_builds.b.ap[0x7ff0:0x7ffc])],
+                     'cpapp-b.bin': [(0x3000, two_builds.b.cp[0x3000:0x3008]), (SIZE - 16, two_builds.b.cp[-16:])]}
+
+
+@pytest.mark.parametrize('damage', [
+    lambda data: data.update(schema='a7c2-factory-regions/2'),
+    lambda data: data.update(model='ILCE-7M4'),
+    lambda data: data.update(version='2.00'),
+    lambda data: data['programs']['appFw.so'].update(bytes=SIZE + 1),
+    lambda data: data['programs']['appFw.so']['regions'][1].update(offset=SIZE - 4),
+    lambda data: data['programs']['appFw.so']['regions'][1].update(offset=0x1008),
+    lambda data: data['programs']['appFw.so']['regions'].reverse(),
+    lambda data: data['programs']['appFw.so']['regions'][0].update(offset=-1),
+    lambda data: data['programs']['cpapp-b.bin']['regions'][0].update(bytes=9),
+    lambda data: data['programs'].pop('cpapp-b.bin'),
+    lambda data: data['programs']['appFw.so']['regions'][0].pop('offset'),
+    lambda data: data['programs']['appFw.so']['regions'][0].update(zlib_base64='AAAA'),
+    lambda data: data['programs']['appFw.so']['regions'][0].update(zlib_base64='not base64!'),
+], ids=['schema', 'model', 'version', 'program size', 'past the end', 'overlap', 'out of order', 'negative',
+        'length', 'missing program', 'missing offset', 'not zlib', 'not base64'])
+def test_a_damaged_regions_file_is_refused(two_builds, damage):
+    data = json.loads(two_builds.a.path.read_text(encoding='utf-8'))
+    damage(data)
+    two_builds.a.path.write_text(json.dumps(data), encoding='utf-8')
+    with pytest.raises(ValueError, match='a.json'):
+        regions(two_builds.a.build)
+    with pytest.raises(ValueError, match='a.json'):
+        identify(two_builds.a.ap, two_builds.a.cp)
