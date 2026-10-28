@@ -59,7 +59,7 @@ def test_the_compiler_dialog_accepts_tiffs_and_offers_the_hald_tools(ui):
         ui.compiler_dialog()
     dialog = ui.findChildren(W.QDialog)[-1]
     names = {b.objectName(): b.text() for b in dialog.findChildren(W.QPushButton)}
-    assert names['hald_identity'] == 'Save HALD Image for DxO…' and names['hald_check'] == 'Check HALD Export…'
+    assert names['hald_identity'] == 'Save HALD image for DxO…' and names['hald_check'] == 'Check HALD export…'
     source = [b for b in dialog.findChildren(W.QPushButton) if b.text() == i18n.tr('选择…')][0]
     with patch.object(W.QFileDialog, 'getOpenFileName', return_value=('', '')) as chosen:
         source.click()
@@ -111,7 +111,7 @@ def test_the_compiler_dialog_ends_with_cancel_and_a_primary_generate_sized_to_th
         run = dialog.findChild(W.QPushButton, 'compile_run')
         cancel = dialog.findChild(W.QPushButton, 'compile_cancel')
         formats = dialog.findChild(W.QPushButton, 'compile_formats')
-        assert (run.text(), cancel.text(), formats.text()) == ('Generate', 'Cancel', 'Supported LUT Formats…')
+        assert (run.text(), cancel.text(), formats.text()) == ('Generate', 'Cancel', 'Supported LUT formats…')
         assert run.property('primary') is True
         for button in (run, cancel, formats, dialog.findChild(W.QPushButton, 'hald_identity')):
             assert button.width() < dialog.width() / 2, button.text()

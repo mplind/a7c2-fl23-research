@@ -11,6 +11,11 @@ HAN = re.compile('[㐀-鿿（），：；、。“”]')
 CJK = re.compile('[\u3000-\u9fff\uf900-\ufaff\uff00-\uffef]')
 
 
+def stopped_banner(english):
+    """The English banner for a job that stopped with the error `english` (window.joined keeps one full stop)."""
+    return 'Stopped: ' + english.rstrip('.') + '. Export diagnostics to report it.'
+
+
 def shown_texts(widget):
     """Every string `widget` and its children show: window and group titles, labels, buttons, field
     texts and placeholders, list and menu items, text views, message box texts and tooltips."""

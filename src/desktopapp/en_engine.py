@@ -14,9 +14,9 @@ ENGINE = {
     '等待在「终端」窗口输入 Mac 登录密码；尚未接管 USB 或开始相机操作。输入密码前关闭终端窗口不会刷写相机。\n':
         'Waiting for your Mac login password in Terminal. USB is not taken over and no camera operation has started; closing Terminal before you enter the password writes nothing.\n',
     '管理员进程意外结束，相机操作结果未知。请导出诊断包，不要重复刚才的操作。':
-        'The administrator process ended unexpectedly, so the camera operation result is unknown. Do not repeat the operation',
+        "Don't repeat the task. The administrator process ended unexpectedly, so the camera result is unknown.",
     '终端授权未完成（窗口已关闭或密码不正确）；本次相机操作尚未开始，可重新点击原按钮。':
-        'Terminal authorization did not complete (window closed or wrong password); the camera operation has not started, and you can click the same button again',
+        "Terminal authorization didn't finish (window closed or wrong password). The camera task hasn't started; click the same button to try again.",
     '终端授权未完成，相机操作未报告开始。请保留日志；系统详情：%s':
         'Terminal authorization did not finish, and the camera operation never reported a start. Keep the log. System details: %s',
     '相机授权 worker 必须由终端 sudo 启动。': 'The camera authorization worker must be started by sudo in Terminal.',
@@ -28,7 +28,7 @@ ENGINE = {
     '准备本次线框测试的 USB 驱动与服务连接。': 'Preparing the USB driver and service connection for this frame test.',
     '先完成一次本页操作，再核对重新加载状态。': "Run this page's action once first, then verify the reload.",
     '所选目录没有旧备份恢复记录，本次没有连接相机。用内置原厂基准或固件文件恢复后，请点“重启后核对并完成恢复”。':
-        'The chosen folder has no backup-restore record, so the camera was not connected. After a restore from the built-in factory data or a firmware file, click "Verify and Finish".',
+        'The chosen folder has no backup-restore record, so the camera was not connected. After a restore from the built-in factory data or a firmware file, click "Verify and finish".',
     '恢复尚未结束，请先点击“恢复／继续恢复”': 'The restore is not finished. Click "Restore…" first',
     '所选恢复记录不可用（保留原样）；按当前连接的相机重新生成内建原厂恢复计划。':
         "The chosen restore record can't be used (it stays as is). Planning the built-in factory restore from the connected camera.",
@@ -39,6 +39,9 @@ ENGINE = {
         "A different camera is connected. The other camera's record stays as is; planning the restore for this one.",
     '相机内容已与上次恢复结果不同（%s），通常是之后又安装或修改过功能。旧记录保留；按当前相机字节重新生成原厂恢复计划。':
         "The camera no longer matches the last restore (%s), usually because features were installed or changed since. The old record stays; planning the factory restore from the camera's current bytes.",
+
+    '上次恢复是为另一个固件版本做的（%s）。旧记录保留；按相机当前的固件版本和字节重新生成原厂恢复计划。':
+        "The last restore was for another firmware build (%s). Its record stays; planning the factory restore for the camera's current build and bytes.",
 
     # desktopapp.allinone: one-click install.
     '本次一键安装已结束，没有重复写入。': 'This one-click install already finished. Nothing was written again.',
@@ -157,17 +160,17 @@ ENGINE = {
     # looktool.buildprofile and devicesession: the firmware identity gate and other-build refusals.
     '此相机的固件版本不受支持，未写入任何内容。（appFw.so %s…，cpapp-b.bin %s…）':
         "This camera's firmware build isn't supported. Nothing was written. (appFw.so %s…, cpapp-b.bin %s…)",
-    '尚未识别此相机的固件版本，未写入任何内容。': "This camera's firmware build hasn't been identified, so nothing was written",
+    '尚未识别此相机的固件版本，未写入任何内容。': "This camera's firmware build hasn't been identified, so nothing was written.",
     '所保存的内容来自固件版本 %s，而相机是 %s，未写入任何内容。':
-        'The saved bytes come from firmware build %s, but the camera is %s. Nothing was written',
+        'The saved bytes come from firmware build %s, but the camera is %s. Nothing was written.',
     '无法确定所保存的内容来自哪个固件版本，未写入任何内容。':
-        "The firmware build the saved bytes come from can't be identified, so nothing was written",
+        "The firmware build of the saved bytes can't be identified, so nothing was written.",
     '所选原厂文件是固件版本 %s，而相机是 %s，未写入任何内容。':
-        'The selected Sony firmware file is build %s, but the camera is %s. Nothing was written',
+        'The chosen Sony firmware file is build %s, but the camera is %s. Nothing was written.',
     '所选原厂文件不是受支持的固件版本，未写入任何内容。':
-        "The selected Sony firmware file isn't a supported firmware build, so nothing was written",
+        "The chosen Sony firmware file isn't a supported build, so nothing was written.",
     '此任务记录的固件版本是 %s，而相机现在是 %s，没有核对或写入任何内容。':
-        'This job recorded firmware build %s, but the camera is now %s. Nothing was verified or written',
+        'This job recorded firmware build %s, but the camera is now %s. Nothing was verified or written.',
 
     # looktool.devicesession
     '等待相机普通 USB 连接（最多 %d 秒）。%s': "Waiting up to %d seconds for the camera's normal USB connection. %s",
@@ -227,9 +230,9 @@ ENGINE = {
     '只继续名称、设置与重新加载准备，不重复写入程序。':
         'Continuing names, settings and reload preparation only; programs are not rewritten.',
     '续接写入和读回已结束，恢复尚未完成：请拔 USB 和其他外部供电，等存取灯停止闪烁，再正常关机并等屏幕和灯完全熄灭；取下电池至少一分钟，再装回开机、接回 USB，点击“重启后核对并完成恢复”。':
-        'Unplug USB and any other power, wait for the access lamp to stop blinking, then turn the camera off and wait until the screen and lamp are dark. Take the battery out for at least one minute, put it back, turn on, reconnect USB and click "Verify and Finish". The continued write and read-back are done, but the restore is not finished.',
+        'Unplug USB and any other power, wait for the access lamp to stop blinking, then turn the camera off and wait until the screen and lamp are dark. Take the battery out for at least one minute, put it back, turn on, reconnect USB and click "Verify and finish". The continued write and read-back are done, but the restore is not finished.',
     '相机仍在运行上次写入前加载的程序，本次没有写入。请先拔 USB、关机，取下电池至少一分钟，再开机接回 USB，点击“重启后核对并完成恢复”或再次点击恢复。':
-        'Unplug USB, turn the camera off and take the battery out for at least one minute. Then turn it on, reconnect USB, and click "Verify and Finish" or restore again. The camera is still running the programs it loaded before the last write; nothing was written.',
+        'Unplug USB, turn the camera off and take the battery out for at least one minute. Then turn it on, reconnect USB, and click "Verify and finish" or restore again. The camera is still running the programs it loaded before the last write; nothing was written.',
     '先写入名称资源，成功后才写入程序。': 'Writing names first; programs follow only after they succeed.',
     '正在逐文件更新名称（共 %d 项）；名称完成后才写入程序。':
         'Updating names file by file (%d in all); programs follow once names are done.',
@@ -251,7 +254,7 @@ ENGINE = {
     '尚未确认新的冷启动与只读挂载；没有重复写入。请按弹窗完成断电重开、接回。':
         'Do the cold restart in the dialog and reconnect. No fresh cold start or read-only mount is confirmed yet; nothing was written again.',
     '尚未确认新的冷启动。完成断电重开后再核对，不要重复写入。':
-        'No new cold boot has been confirmed yet. Finish the cold reload, then verify again; do not repeat the write',
+        "No fresh cold start confirmed yet. Do the cold restart, then verify again; don't repeat the write.",
     '恢复写入已结束，请核对重新加载状态，不重复写入': 'Restore writing finished. Verify the reload; nothing is written again',
     '已完整读回确认程序与名称均符合原厂目标；只继续设置和重新加载准备，只读挂载将在新开机后核对。':
         'Programs and names read back and match the factory target. Continuing with settings and reload preparation only; the read-only mount is checked after the next start.',
@@ -456,7 +459,7 @@ ENGINE = {
     '未找到相机 USB 连接。请拔插 USB 并选择海量存储后重试；尚未进行服务认证或声音写入。':
         'Unplug and reconnect USB, choose Mass Storage, then try again. No camera USB connection was found; no service authentication or sound write took place.',
     '上一次声音操作（%s）中途停止，结果还没确认，所以没有开始新的操作，也没有连接相机。请点窗口底部“导出诊断包”发给作者核对；不要删除声音工作目录。（Previous operation is unresolved: %s）':
-        'The last sound operation (%s) stopped partway and its result is unconfirmed, so nothing new started and the camera was not connected. Click "Export Diagnostics…" at the bottom of the window and send the file to the author; keep the sound folder. (Previous operation is unresolved: %s)',
+        'The last sound operation (%s) stopped partway and its result is unconfirmed, so nothing new started and the camera was not connected. Click "Export diagnostics…" at the bottom of the window and send the file to the author; keep the sound folder. (Previous operation is unresolved: %s)',
     '旧声音任务已确认停在写入前，检查结果和临时清理均完整；已解除占用，原日志保留。':
         'Confirmed the old sound job stopped before writing; its checks and temporary cleanup are complete. Released; the original log stays.',
     '上次保存停在电脑端准备阶段，未执行相机写入；已解除占用，保留原日志。':

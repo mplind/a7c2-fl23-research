@@ -134,6 +134,24 @@ def test_the_log_pane_shows_worker_output_in_english_and_keeps_the_log_verbatim(
     assert log.read_text(encoding='utf-8') == '\n'.join(ENGINE_LINES) + '\n'
 
 
+def test_the_log_opens_at_the_start_of_its_lines(window):
+    # The pane doesn't wrap, and English lines run longer than the Chinese. Lines that arrive while the
+    # log is closed must still read from their start when it opens (a failure opens it).
+    ui = window('en')
+    ui.resize(1130, 760)
+    ui.show()
+    W.QApplication.processEvents()
+    ui.current_job = jobs.new_job('connect', {})
+    lines = ENGINE_LINES[:5] + ENGINE_LINES[1:2]  # the last one long, as a closing summary often is
+    (ui.current_job / 'worker.log').write_text('\n'.join(lines) + '\n', encoding='utf-8')
+    ui.tail_log()
+    W.QApplication.processEvents()
+    ui.status_area.show_log(True)
+    W.QApplication.processEvents()
+    assert ui.log.horizontalScrollBar().maximum() > 0
+    assert ui.log.horizontalScrollBar().value() == 0
+
+
 def test_the_log_pane_keeps_chinese_in_the_chinese_interface(window):
     ui = window()
     ui.current_job = jobs.new_job('connect', {})

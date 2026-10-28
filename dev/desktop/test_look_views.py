@@ -55,7 +55,7 @@ def test_a_poor_unknown_or_unreadable_fit_is_shown_as_a_warning(app, english, tm
     broken = write_row(editor, tmp_path / 'missing.a7look', 3)
     assert poor.fit.text().startswith('Fit: poor (MAE 6.0, P95 20.0)') and 'differ' in poor.fit.text()
     assert unknown.fit.text() == 'Fit: unknown (the file has no held-out validation data)'
-    assert broken.fit.text().startswith('Cannot read this A7Look: ')
+    assert broken.fit.text().startswith('Can’t read this A7Look: ')
     assert all(row.fit.property('warning') for row in (poor, unknown, broken))
 
 
@@ -149,10 +149,10 @@ def test_the_selected_look_shows_reference_colours_over_its_camera_rendering(app
     assert dialog.strip.isHidden()
 
 
-def test_library_buttons_follow_the_title_case_verbs(app, english, tmp_path):
+def test_library_buttons_are_sentence_case_verbs(app, english, tmp_path):
     dialog = FilmLibraryDialog(library(tmp_path), notices=tmp_path)
     texts = sorted(button.text() for button in dialog.findChildren(W.QPushButton))
-    assert texts == ['Add to List', 'Close', 'Licence Notices…', 'Preview on My Photo…']
+    assert texts == ['Add to list', 'Close', 'Licence notices…', 'Preview on my photo…']
     assert dialog.add.property('primary') is True
 
 
@@ -437,7 +437,7 @@ def test_choosing_an_unreadable_look_updates_the_whole_row(app, english, tmp_pat
     changes = []
     editor.changed.connect(lambda: changes.append(True))
     row.set_file(str(unreadable(tmp_path)))
-    assert row.fit.text().startswith('Cannot read this A7Look: ') and row.fit.property('warning')
+    assert row.fit.text().startswith('Can’t read this A7Look: ') and row.fit.property('warning')
     assert not row.preview.isEnabled() and row.file.text() == 'bad.a7look' and changes
 
 

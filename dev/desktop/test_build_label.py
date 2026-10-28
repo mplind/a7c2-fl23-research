@@ -17,7 +17,7 @@ from desktopapp.paths import data_root, write_json
 from looktool import buildprofile, checkpointworker, devicesession
 from looktool.buildprofile import BUILDS, UnsupportedFirmware
 
-from guihelpers import HAN  # noqa: E402
+from guihelpers import HAN, stopped_banner  # noqa: E402
 from test_firmware_gate import AP, CP, UNKNOWN, GateCamera  # noqa: E402
 
 PUBLIC, BODY = BUILDS
@@ -206,8 +206,8 @@ def test_an_unsupported_connection_is_explained_on_every_page(window):
 
 def test_connection_test_help_says_it_reads_the_build(window):
     ui = window('en')
-    help_text = 'Connects, reads the firmware build, then disconnects. Nothing is written.'
-    assert help_text in {label.text() for label in ui.findChildren(W.QLabel)}
+    help_text = 'Reads the camera’s firmware to identify its build, then disconnects. Takes up to a minute. Nothing is written.'
+    assert help_text in {label.text() for label in ui.findChildren(W.QLabel)}  # R45: it reads, and it takes a while
     assert STRINGS['连接后读取固件版本，然后断开，不写入任何内容。'] == help_text
 
 
@@ -361,7 +361,7 @@ def test_after_a_refusal_no_page_offers_resume_and_the_banner_says_why(window, r
     point_at(ui, refused)
     message = message_of(refused)
     finish(ui, action, error=message, error_type='UnsupportedFirmware')
-    assert ui.status.text() == 'Operation stopped: ' + english(message) + '. Please export diagnostics.'
+    assert ui.status.text() == stopped_banner(english(message))
     assert ui.status_area.banner.kind == 'danger'
     assert offered(ui) == []
     assert ui.build_label.text() == UNSUPPORTED_LABEL
@@ -374,7 +374,7 @@ def test_a_refused_one_click_job_is_replaced_by_the_refusal_message(window, refu
     point_at(ui, refused)
     message = message_of(refused)
     finish(ui, 'setup_all', error=message, error_type='UnsupportedFirmware')
-    assert ui.setup_button.text() == 'One-Click Install'
+    assert ui.setup_button.text() == 'One-click install'
     assert not ui.setup_note.isHidden() and ui.setup_note.text() == english(message)
     assert ui.setup_presets.isEnabled() and ui.setup_fl23.isEnabled()
     assert not ui.setup_result_button.isVisible()
@@ -459,7 +459,7 @@ def test_a_one_click_job_waiting_for_the_restart_keeps_its_continue_button(windo
     state = json.loads(state_path.read_text(encoding='utf-8'))
     write_json(state_path, dict(state, phase='WAIT_RELOAD'))
     ui = reopened(window, refused)
-    assert ui.setup_button.text() == 'Continue Installation'
+    assert ui.setup_button.text() == 'Continue installation'
 
 
 def test_unidentified_refusal_is_treated_the_same(window, refused):

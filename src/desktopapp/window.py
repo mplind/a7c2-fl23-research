@@ -1278,7 +1278,17 @@ class Window(W.QMainWindow):
         if text:
             with (self.current_job / 'process.log').open('a', encoding='utf-8') as stream:
                 stream.write(text)
-            self.log.appendPlainText(shown(text.rstrip()))
+            self.append_log(text.rstrip())
+
+    def append_log(self, text):
+        """Worker output in the log pane, in the interface language. The pane doesn't wrap, so the cursor
+        goes to the start of the last line: opening the pane shows lines from their start, not the end of
+        a long last one."""
+        self.log.appendPlainText(shown(text))
+        cursor = self.log.textCursor()
+        cursor.movePosition(QtGui.QTextCursor.End)
+        cursor.movePosition(QtGui.QTextCursor.StartOfBlock)
+        self.log.setTextCursor(cursor)
 
     def tail_log(self):
         if not self.current_job:
@@ -1290,7 +1300,7 @@ class Window(W.QMainWindow):
                 text = stream.read()
                 self.log_offset = stream.tell()
             if text:
-                self.log.appendPlainText(shown(text.decode('utf-8', errors='replace').rstrip()))
+                self.append_log(text.decode('utf-8', errors='replace').rstrip())
 
     def poll_job(self):
         self.tail_log()

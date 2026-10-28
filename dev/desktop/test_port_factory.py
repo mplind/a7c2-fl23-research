@@ -28,7 +28,7 @@ from test_checkpoint import Camera, fake_compile, stock_names
 from test_device_job import Prop
 from test_direct import SimDirect
 from test_language import finish_failed_job
-from guihelpers import HAN
+from guihelpers import HAN, stopped_banner
 
 PUBLIC, BODY = BUILDS
 PROGRAMS = ('appFw.so', 'cpapp-b.bin')
@@ -469,13 +469,13 @@ def test_public_factory_restore_is_unchanged_by_the_port(build_fixtures):
 
 @pytest.mark.parametrize('template, values, english', [
     ('REFERENCE_OTHER_BUILD', ('public-2.01', 'body-2.01-20250923'),
-     'The selected Sony firmware file is build public-2.01, but the camera is body-2.01-20250923. Nothing was written'),
-    ('REFERENCE_UNSUPPORTED', (), "The selected Sony firmware file isn't a supported firmware build, so nothing was written"),
+     'The chosen Sony firmware file is build public-2.01, but the camera is body-2.01-20250923. Nothing was written.'),
+    ('REFERENCE_UNSUPPORTED', (), "The chosen Sony firmware file isn't a supported build, so nothing was written."),
     ('JOB_OTHER_BUILD', ('body-2.01-20250923', 'public-2.01'),
-     'This job recorded firmware build body-2.01-20250923, but the camera is now public-2.01. Nothing was verified or written'),
+     'This job recorded firmware build body-2.01-20250923, but the camera is now public-2.01. Nothing was verified or written.'),
 ])
 def test_factory_refusals_are_shown_in_english(window, tmp_path, template, values, english):
     error = getattr(buildprofile, template) % values if values else getattr(buildprofile, template)
     text = finish_failed_job(window(language='en'), tmp_path, error)
-    assert text == 'Operation stopped: ' + english + '. Please export diagnostics.'
+    assert text == stopped_banner(english)
     assert not HAN.search(text)

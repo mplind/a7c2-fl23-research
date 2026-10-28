@@ -272,6 +272,25 @@ class FactoryRecoveryTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, '冷启动'):
             _, jobs = self.dispatch(finished, not_reloaded)
 
+    def test_a_finished_restore_for_another_build_is_reported_as_one(self):
+        # Verify refuses a job recorded for another build with ContentChanged, like changed bytes. The
+        # log says the build differs, not that features were installed since; either way it re-plans.
+        import contextlib
+        import io
+        from looktool.buildprofile import JOB_OTHER_BUILD
+        finished = dict(self.prior, phase='AWAITING_RELOAD')
+        for error, said, unsaid in (
+                (JOB_OTHER_BUILD % ('public-2.01', 'body-2.01-20250923'), '另一个固件版本', '通常是之后又安装'),
+                ('Full program readback differs: appFw.so', '通常是之后又安装', '另一个固件版本')):
+            def refused(root, job, error=error):
+                job.verify_direct.side_effect = direct.ContentChanged(error)
+            printed = io.StringIO()
+            with contextlib.redirect_stdout(printed):
+                _, jobs = self.dispatch(finished, refused)
+            jobs[self.root / 'next'].run_direct.assert_called_once()
+            self.assertIn(said, printed.getvalue())
+            self.assertNotIn(unsaid, printed.getvalue())
+
     def test_unfinished_restore_on_another_body_replans_for_the_connected_body(self):
         from looktool.usbidentity import BodyMismatch
         def mismatch(root, job):

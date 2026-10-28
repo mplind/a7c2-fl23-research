@@ -67,8 +67,8 @@ def test_help_menu_opens_each_guide(window):
             patch.object(window_module.Window, 'show_look_format_guide') as format_guide:
         ui = window('en')
         actions = menu_actions(ui, 'Help')
-        assert [action.text() for action in actions] == ['Before You Connect…', 'How to Restart the Camera…',
-                                                         'Supported LUT Formats…']
+        assert [action.text() for action in actions] == ['Before you connect…', 'How to cold restart…',
+                                                         'Supported LUT formats…']
         with patch.object(W.QMessageBox, 'information') as notice:
             actions[0].trigger()
         actions[1].trigger()

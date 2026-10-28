@@ -64,8 +64,8 @@ def test_new_install_defaults_to_english_and_no_page_shows_chinese(ui):
     create, app, _ = ui
     window = create()
     assert window.language.currentData() == 'en'
-    assert window.nav.item(0).text() == 'One-Click Install'
-    assert window.setup_button.text() == 'One-Click Install'
+    assert window.nav.item(0).text() == 'One-click install'
+    assert window.setup_button.text() == 'One-click install'
     for index in range(window.pages.count()):
         window.nav.setCurrentRow(index)
         app.processEvents()
@@ -104,13 +104,13 @@ def test_language_change_keeps_input_and_applies_on_next_launch(ui):
     assert settings['language'] == 'zh_CN'
     assert settings['sound_source'] == '/example/user 文件.wav'
     assert window.look_editor.values() == [{'slot': 4, 'action': 'restore'}]
-    assert window.setup_button.text() == 'One-Click Install'
+    assert window.setup_button.text() == 'One-click install'
     reopened = create()
     assert reopened.nav.item(0).text() == '首页 · 一键安装'
     assert reopened.fields['sound_source'].text() == '/example/user 文件.wav'
     with patch.object(W.QMessageBox, 'information'):
         reopened.language.setCurrentIndex(0)
-    assert create().setup_button.text() == 'One-Click Install'
+    assert create().setup_button.text() == 'One-click install'
 
 
 @pytest.mark.parametrize('language', ['en', 'zh_CN'])
@@ -155,10 +155,10 @@ def test_safety_guides_and_completion_are_english_without_translating_user_names
     create('en')
     guide = reloadguide.text()
     assert 'at least 1 minute' in guide and not HAN.search(guide)
-    assert 'not yet written' in reloadguide.text(mode='resource_reload')
+    assert 'aren’t written yet' in reloadguide.text(mode='resource_reload')
     notice = reloadguide.sound_notice('sound_audition', dict(
         phase='temporary_pcm_registered_cold_reload_required_after_test'))
-    assert 'Keep the camera switched on' in notice['title']
+    assert 'Keep the camera on' in notice['title']
     state = dict(phase='COMPLETE', options=dict(looks=[dict(slot=1, name='原名 kept')]))
     assert '原名 kept' in completion.text(state)
     assert 'selected operations are complete' in completion.text(state)
@@ -177,20 +177,20 @@ def finish_failed_job(window, root, error):
 
 @pytest.mark.parametrize('error,english', [
     ('管理员进程意外结束，相机操作结果未知。请导出诊断包，不要重复刚才的操作。', 'result is unknown'),
-    ('终端授权未完成（窗口已关闭或密码不正确）；本次相机操作尚未开始，可重新点击原按钮。', 'has not started'),
-    ('尚未确认新的冷启动。完成断电重开后再核对，不要重复写入。', 'do not repeat the write'),
+    ('终端授权未完成（窗口已关闭或密码不正确）；本次相机操作尚未开始，可重新点击原按钮。', "hasn't started"),
+    ('尚未确认新的冷启动。完成断电重开后再核对，不要重复写入。', "don't repeat the write"),
 ])
 def test_safety_critical_worker_errors_are_shown_in_english(ui, error, english):
     create, _, root = ui
     text = finish_failed_job(create(), root, error)
-    assert text.startswith('Operation stopped: ') and english in text
+    assert text.startswith('Stopped: ') and english in text
     assert not HAN.search(text)
 
 
 def test_other_worker_errors_are_shown_verbatim_inside_the_english_frame(ui):
     create, _, root = ui
     text = finish_failed_job(create(), root, '读取 appFw.so 失败：0x3528804')
-    assert text == 'Operation stopped: 读取 appFw.so 失败：0x3528804. Please export diagnostics.'
+    assert text == 'Stopped: 读取 appFw.so 失败：0x3528804. Export diagnostics to report it.'
 
 
 def test_english_entries_keep_format_specifiers_and_file_extensions():
@@ -222,7 +222,7 @@ def test_windows_driver_controls_and_zadig_guide_use_english(ui):
     automatic = window.findChild(W.QPushButton, 'action_usb_prepare')
     zadig = window.findChild(W.QPushButton, 'zadig_guide')
     assert automatic.text() == 'Prepare'
-    assert zadig.text() == 'Zadig Guide…'
+    assert zadig.text() == 'Zadig guide…'
     from desktopapp.zadigguide import TEXT
     assert '054C 0336' in i18n.tr(TEXT) and 'administrator' in i18n.tr(TEXT)
 
@@ -266,7 +266,9 @@ def test_every_label_the_english_copy_quotes_is_on_screen(window):
     # Buttons that change their label with the task state show these in other states.
     labels |= {i18n.tr(key) for key in ('继续安装', '开始新的一键安装', '继续槽位更改', '断电后重试恢复（本次尚未写入）',
                                         '重启后核对并完成恢复')}
-    quoted = {text for english in STRINGS.values() for text in re.findall(r'"([^"]+)"', english)}
+    from desktopapp.en_engine import ENGINE  # the log and the banner quote labels too
+    quoted = {text for english in list(STRINGS.values()) + list(ENGINE.values())
+              for text in re.findall(r'"([^"]+)"', english)}
     assert sorted(quoted - labels - OUTSIDE_THE_APP) == []
 
 

@@ -169,10 +169,16 @@ def run(action, args, job):
                     result = verifier.verify_direct(factory_values=reference, accepted=bool(args.get('accepted')))
                     obj = verifier
                 except ContentChanged as exc:
-                    # Read-only verification found other bytes, e.g. features
-                    # installed again after that restore: re-plan, don't loop.
-                    print('相机内容已与上次恢复结果不同（%s），通常是之后又安装或修改过功能。旧记录保留；'
-                          '按当前相机字节重新生成原厂恢复计划。' % exc, flush=True)
+                    # Read-only verification found other bytes, e.g. features installed again after that
+                    # restore, or the job was for another firmware build: re-plan, don't loop. Say which.
+                    from looktool.buildprofile import JOB_OTHER_BUILD, refusal
+                    found = refusal(str(exc))
+                    if found and found[0] == JOB_OTHER_BUILD:
+                        print('上次恢复是为另一个固件版本做的（%s）。旧记录保留；按相机当前的固件版本和字节'
+                              '重新生成原厂恢复计划。' % exc, flush=True)
+                    else:
+                        print('相机内容已与上次恢复结果不同（%s），通常是之后又安装或修改过功能。旧记录保留；'
+                              '按当前相机字节重新生成原厂恢复计划。' % exc, flush=True)
                     result = fresh(obj, source=str(prior_root))
             else:
                 print('保留旧恢复记录，从当前相机重新生成内建原厂恢复计划；不重放旧任务。', flush=True)

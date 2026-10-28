@@ -17,7 +17,7 @@ def requested(ui):
 
 def test_the_page_offers_every_preset_with_its_source_and_values(window):
     ui = window('en')
-    assert ui.nav.item(7).text() == 'Film Recipes'
+    assert ui.nav.item(7).text() == 'Film recipes'
     assert ui.nav.item(7).data(shell.SECTION) == 'Experimental'
     assert [ui.recipe_preset.itemText(i) for i in range(ui.recipe_preset.count())] == [p.name for p in recipes.PRESETS]
     ui.recipe_preset.setCurrentIndex([p.name for p in recipes.PRESETS].index('Vintage Chrome'))

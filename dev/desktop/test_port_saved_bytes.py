@@ -26,7 +26,7 @@ from looktool.buildprofile import BUILDS
 import test_checkpoint as simulated
 from test_checkpoint import Camera, KEYS, SimRollback, fake_compile, values
 from test_language import finish_failed_job
-from guihelpers import HAN
+from guihelpers import HAN, stopped_banner
 from simbuild import CarriesBuild, saved_as
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'src/shutter_sound'))
@@ -415,13 +415,13 @@ def test_an_old_sound_job_holding_real_programs_identifies_their_build(build_fix
 
 @pytest.mark.parametrize('template, values, english', [
     ('SAVED_OTHER_BUILD', ('public-2.01', 'body-2.01-20250923'),
-     'The saved bytes come from firmware build public-2.01, but the camera is body-2.01-20250923. Nothing was written'),
-    ('SAVED_UNIDENTIFIED', (), "The firmware build the saved bytes come from can't be identified, so nothing was written"),
+     'The saved bytes come from firmware build public-2.01, but the camera is body-2.01-20250923. Nothing was written.'),
+    ('SAVED_UNIDENTIFIED', (), "The firmware build of the saved bytes can't be identified, so nothing was written."),
 ])
 def test_saved_bytes_refusals_are_shown_in_english(window, tmp_path, template, values, english):
     error = getattr(buildprofile, template) % values if values else getattr(buildprofile, template)
     text = finish_failed_job(window(language='en'), tmp_path, error)
-    assert text == 'Operation stopped: ' + english + '. Please export diagnostics.'
+    assert text == stopped_banner(english)
     assert not HAN.search(text)
 
 

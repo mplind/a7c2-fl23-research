@@ -31,7 +31,7 @@ import candidate  # noqa: E402
 import trial  # noqa: E402
 from verticaltool import device as vertical, portraitstage  # noqa: E402
 
-from guihelpers import HAN  # noqa: E402
+from guihelpers import HAN, stopped_banner  # noqa: E402
 from simbuild import PUBLIC, identified as identified_as  # noqa: E402
 
 AP, CP = '/usr/lib/appFw.so', '/cp/cpapp-b.bin'
@@ -500,11 +500,11 @@ UNSUPPORTED_ERROR = buildprofile.UNSUPPORTED % ('2ea02f7ecbc5bb91', 'f5a47758869
 @pytest.mark.parametrize('refused,english', [
     ('unsupported', "This camera's firmware build isn't supported. Nothing was written. "
                     "(appFw.so 2ea02f7ecbc5bb91…, cpapp-b.bin f5a477588698ef96…)"),
-    ('unidentified', "This camera's firmware build hasn't been identified, so nothing was written")])
+    ('unidentified', "This camera's firmware build hasn't been identified, so nothing was written.")])
 def test_firmware_refusals_are_shown_in_english(window, tmp_path, refused, english):
     error = UNSUPPORTED_ERROR if refused == 'unsupported' else devicesession.UNIDENTIFIED
     text = finish_failed_job(window(language='en'), tmp_path, error)
-    assert text == 'Operation stopped: ' + english + '. Please export diagnostics.'
+    assert text == stopped_banner(english)
     assert not HAN.search(text)
 
 
