@@ -14,7 +14,7 @@ def text(state):
     if state.get('phase')!='COMPLETE':raise ValueError(tr('上次安装尚未结束，请使用“继续安装”。'))
     options=state.get('options',{})
     lines=[tr('本次所选操作已完成，程序与设置核对通过。'),tr('请在机身检查预览、拍摄和回放。'),'',
-        'FL2／FL3：'+(tr('已启用') if options.get('fl23',True) else tr('本次未改动'))]
+        tr('FL2／FL3：')+(tr('已启用') if options.get('fl23',True) else tr('本次未改动'))]
     looks=options.get('looks',[])
     if looks:
         lines.append(tr('自定义外观：已写入'))

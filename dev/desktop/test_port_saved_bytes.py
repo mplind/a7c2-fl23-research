@@ -426,5 +426,6 @@ def test_saved_bytes_refusals_are_shown_in_english(window, tmp_path, template, v
 
 
 def test_the_refusals_stay_verbatim_in_chinese(window, tmp_path):
+    # The refusal ends its sentence, so the banner adds no second full stop.
     error = buildprofile.SAVED_OTHER_BUILD % (PUBLIC.key, BODY.key)
-    assert finish_failed_job(window(), tmp_path, error) == '操作停止：' + error + '。请导出诊断包。'
+    assert finish_failed_job(window(), tmp_path, error) == '操作停止：' + error + '请导出诊断包。'

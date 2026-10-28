@@ -12,6 +12,7 @@ from PySide6 import QtWidgets as W
 
 from desktopapp import i18n, jobs, worker
 from desktopapp.en import STRINGS
+from desktopapp.en_engine import ENGINE
 from desktopapp.paths import data_root, write_json
 from looktool import buildprofile, checkpointworker, devicesession
 from looktool.buildprofile import BUILDS, UnsupportedFirmware
@@ -92,17 +93,25 @@ def test_an_unknown_build_changes_the_line_style(window):
     assert not ui.build_label.property('warning')
 
 
-@pytest.mark.parametrize('result', [dict(model='ILCE-7CM2', service_connected=True), connect_result('public-2.02')],
-                         ids=['not reported', 'unknown key'])
-def test_a_build_the_worker_did_not_name_correctly_never_shows_as_supported(window, result):
+def test_a_key_no_build_has_fails_closed(window):
     ui = window('en')
     finish(ui, 'connect', connect_result(PUBLIC.key))
-    finish(ui, 'connect', result)
-    if 'firmware_build' in result:   # a key no build has: fail closed
-        assert ui.build_label.text() == UNSUPPORTED_LABEL
-        assert enabled(write_buttons(ui)) == []
-    else:                            # an older worker says nothing: the last answer stands
-        assert ui.build_label.text() == PUBLIC_LABEL
+    finish(ui, 'connect', connect_result('public-2.02'))
+    assert ui.build_label.text() == UNSUPPORTED_LABEL
+    assert enabled(write_buttons(ui)) == []
+
+
+@pytest.mark.parametrize('earlier', [PUBLIC.key, None], ids=['after a supported build', 'after an unsupported one'])
+def test_a_connection_that_names_no_build_resets_the_line_to_not_checked(window, earlier):
+    # An older worker says nothing about the build, so an earlier answer no longer holds either way:
+    # the line and the buttons are as at launch (the worker's gate still refuses an unsupported camera).
+    ui = window('en')
+    finish(ui, 'connect', connect_result(earlier))
+    finish(ui, 'connect', dict(model='ILCE-7CM2', service_connected=True))
+    assert ui.build_label.text() == NOT_CHECKED
+    assert not ui.build_label.property('warning')
+    assert enabled(write_buttons(ui)) == sorted(button.objectName() for button in write_buttons(ui)
+                                                if button.objectName() != 'action_direct_looks_import')
 
 
 def test_a_failed_connection_leaves_the_line_alone(window):
@@ -460,4 +469,4 @@ def test_unidentified_refusal_is_treated_the_same(window, refused):
         write_json(folder / name, dict(state, error=devicesession.UNIDENTIFIED))
     ui = reopened(window, refused)
     assert offered(ui) == []
-    assert stopped_texts(ui) == (STRINGS[devicesession.UNIDENTIFIED],) * 3
+    assert stopped_texts(ui) == (ENGINE[devicesession.UNIDENTIFIED],) * 3

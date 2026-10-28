@@ -39,8 +39,10 @@ def test_terminal_launcher_quoting_preserves_spaces_quotes_and_metacharacters(tm
         shell=macadmin.shell_command(request,501,20,environment)
     assert cmd[:3]==['/usr/bin/open','-a','Terminal']
     script=Path(cmd[3]).read_text(encoding='utf-8')
-    assert Path(cmd[3]).parent==request.parent and 'password ' not in script
+    assert Path(cmd[3]).parent==request.parent
     lines=script.splitlines()
+    # Only the prompt the user reads mentions the password; the script never carries one.
+    assert [line for line in lines if 'password' in line.lower() and not line.startswith("printf '%s\\n' ")]==[]
     sudo=[line for line in lines if line.startswith('/usr/bin/sudo ')]
     assert len(sudo)==1 and shlex.split(sudo[0])==['/usr/bin/sudo','/bin/sh','-c',shell]
     assert '--privileged-worker' in shell and 'A7C2_DESKTOP_DATA=' in shell and 'HOME=' in shell

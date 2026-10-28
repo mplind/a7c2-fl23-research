@@ -1,8 +1,8 @@
 """Display-only localization. Worker actions, logs and saved camera data stay verbatim.
 
 Adapted from the Korean localization on Gureum-Yeoreum-Tori/a7c2-fl23-research
-(branch feat/korean-ui). Text without a catalog entry, including engine messages,
-is shown unchanged.
+(branch feat/korean-ui). Text without a catalog entry is shown unchanged. Engine and
+worker output is translated where the window shows it, by engine_text.display().
 """
 from .en import STRINGS
 
@@ -11,12 +11,23 @@ _language = 'zh_CN'
 
 
 def tr(source):
-    return STRINGS.get(source, source) if _language == 'en' else source
+    return translate(source, _language)
+
+
+def translate(source, language):
+    """`source` in `language`: for text shown outside this process, such as the Terminal window a
+    camera job opens, whose language travels with the job request."""
+    return STRINGS.get(source, source) if language == 'en' else source
 
 
 def configure(language):
     global _language
     _language = language if language in LANGUAGES else 'en'
+    return _language
+
+
+def language():
+    """The configured interface language: 'en' or 'zh_CN'."""
     return _language
 
 

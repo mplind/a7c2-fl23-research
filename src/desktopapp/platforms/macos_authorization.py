@@ -15,7 +15,13 @@ import subprocess
 import sys
 import time
 import traceback
+from ..i18n import translate
 from ..paths import data_root,write_json
+
+# What the Terminal window says, in the language of the job request (English in en.py).
+PROMPT=('A7C II Tools：本次相机操作需要以管理员权限接管 USB。',
+        '请在下方输入 Mac 登录密码（输入时不显示）。密码只交给系统 sudo，程序不读取或保存。')
+FINISHED='相机操作已结束（退出码 %s），结果以 A7C II Tools 窗口为准。现在可以关闭此终端窗口。'
 
 
 def required(action):
@@ -41,27 +47,27 @@ def shell_command(request,uid,gid,environment):
     return shell
 
 
-def launcher(request,uid,gid,environment):
-    """Text of the one-job Terminal script; its exit record goes beside the request."""
+def launcher(request,uid,gid,environment,language='en'):
+    """Text of the one-job Terminal script, in `language`; its exit record goes beside the request."""
     shell=shell_command(request,uid,gid,environment)
     exit_file=shlex.quote(str(Path(request).parent/'authorization.exit'))
+    before,after=translate(FINISHED,language).split('%s')
     return '\n'.join([
         '#!/bin/bash',
         '# A7C II Tools: one camera operation with administrator rights. Generated per job.',
         'trap '+shlex.quote('echo closed > '+exit_file+'; exit 129')+' HUP',
         "trap '' INT QUIT",
-        "printf '%s\\n' 'A7C II Tools：本次相机操作需要以管理员权限接管 USB。' "
-        "'请在下方输入 Mac 登录密码（输入时不显示）。密码只交给系统 sudo，程序不读取或保存。'",
+        "printf '%s\\n' "+' '.join(shlex.quote(translate(line,language)) for line in PROMPT),
         '/usr/bin/sudo /bin/sh -c '+shlex.quote(shell),
         'code=$?',
         'echo "$code" > '+exit_file,
-        'echo "相机操作已结束（退出码 $code），结果以 A7C II Tools 窗口为准。现在可以关闭此终端窗口。"',
+        'echo '+shlex.quote(before)+'"$code"'+shlex.quote(after),
         ''])
 
 
-def command(request,uid,gid,environment):
+def command(request,uid,gid,environment,language='en'):
     path=Path(request).parent/'authorize-in-terminal.command'
-    path.write_text(launcher(request,uid,gid,environment),encoding='utf-8',newline='\n')
+    path.write_text(launcher(request,uid,gid,environment,language),encoding='utf-8',newline='\n')
     path.chmod(0o700)
     return ['/usr/bin/open','-a','Terminal',str(path)]
 
@@ -105,7 +111,7 @@ def execute(path):
     exit_file.unlink(missing_ok=True)
     code=None
     try:
-        opened=subprocess.run(command(path,os.getuid(),os.getgid(),os.environ),
+        opened=subprocess.run(command(path,os.getuid(),os.getgid(),os.environ,request.get('language','en')),
                               capture_output=True,text=True,encoding='utf-8',errors='replace')
     except Exception as exc:
         opened=None;detail=repr(exc)

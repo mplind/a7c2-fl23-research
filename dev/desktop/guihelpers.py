@@ -6,6 +6,33 @@ from desktopapp.paths import write_json
 
 # Han characters and full-width punctuation: none may appear in the English interface.
 HAN = re.compile('[㐀-鿿（），：；、。“”]')
+# Every CJK character Task 8b names: CJK symbols and punctuation through the unified ideographs, the
+# compatibility ideographs, and the half- and full-width forms.
+CJK = re.compile('[\u3000-\u9fff\uf900-\ufaff\uff00-\uffef]')
+
+
+def shown_texts(widget):
+    """Every string `widget` and its children show: window and group titles, labels, buttons, field
+    texts and placeholders, list and menu items, text views, message box texts and tooltips."""
+    from PySide6 import QtWidgets as W
+    texts = [widget.windowTitle()]
+    if isinstance(widget, W.QMessageBox):
+        texts += [widget.text(), widget.informativeText(), widget.detailedText()]
+    for child in [widget] + widget.findChildren(W.QWidget):
+        if isinstance(child, (W.QLabel, W.QAbstractButton)):
+            texts.append(child.text())
+        if isinstance(child, W.QGroupBox):
+            texts.append(child.title())
+        if isinstance(child, W.QLineEdit):
+            texts += [child.text(), child.placeholderText()]
+        if isinstance(child, (W.QTextEdit, W.QPlainTextEdit)):
+            texts += [child.toPlainText(), child.placeholderText()]
+        if isinstance(child, W.QComboBox):
+            texts += [child.itemText(index) for index in range(child.count())]
+        if isinstance(child, W.QListWidget):
+            texts += [child.item(row).text() for row in range(child.count())]
+        texts.append(child.toolTip())
+    return [text for text in texts if text]
 
 
 def finish_job(window, action, result=None, error=None):

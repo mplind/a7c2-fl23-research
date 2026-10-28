@@ -559,25 +559,15 @@ STRINGS = {
     '核对原厂恢复': 'Verify Factory Restore',
     '卸载驱动': 'Remove Drivers',
     # Apple-style interface (shell.py, window.py layout rewrite)
-    # Worker errors with fixed text, translated where window.finished displays them.
-    '管理员进程意外结束，相机操作结果未知。请导出诊断包，不要重复刚才的操作。': 'The administrator process ended unexpectedly, so the camera operation result is unknown. Do not repeat the operation',
-    '终端授权未完成（窗口已关闭或密码不正确）；本次相机操作尚未开始，可重新点击原按钮。': 'Terminal authorization did not complete (window closed or wrong password); the camera operation has not started, and you can click the same button again',
-    '尚未确认新的冷启动。完成断电重开后再核对，不要重复写入。': 'No new cold boot has been confirmed yet. Finish the cold reload, then verify again; do not repeat the write',
-    # The firmware identity gate (looktool.devicesession, looktool.buildprofile.UNSUPPORTED).
-    '此相机的固件版本不受支持，未写入任何内容。（appFw.so %s…，cpapp-b.bin %s…）': "This camera's firmware build isn't supported. Nothing was written. (appFw.so %s…, cpapp-b.bin %s…)",
-    '尚未识别此相机的固件版本，未写入任何内容。': "This camera's firmware build hasn't been identified, so nothing was written",
-    # Restores from saved bytes, and Factory Restore references, of another build (looktool.buildprofile).
-    '所保存的内容来自固件版本 %s，而相机是 %s，未写入任何内容。': 'The saved bytes come from firmware build %s, but the camera is %s. Nothing was written',
-    '无法确定所保存的内容来自哪个固件版本，未写入任何内容。': "The firmware build the saved bytes come from can't be identified, so nothing was written",
-    '所选原厂文件是固件版本 %s，而相机是 %s，未写入任何内容。': 'The selected Sony firmware file is build %s, but the camera is %s. Nothing was written',
-    '所选原厂文件不是受支持的固件版本，未写入任何内容。': "The selected Sony firmware file isn't a supported firmware build, so nothing was written",
-    '此任务记录的固件版本是 %s，而相机现在是 %s，没有核对或写入任何内容。': 'This job recorded firmware build %s, but the camera is now %s. Nothing was verified or written',
     # The camera's firmware build on the Connection page (window.show_firmware_build); the two build names are buildprofile's label_zh.
     '相机固件版本': 'Camera firmware build',
     '尚未检测': 'Not checked yet',
     'Sony 2.01（公开更新）': 'Sony 2.01 (public update)',
     'Sony 2.01（机身版本，2025 年 9 月 23 日）': 'Sony 2.01 (camera build, 23 Sep 2025)',
     '固件版本不受支持：已禁用更改': 'Unsupported firmware build: changes are disabled',
-    # Connection test log line (worker.connection_build).
-    '读取相机程序文件以识别固件版本（只读）。': 'Reading the camera program files to identify the firmware build (read-only).',
+    # The macOS Terminal window a camera job opens (platforms.macos_authorization), in the job's language.
+    'A7C II Tools：本次相机操作需要以管理员权限接管 USB。': 'A7C II Tools needs administrator rights to take over USB for this camera operation.',
+    '请在下方输入 Mac 登录密码（输入时不显示）。密码只交给系统 sudo，程序不读取或保存。': 'Enter your Mac login password below. It stays hidden as you type. Only macOS sudo receives it; A7C II Tools never reads or stores it.',
+    '相机操作已结束（退出码 %s），结果以 A7C II Tools 窗口为准。现在可以关闭此终端窗口。': 'The camera operation has ended (exit code %s). The A7C II Tools window shows the result. You can close this Terminal window.',
+    'FL2／FL3：': 'FL2/FL3: ',
 }

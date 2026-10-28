@@ -26,8 +26,8 @@ PROGRAMS = ('appFw.so', 'cpapp-b.bin')
 SCHEMA = 'a7c2-factory-regions/1'
 PUBLIC_LOOK_TABLE = 0x4c7cf7c
 LOOK_TABLE_BYTES = 12
-# Refusals, each a Chinese source string with its English in desktopapp/en.py. The formatted ones are
-# matched back by refusal() so the window can show them translated.
+# Refusals, each a Chinese source string with its English in desktopapp/en_engine.py, which the window
+# shows by format. refusal() matches the formatted ones back, so a stopped job can be recognised.
 UNSUPPORTED = '此相机的固件版本不受支持，未写入任何内容。（appFw.so %s…，cpapp-b.bin %s…）'
 SAVED_OTHER_BUILD = '所保存的内容来自固件版本 %s，而相机是 %s，未写入任何内容。'
 SAVED_UNIDENTIFIED = '无法确定所保存的内容来自哪个固件版本，未写入任何内容。'

@@ -9,6 +9,7 @@ import uuid
 import zipfile
 from .paths import data_root, write_json
 from . import VERSION
+from . import i18n
 
 from .actions.catalog import CAMERA_ACTIONS, POWER_ACTIONS, DIRECT_ACTIONS, REMOTE_ACTIONS
 
@@ -17,8 +18,10 @@ def new_job(action, arguments):
     root = data_root() / 'runs' / (datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
                                  + '-' + action + '-' + uuid.uuid4().hex[:6])
     root.mkdir(parents=True)
+    # The interface language goes with the job, for the one window the worker shows itself: the macOS
+    # Terminal that asks for the password. Logs and status files stay in the engine's own words.
     request = {'schema': 'a7c2-desktop-job/1', 'action': action, 'arguments': arguments,
-               'job_dir': str(root), 'version': VERSION}
+               'job_dir': str(root), 'version': VERSION, 'language': i18n.language()}
     write_json(root / 'request.private.json', request)
     write_json(root / 'status.private.json', {'phase': 'QUEUED', 'action': action})
     return root
