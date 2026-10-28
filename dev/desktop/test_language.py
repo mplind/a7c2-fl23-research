@@ -89,7 +89,7 @@ def test_language_selector_offers_english_and_chinese(ui):
     create, _, _ = ui
     window = create()
     assert [window.language.itemData(index) for index in range(window.language.count())] == ['en', 'zh_CN']
-    assert window.language.itemText(1) == '简体中文'
+    assert window.language.itemText(1) == 'Chinese (Simplified)'  # 简体中文 in the Chinese interface
 
 
 def test_language_change_keeps_input_and_applies_on_next_launch(ui):
@@ -194,9 +194,9 @@ def test_other_worker_errors_are_shown_verbatim_inside_the_english_frame(ui):
 
 
 def test_english_entries_keep_format_specifiers_and_file_extensions():
-    specifiers = re.compile(r'%(?:\([^)]+\))?[#0\- +]*\d*(?:\.\d+)?[diouxXeEfFgGcrsa%]')
+    from desktopapp.engine_text import specifiers
     for source, english in STRINGS.items():
-        assert specifiers.findall(source) == specifiers.findall(english), source
+        assert specifiers(source) == specifiers(english), source
         for extension in re.findall(r'\*\.[A-Za-z0-9]+', source):
             assert extension in english, source
         assert not HAN.search(english), source

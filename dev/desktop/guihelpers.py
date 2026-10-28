@@ -2,13 +2,11 @@
 import re
 from unittest.mock import Mock
 from desktopapp import jobs
+from desktopapp.engine_text import CJK  # noqa: F401  every CJK character Task 8b names, shared with the translator
 from desktopapp.paths import write_json
 
 # Han characters and full-width punctuation: none may appear in the English interface.
 HAN = re.compile('[㐀-鿿（），：；、。“”]')
-# Every CJK character Task 8b names: CJK symbols and punctuation through the unified ideographs, the
-# compatibility ideographs, and the half- and full-width forms.
-CJK = re.compile('[\u3000-\u9fff\uf900-\ufaff\uff00-\uffef]')
 
 
 def stopped_banner(english):

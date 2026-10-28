@@ -14,7 +14,7 @@ ENGINE = {
     '等待在「终端」窗口输入 Mac 登录密码；尚未接管 USB 或开始相机操作。输入密码前关闭终端窗口不会刷写相机。\n':
         'Waiting for your Mac login password in Terminal. USB is not taken over and no camera operation has started; closing Terminal before you enter the password writes nothing.\n',
     '管理员进程意外结束，相机操作结果未知。请导出诊断包，不要重复刚才的操作。':
-        "Don't repeat the task. The administrator process ended unexpectedly, so the camera result is unknown.",
+        "Don't repeat the task. The administrator process ended unexpectedly, so the camera result is unknown. Export diagnostics.",
     '终端授权未完成（窗口已关闭或密码不正确）；本次相机操作尚未开始，可重新点击原按钮。':
         "Terminal authorization didn't finish (window closed or wrong password). The camera task hasn't started; click the same button to try again.",
     '终端授权未完成，相机操作未报告开始。请保留日志；系统详情：%s':
@@ -40,8 +40,8 @@ ENGINE = {
     '相机内容已与上次恢复结果不同（%s），通常是之后又安装或修改过功能。旧记录保留；按当前相机字节重新生成原厂恢复计划。':
         "The camera no longer matches the last restore (%s), usually because features were installed or changed since. The old record stays; planning the factory restore from the camera's current bytes.",
 
-    '上次恢复是为另一个固件版本做的（%s）。旧记录保留；按相机当前的固件版本和字节重新生成原厂恢复计划。':
-        "The last restore was for another firmware build (%s). Its record stays; planning the factory restore for the camera's current build and bytes.",
+    '上次恢复记录的固件版本是 %s，而相机现在是 %s。旧记录保留；按相机当前的固件版本和字节重新生成原厂恢复计划。':
+        "The last restore recorded firmware build %s, but the camera is now %s. Its record stays; planning the factory restore for the camera's current build and bytes.",
 
     # desktopapp.allinone: one-click install.
     '本次一键安装已结束，没有重复写入。': 'This one-click install already finished. Nothing was written again.',
@@ -51,7 +51,7 @@ ENGINE = {
         'The selected install is complete. Check live view, names, shooting and playback on the camera.',
     '竖屏已保存开启，并已核对重开后的实际运行状态。': 'Vertical display is saved on, and was checked running after the restart.',
     '旧安装的竖屏仅在本次开机开启；可用新版竖屏页保存开启。':
-        'This older install turned on vertical display until the camera powers off. Use the Vertical Display page to keep it on.',
+        'This older install turned on vertical display until the camera powers off. Use the Vertical display page to keep it on.',
     '一键安装：%s': 'One-click install: %s',
     '执行：%s': 'Running: %s',
     '相机安装与重启核对已通过；只继续电脑端插件步骤。':
@@ -78,6 +78,26 @@ ENGINE = {
     '缺少原始错误，请导出包含子事务的新诊断包': 'original error missing; export new diagnostics, which include the sub-transactions',
     '上次安装结果需要核对，不会重复刷写。保留本目录并查看完整错误：%s%s':
         "The last install's result needs checking, so nothing is rewritten. Keep this folder and read the full error: %s%s",
+
+    # Lines the worker builds from several messages, each catalogued whole (engine_text never pieces a
+    # line together). The one-click summary appends the vertical display outcome:
+    '所选安装已完成；请在机身检查预览、名称、拍摄和回放。竖屏已保存开启，并已核对重开后的实际运行状态。':
+        'The selected install is complete. Check live view, names, shooting and playback on the camera. Vertical display is saved on, and was checked running after the restart.',
+    '所选安装已完成；请在机身检查预览、名称、拍摄和回放。旧安装的竖屏仅在本次开机开启；可用新版竖屏页保存开启。':
+        'The selected install is complete. Check live view, names, shooting and playback on the camera. This older install turned on vertical display until the camera powers off. Use the Vertical display page to keep it on.',
+    # the review error joins the folder and the child job's stage and error:
+    '上次安装结果需要核对，不会重复刷写。保留本目录并查看完整错误：%s；原始阶段：%s；原始错误：%s':
+        "The last install's result needs checking, so nothing is rewritten. Keep this folder and read the full error: %s; original stage: %s; original error: %s",
+    '上次安装结果需要核对，不会重复刷写。保留本目录并查看完整错误：%s；原始阶段：未知；原始错误：%s':
+        "The last install's result needs checking, so nothing is rewritten. Keep this folder and read the full error: %s; original stage: unknown; original error: %s",
+    # and the restart steps it prints (reloadguide.text(setup=True), plain and resource_reload) join
+    # interface texts into these lines; the English matches the guide the window shows.
+    '下一步：接回 USB，选择海量存储，再点首页“继续安装”。工具先核对加载，不重复刷写。':
+        'Next: Reconnect USB in Mass Storage mode and click "Continue installation". The tool verifies the load first; it doesn’t write again.',
+    '加载核对只读取状态，不会再刷一次。点“确定”只关闭说明，不会自动断电或代替你确认测试。':
+        'Verifying only reads; it never writes again. "OK" only closes these steps. It doesn’t power anything off or confirm the test for you.',
+    '开机后先不用拍照。接回 USB 海量存储，再点首页“继续安装”。工具会核对新的冷启动和只读挂载，然后继续剩余程序，不重复写名称、不重装驱动。':
+        'No need to take a photo yet. Reconnect USB in Mass Storage mode, then click "Continue installation" on the One-click install page. The tool checks for a fresh cold start and the read-only mount, then writes the remaining programs. Names aren’t rewritten and drivers aren’t reinstalled.',
 
     # desktopapp.exiftool, official, presets, lookbatch, reviewnames
     '正在准备 Lightroom 的 ExifTool 辅助程序（仅电脑端，不连接相机）。':
@@ -195,6 +215,16 @@ ENGINE = {
         'Names are done, but the read-only mount is busy. Finish the settings and reload preparation, then restart and verify.',
     '旧任务名称备份清理未完成，相机名称文件没有改动；请完整断电重开后再点恢复。Backup cleanup incomplete: %s':
         "The old job's name backup cleanup didn't finish; the camera's name files are unchanged. Do a cold restart, then click restore again. Backup cleanup incomplete: %s",
+
+    # A failed name operation raises its guidance followed by the native report (checkpointworker.py:155).
+    '相机 /usr 分区的临时空间用完了：已恢复 %d/%d 个名称文件，程序和已恢复的部分保持不变，相机可以正常开机使用。旧文件占用的空间要断电后才释放。%s只会处理剩下的部分。Checkpoint name operation incomplete: %s':
+        "The camera's /usr partition ran out of temporary space: %d/%d name files restored. Programs and the restored files are unchanged, and the camera starts and works normally. Old files free their space only after a power-off. %s Only the remaining files are processed. Checkpoint name operation incomplete: %s",
+    '写入前检查发现相机 /usr 分区临时空间不足，本次没有写入。%sCheckpoint name operation incomplete: %s':
+        "The pre-write check found too little temporary space on the camera's /usr partition. Nothing was written. %s Checkpoint name operation incomplete: %s",
+    '相机 /usr 分区仍处于可写挂载，通常是上一次操作后还没有完整断电重开；本次没有写入。%sCheckpoint name operation incomplete: %s':
+        "The camera's /usr partition is still mounted writable, usually because the camera has not had a cold restart since the last operation. Nothing was written. %s Checkpoint name operation incomplete: %s",
+    '名称内容已完成，但只读挂载忙碌；需要完成设置与重新加载准备后再重开核对。Checkpoint name operation incomplete: %s':
+        'Names are done, but the read-only mount is busy. Finish the settings and reload preparation, then restart and verify. Checkpoint name operation incomplete: %s',
 
     # looktool.compilelook, coupledfit: making an A7Look on the computer.
     '已生成近似结果；最终优化未完全收敛。验证色样平均预测误差 %.2f / 255，不能代表实机色彩准确度。':
@@ -425,7 +455,7 @@ ENGINE = {
     '補丁位置越界：%s %s': 'Patch offset out of range: %s %s',
     'CP FL23 原生曲線／模式位置衝突：%s': 'CP FL2/FL3 native curve or mode site conflict: %s',
     '補丁位置衝突：%s %s；沒有寫入；目前位元組(%s bytes, first 64)=%s。若使用過舊版本，請先依 README 恢復原廠功能後再安裝；保留本次日誌。':
-        'Patch site conflict: %s %s; nothing written; current bytes (%s bytes, first 64)=%s. If you used an older version, run Factory Restore as the README describes, then install again. Keep this log.',
+        'Patch site conflict: %s %s; nothing written; current bytes (%s bytes, first 64)=%s. If you used an older version, run a factory restore (Factory restore page) as the README describes, then install again. Keep this log.',
     '完整還原候選不符': "Full-restore candidate doesn't match",
     '相容任務來源或目標已變': 'Compatibility job source or target changed',
     '相容候選已變': 'Compatibility candidate changed',
@@ -480,13 +510,20 @@ ENGINE = {
     '自动准备电子快门声支援；已有开关直接接入，不要求先手动开启或关联旧任务。':
         'Preparing electronic shutter sound support. An existing switch is used as is; no need to turn it on first or link an old job.',
     '这个声音工作目录里没有可用的永久声音安装记录，本次没有连接相机。要还原相机的原厂快门音效，请点“恢复原厂功能”：它按相机当前字节还原全部声音程序，不依赖旧记录。':
-        "This sound folder has no usable install record, so the camera was not connected. To get the factory shutter sound back, use Factory Restore: it restores every sound program from the camera's current bytes, without old records.",
+        "This sound folder has no usable install record, so the camera was not connected. To get the factory shutter sound back, use the Factory restore page: it restores every sound program from the camera's current bytes, without old records.",
     '最近的声音安装记录不可直接恢复；改用同一机身最近一次完成的安装记录，从相机当前字节规划恢复。':
         "The latest sound install record can't be restored directly. Using this camera's last finished install record and planning the restore from its current bytes.",
     '\n电脑端音频处理失败，本次没有相机读写；请修正输入后重试。':
         '\nAudio processing failed on the computer; the camera was not read or written. Fix the input and try again.',
     '\n电脑端转换失败，本次没有相机读写；请修正输入后重新转换。':
         '\nConversion failed on the computer; the camera was not read or written. Fix the input and convert again.',
+
+    # desktopapp.actions.recipe: a stopped recipe write, its error then the outcome hint.
+    '%s 相机可能已执行、也可能未执行最后一次写入；请先重新读取相机，再做任何操作。':
+        '%s The camera may or may not have applied the last write; read the camera again before anything else.',
+    '%s 相机接受了最后一次写入，但没有生效。': '%s The camera accepted the last write but did not apply it.',
+    '%s 相机拒绝了最后一次写入。': '%s The camera refused the last write.',
+    '%s 最后一次写入没有发出。': '%s The last write was not sent.',
 
     # verticaltool.portraitworker
     '竖屏线框操作停止：文件 %d，步骤 %d，窗口 %d，错误 %d；已写 %d 字节。原生报告：%s':

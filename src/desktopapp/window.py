@@ -10,7 +10,7 @@ import uuid
 from PySide6 import QtCore, QtGui, QtWidgets as W
 from . import VERSION
 from . import jobs
-from .engine_text import display as shown  # worker and engine text, in English when the interface is
+from .engine_text import display  # worker and engine text, shown in English when the interface is English
 from . import presets
 from . import reloadguide
 
@@ -100,7 +100,7 @@ class Window(W.QMainWindow):
         self.language = W.QComboBox()
         self.language.setObjectName('interface_language')
         self.language.addItem('English', 'en')
-        self.language.addItem('简体中文', 'zh_CN')
+        self.language.addItem(tr('简体中文'), 'zh_CN')  # Chinese (Simplified) when the interface is English
         self.language.setCurrentIndex(1 if self.settings.get('language') == 'zh_CN' else 0)
         self.language.currentIndexChanged.connect(self.save_language)
         self.buttons.append(self.language)
@@ -673,7 +673,7 @@ class Window(W.QMainWindow):
         try:
             looks=looklibrary.catalog()
         except looklibrary.READ_ERRORS as exc:
-            W.QMessageBox.warning(self,tr('胶片外观库无法读取'),shown(str(exc)));return
+            self.warn(tr('胶片外观库无法读取'), exc);return
         if not looks:
             W.QMessageBox.information(self,tr('胶片外观库'),tr('此安装没有附带胶片外观库。'));return
         dialog=FilmLibraryDialog(looks,self,notices=looklibrary.location())
@@ -696,7 +696,7 @@ class Window(W.QMainWindow):
         try:
             dialog=PreviewDialog(path,cache=data_root()/'preview-cache',parent=self)
         except READ_ERRORS as exc:
-            W.QMessageBox.warning(self,tr('无法预览此外观'),shown(str(exc)));return
+            self.warn(tr('无法预览此外观'), exc);return
         shell.modal(dialog)
 
     def setup_looks(self,arguments):
@@ -803,7 +803,7 @@ class Window(W.QMainWindow):
             from .lookbatch import read_only_failure
             if read_only_failure(state):
                 self.launch('direct_looks_import',self.look_batch_args());return
-            W.QMessageBox.warning(self,tr('上次任务尚未完成'),(shown(state['error']) if state.get('error') else tr('请保留原记录，核对未知结果后再继续。'))+tr('\n任务目录：')+prior)
+            W.QMessageBox.warning(self,tr('上次任务尚未完成'),(display(state['error']) if state.get('error') else tr('请保留原记录，核对未知结果后再继续。'))+tr('\n任务目录：')+prior)
             QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(prior));return
         self.launch('direct_looks_import',self.look_batch_args())
 
@@ -885,7 +885,7 @@ class Window(W.QMainWindow):
         try:
             return shuttersounds.catalog()
         except (OSError, ValueError) as exc:
-            self.log.appendPlainText(tr('内置快门声库无法读取，已隐藏预设：') + shown(str(exc)))
+            self.log.appendPlainText(tr('内置快门声库无法读取，已隐藏预设：') + display(str(exc)))
             return []
 
     def choose_sound_preset(self, index):
@@ -1100,7 +1100,7 @@ class Window(W.QMainWindow):
         if not path:return
         try:hald.write_identity(path)
         except (OSError,ValueError) as exc:
-            W.QMessageBox.warning(self,tr('保存失败'),shown(str(exc)));return
+            self.warn(tr('保存失败'), exc);return
         W.QMessageBox.information(self,tr('HALD 图像已保存'),
             tr('在 DxO PhotoLab 中打开此图像，先应用“无校正”预设，再只应用 FilmPack 胶片渲染；不要加颗粒、暗角、锐化或其他效果。以原尺寸导出为未压缩的 16 位 TIFF（sRGB），再把导出的 TIFF 选为这里的源文件。'))
 
@@ -1111,7 +1111,7 @@ class Window(W.QMainWindow):
         try:
             _,report=hald.accept(hald.read(path))
         except ValueError as exc:
-            W.QMessageBox.warning(self,tr('HALD 导出有问题'),shown(str(exc)));return
+            self.warn(tr('HALD 导出有问题'), exc);return
         if report['identity_error_max']<=hald.CLEAN:
             text=tr('导出与原始 HALD 一致（最大差 %.2f 级）：没有开启任何自动校正。用同样的设置导出胶片外观。')%report['identity_error_max']
         else:
@@ -1141,7 +1141,7 @@ class Window(W.QMainWindow):
             try:
                 fit_looks = self.setup_looks(arguments)
             except READ_ERRORS as exc:  # before any driver, fit, power or administrator prompt
-                W.QMessageBox.warning(self, tr('请检查所选外观'), shown(str(exc))); return
+                self.warn(tr('请检查所选外观'), exc); return
         if action == 'setup_all' and not self.drivers_first(arguments):
             return
         if action=='direct_looks_import' and arguments.get('failed_workspace'):
@@ -1156,13 +1156,13 @@ class Window(W.QMainWindow):
                 arguments=dict(arguments,operations=chosen['slot_operations'])
                 fit_looks=[r for r in arguments['operations'] if r['action']=='write']
             except READ_ERRORS as exc:
-                W.QMessageBox.warning(self,tr('请检查操作清单'),shown(str(exc)));return
+                self.warn(tr('请检查操作清单'), exc);return
         if action == 'sound_audition':
             from .actions.sound import has_conversion
             try:
                 ready = has_conversion(arguments['workspace'])
             except (ValueError, OSError, KeyError) as exc:
-                W.QMessageBox.warning(self, tr('声音工作区需要核对'), shown(str(exc)));return
+                self.warn(tr('声音工作区需要核对'), exc);return
             if not ready:
                 W.QMessageBox.information(self, tr('请先转换片段'), tr('还没有转换好的声音。请先选择声音文件、设置起点和长度，点「转换所选片段」，成功后再试听。'));return
         if action == 'restore_verify' and not Path(arguments.get('workspace', ''), 'rollback.private.json').is_file():
@@ -1280,15 +1280,14 @@ class Window(W.QMainWindow):
                 stream.write(text)
             self.append_log(text.rstrip())
 
+    def warn(self, title, exc):
+        """An alert titled `title` that shows the error `exc` raised, engine text in the interface language."""
+        W.QMessageBox.warning(self, title, display(str(exc)))
+
     def append_log(self, text):
-        """Worker output in the log pane, in the interface language. The pane doesn't wrap, so the cursor
-        goes to the start of the last line: opening the pane shows lines from their start, not the end of
-        a long last one."""
-        self.log.appendPlainText(shown(text))
-        cursor = self.log.textCursor()
-        cursor.movePosition(QtGui.QTextCursor.End)
-        cursor.movePosition(QtGui.QTextCursor.StartOfBlock)
-        self.log.setTextCursor(cursor)
+        """Worker output in the log pane, in the interface language; worker.log and process.log keep it
+        as written."""
+        self.log.appendPlainText(display(text))
 
     def tail_log(self):
         if not self.current_job:
@@ -1360,8 +1359,10 @@ class Window(W.QMainWindow):
         self.status.setText((tr('名称已写好，程序尚未写入。按弹窗断电重开、接回 USB，再点击首页“继续安装”。') if resource_wait and setup_wait else
                              tr('名称已写好，程序尚未写入。按弹窗断电重开、接回 USB，再点自定义外观页“继续槽位更改”。') if resource_wait else
                              tr('批量外观写入完成，已完整读回；按弹窗统一断电重开即可加载。') if status.get('action')=='direct_looks_import' else
-                             tr('FL23 操作完成，写入与完整读回均已结束。重开相机后生效，无需再点核对。') if
-                             status.get('result',{}).get('mode') in ('fl23_enable','fl23_disable') else
+                             tr('FL2／FL3 已启用：写入并完整读回。重开相机后生效，无需再点核对。') if
+                             status.get('result',{}).get('mode')=='fl23_enable' else
+                             tr('FL2／FL3 已从列表移除：写入并完整读回。重开相机后生效，无需再点核对。') if
+                             status.get('result',{}).get('mode')=='fl23_disable' else
                              tr('读写已结束。拔 USB → 等灯停 → 关机并等灯灭 → 取电池至少 1 分钟 → 开机 → 接回 USB → 点击首页“继续安装”。详见弹窗。') if setup_wait else
                              tr('读写已结束。拔 USB → 等灯停 → 关机并等灯灭 → 取电池至少 1 分钟 → 开机；详见弹窗。')) if waiting else
                            tr('名称与只读挂载已确认；程序尚未安装，请点首页“继续安装”。') if resource_ready and status.get('action')=='setup_all' else
@@ -1412,10 +1413,10 @@ class Window(W.QMainWindow):
                 result=status['result']
                 W.QMessageBox.information(self,tr('USB 只读检测通过'),
                     tr('已完成 %d 轮、共 %.1f MB 程序文件只读传输，持续 %.0f 秒，每轮字节一致。\n\n没有写入固件、设置或运行原生写入程序。\n\n%s')%
-                    (len(result['rounds']),result['total_bytes']/1024/1024,result.get('seconds',0),shown(result['note'])))
+                    (len(result['rounds']),result['total_bytes']/1024/1024,result.get('seconds',0),display(result['note'])))
             else:
                 error=status.get('error',tr('请查看日志并换线后重测。'))
-                W.QMessageBox.warning(self,tr('USB 连接检测未完成') if '未完成' in error else tr('USB 连接检测未通过'),shown(error))
+                W.QMessageBox.warning(self,tr('USB 连接检测未完成') if '未完成' in error else tr('USB 连接检测未通过'),display(error))
         elif waiting:
             self.show_reload_guide(setup=status.get('action')=='setup_all', mode=('resource_reload' if resource_wait else status.get('action') if
                 status.get('action','').startswith('sound_') else status.get('result',{}).get('mode')))
@@ -1432,17 +1433,19 @@ class Window(W.QMainWindow):
         every button that writes to the camera, until a later test finds a supported one."""
         from looktool.buildprofile import by_key
         build = by_key(key) if key else None
-        self.build_unsupported = build is None
-        self.build_label.setText(tr(build.label_zh) if build else tr('固件版本不受支持：已禁用更改'))
-        self.build_label.setProperty('warning', self.build_unsupported)
-        theme.repolish(self.build_label)
+        self.set_build_line(tr(build.label_zh) if build else tr('固件版本不受支持：已禁用更改'), unsupported=build is None)
 
     def show_firmware_unchecked(self):
         """The Connection page's line as at launch: no build checked yet. As before any test, the write
         buttons are no longer held disabled; the worker's gate still refuses an unsupported camera."""
-        self.build_unsupported = False
-        self.build_label.setText(tr('尚未检测'))
-        self.build_label.setProperty('warning', False)
+        self.set_build_line(tr('尚未检测'), unsupported=False)
+
+    def set_build_line(self, text, *, unsupported):
+        """The build line's text, styled as a warning for an unsupported build (apply_write_gate then keeps
+        the write buttons disabled)."""
+        self.build_unsupported = unsupported
+        self.build_label.setText(text)
+        self.build_label.setProperty('warning', unsupported)
         theme.repolish(self.build_label)
 
     def apply_write_gate(self):
@@ -1475,7 +1478,7 @@ class Window(W.QMainWindow):
         if status.get('action') in RECIPE_ACTIONS:
             from .actions.recipe import localized
             return localized(status['error'],tr)
-        return shown(status['error'])
+        return display(status['error'])
 
     def process_error(self, error):
         if self.process and error == QtCore.QProcess.FailedToStart:
@@ -1493,7 +1496,7 @@ class Window(W.QMainWindow):
             try:
                 jobs.export_support(self.current_job, path)
             except Exception as exc:
-                W.QMessageBox.warning(self, tr('导出失败'), shown(str(exc)))
+                self.warn(tr('导出失败'), exc)
 
     def cancel_offline(self):
         if self.process and not self.camera_operation:

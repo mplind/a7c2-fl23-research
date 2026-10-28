@@ -280,8 +280,9 @@ class FactoryRecoveryTests(unittest.TestCase):
         from looktool.buildprofile import JOB_OTHER_BUILD
         finished = dict(self.prior, phase='AWAITING_RELOAD')
         for error, said, unsaid in (
-                (JOB_OTHER_BUILD % ('public-2.01', 'body-2.01-20250923'), '另一个固件版本', '通常是之后又安装'),
-                ('Full program readback differs: appFw.so', '通常是之后又安装', '另一个固件版本')):
+                (JOB_OTHER_BUILD % ('public-2.01', 'body-2.01-20250923'),
+                 '上次恢复记录的固件版本是 public-2.01，而相机现在是 body-2.01-20250923。', '通常是之后又安装'),
+                ('Full program readback differs: appFw.so', '通常是之后又安装', '上次恢复记录的固件版本')):
             def refused(root, job, error=error):
                 job.verify_direct.side_effect = direct.ContentChanged(error)
             printed = io.StringIO()

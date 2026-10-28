@@ -6,15 +6,15 @@ an engine error in a dialog) through display(), which translates when the interf
 
 A message is found in the two catalogues, en.STRINGS (the interface) and en_engine.ENGINE (the worker
 and the engine), keyed by the Chinese source:
-- by its exact text;
-- by its format: each %s, %d … in a key matches the value the code filled in, and a value that is
-  itself a catalogued message is translated in turn;
-- line by line, when a message runs over several lines;
-- as the parts of a line the code built from several messages (a known message followed by another,
-  or by English), longest part first.
-A traceback's source line keeps its code but shows a Chinese string literal in English, or as …
-when the literal is only part of a message. Text with no entry, such as a file name read from the
-camera, is shown unchanged.
+- by its exact text, or one line of a longer entry;
+- by its format: each %s, %d … in a key matches the value the code filled in.
+A value is translated only when it is itself a message: an engine entry, or an interface sentence that
+ends its clause (。；：！？). Anything else is data and stays as printed, so a catalogued format with an
+uncatalogued Chinese value, such as a disk or look name, shows that value unchanged. A line no entry
+matches as a whole is shown unchanged too, never pieced together from shorter entries; a line the code
+builds from several messages needs its own entry. A traceback's source line keeps its code and shows a
+Chinese string literal in English, or as … when the literal is only part of a message. Lines longer than
+LONGEST are not matched against formats, so a huge line costs no time.
 """
 import json
 import re
@@ -23,26 +23,61 @@ from . import i18n
 from .en import STRINGS
 from .en_engine import ENGINE
 
+# CJK symbols and punctuation through the unified ideographs, the compatibility ideographs, and the half-
+# and full-width forms; HAN is the ideographs alone. The tests and the coverage scan use these too.
 CJK = re.compile('[\u3000-\u9fff\uf900-\ufaff\uff00-\uffef]')
 HAN = re.compile('[\u3400-\u9fff\uf900-\ufaff]')
 SPECIFIER = re.compile(r'%(?:\(([^)]+)\))?[#0\- +]*\d*(?:\.\d+)?([diouxXeEfFgGcrsa%])')
 # What each conversion can have printed. Text is matched as briefly as the rest of the format allows.
 VALUE = {**dict.fromkeys('diu', r'-?\d+'), **dict.fromkeys('fFeEgG', r'-?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?|-?inf|nan'),
          **dict.fromkeys('xXo', r'[0-9a-fA-F]+')}
+CLAUSE_END = ('\u3002', '\uff1b', '\uff1a', '\uff01', '\uff1f')  # an interface entry ending so is a sentence
+LONGEST = 2000  # longer lines skip the formats: a format with two values can take quadratic time
 # Full-width punctuation left between translated or ASCII text, once no Chinese word remains.
 PUNCTUATION = {'，': ', ', '。': '. ', '；': '; ', '：': ': ', '（': ' (', '）': ') ', '、': ', ', '！': '! ', '？': '? ',
                '「': '"', '」': '"', '『': '"', '』': '"', '《': '"', '》': '"', '【': '[', '】': ']', '／': '/',
                '～': '~', '－': '-', '＋': '+', '＝': '=', '\u3000': ' '}
-LINE_START = re.compile(r'^(\s*)(.*?)(\s*)$', re.S)
 EXCEPTION = re.compile(r'^([A-Za-z_][\w.]*): (.*)$', re.S)
 JSON_STRING = re.compile(r'^((?:"(?:[^"\\]|\\.)*":\s*)?)"((?:[^"\\]|\\.)*)"(,?)$')
 CODE_LITERAL = re.compile(r"""(?P<quote>['"])(?P<text>(?:(?!(?P=quote))[^\\\n]|\\.)*)(?P=quote)""")
 
 
+def specifiers(text):
+    """The %-specifiers in `text`, in order, as written."""
+    return [match.group() for match in SPECIFIER.finditer(text)]
+
+
+def _pairs():
+    """(Chinese, English, catalogue) for every entry, and for each line of a multi-line entry whose
+    English has as many lines."""
+    for table in (STRINGS, ENGINE):
+        for source, english in table.items():
+            yield source, english, table
+            if '\n' in source and source.count('\n') == english.count('\n'):
+                for zh, en in zip(source.split('\n'), english.split('\n')):
+                    if CJK.search(zh):
+                        yield zh, en, table
+
+
+def conflicts():
+    """{Chinese: set of English} for each Chinese text given different English (spacing aside) by two
+    entries, or by an entry and a line of a longer one. Each must read one way; the tests require none."""
+    seen, found = {}, {}
+    for zh, en, _ in _pairs():
+        if zh in seen and seen[zh].strip() != en.strip():
+            found.setdefault(zh, {seen[zh]}).add(en)
+        seen.setdefault(zh, en)
+    return found
+
+
+def _is_format(source):
+    return any(match.group(2) != '%' for match in SPECIFIER.finditer(source))
+
+
 class Format:
     """A catalogue key with %-specifiers, as a pattern that recognises the formatted text."""
 
-    def __init__(self, source, english):
+    def __init__(self, source, english, table):
         pieces, names, regex = SPECIFIER.split(source), [], ''
         literal = pieces[0::3]
         for index, (name, kind) in enumerate(zip(pieces[1::3], pieces[2::3])):
@@ -53,103 +88,79 @@ class Format:
                 names.append(name)
                 regex += '(' + VALUE.get(kind, '.*?') + ')'
         regex += re.escape(literal[-1])
-        self.source, self.english, self.names = source, english, names
+        self.source, self.english, self.names, self.engine = source, english, names, table is ENGINE
         self.pattern = re.compile(regex, re.S)
-        self.text = ''.join(literal)      # the key without its specifiers: how specific it is
-        self.closed = bool(literal[-1])   # ends in fixed text, so it can be found inside a line
+        self.text = ''.join(literal)  # the key without its specifiers: how specific it is
 
-    def fill(self, values):
-        """The English with each specifier replaced by the matching (translated) value, in order or by name."""
-        named = dict(zip(self.names, values))
-        ordered = iter(values)
+    def translate(self, match):
+        """The English for the text `match` found, each specifier filled with its value: in English when
+        the value is itself a message (see _value), else as printed. Named specifiers fill by name."""
+        values = [_value(value) for value in match.groups()]
+        named, ordered = dict(zip(self.names, values)), iter(values)
 
-        def value(match):
-            if match.group(2) == '%':
+        def fill(specifier):
+            if specifier.group(2) == '%':
                 return '%'
-            return named[match.group(1)] if match.group(1) else next(ordered)
-        return SPECIFIER.sub(value, self.english)
+            return named[specifier.group(1)] if specifier.group(1) else next(ordered)
+        return SPECIFIER.sub(fill, self.english)
 
 
 def _catalogue():
-    """(exact, formats): every entry, plus each line of a multi-line entry whose English has as many lines."""
-    exact, formats = {}, []
-    for source, english in list(STRINGS.items()) + list(ENGINE.items()):
-        pairs = [(source, english)]
-        if '\n' in source and source.count('\n') == english.count('\n'):
-            pairs += [line for line in zip(source.split('\n'), english.split('\n')) if CJK.search(line[0])]
-        for zh, en in pairs:
-            if any(match.group(2) != '%' for match in SPECIFIER.finditer(zh)):
-                if len(HAN.findall(SPECIFIER.sub('', zh))) >= 2:  # '%s（%s）' alone would match too much
-                    formats.append(Format(zh, en))
-            else:
-                exact.setdefault(zh, en)
+    """(exact, formats, values): every exact text; every format holding at least two Chinese
+    characters ('%s（%s）' alone would match too much), most specific first; and the exact texts a
+    filled-in value may be read as (engine entries and interface sentences)."""
+    exact, formats, values = {}, [], {}
+    for zh, en, table in _pairs():
+        if _is_format(zh):
+            if len(HAN.findall(SPECIFIER.sub('', zh))) >= 2:
+                formats.append(Format(zh, en, table))
+            continue
+        exact.setdefault(zh, en)  # one English per text: conflicts() is empty, the tests check it
+        if table is ENGINE or zh.rstrip().endswith(CLAUSE_END):
+            values.setdefault(zh, en)
     formats.sort(key=lambda found: -len(found.text))
-    return exact, formats
+    return exact, formats, values
 
 
-EXACT, FORMATS = _catalogue()
+EXACT, FORMATS, VALUES = _catalogue()
+VALUE_FORMATS = [found for found in FORMATS if found.engine]
 
 
-def _index():
-    """The parts a line can be built from, listed under the character they start with: exact entries
-    holding at least two Chinese characters, longest first, and single-line formats. Formats that
-    start with a value can start anywhere, so they are listed under ''."""
-    exact, formats = {}, {}
-    for source in EXACT:
-        if len(HAN.findall(source)) >= 2 and '\n' not in source:
-            exact.setdefault(source[0], []).append(source)
-    for parts in exact.values():
-        parts.sort(key=len, reverse=True)
-    for found in FORMATS:
-        if '\n' not in found.source:
-            first = SPECIFIER.match(found.source)
-            formats.setdefault('' if first and first.group(2) != '%' else found.source[0], []).append(found)
-    return exact, formats
-
-
-EXACT_PARTS, FORMAT_PARTS = _index()
+def _format(text, formats):
+    """English for `text` by the first of `formats` it fully matches, or None."""
+    if len(text) > LONGEST:
+        return None
+    for found in formats:
+        match = found.pattern.fullmatch(text)
+        if match:
+            return found.translate(match)
+    return None
 
 
 def _message(text):
     """English for one whole catalogued message, or None."""
-    if text in EXACT:
-        return EXACT[text]
-    for found in FORMATS:
-        match = found.pattern.fullmatch(text)
-        if match:
-            return found.fill([translate_text(value) for value in match.groups()])
-    return None
+    return EXACT[text] if text in EXACT else _format(text, FORMATS)
 
 
-def _space(done, english):
-    """English parts join with a space after a sentence or clause ends."""
-    if done and done[-1] in '.:;,!?)' and english[:1].isalnum():
-        return ' ' + english
-    return english
+def _value(text):
+    """A value the code filled into a format, in English only when it is itself a message: an engine
+    entry, or an interface sentence ending its clause. Anything else, such as a disk or look name that
+    happens to match a short interface label, is data and stays as printed."""
+    if not CJK.search(text):
+        return text
+    if text in VALUES:
+        return VALUES[text]
+    english = _format(text, VALUE_FORMATS)
+    return text if english is None else english
 
 
-def _parts(text):
-    """The line read as consecutive catalogued messages, longest first at each place, with other
-    characters kept as they are; None unless that leaves no Chinese word, so a line is never shown
-    half translated."""
-    out, at = '', 0
-    while at < len(text):
-        best = None
-        for source in EXACT_PARTS.get(text[at], ()):
-            if text.startswith(source, at):
-                best = (len(source), EXACT[source])
-                break
-        for found in FORMAT_PARTS.get(text[at], []) + FORMAT_PARTS.get('', []):
-            match = (found.pattern.match(text, at) if found.closed else found.pattern.fullmatch(text, at))
-            if match and match.end() > at and (best is None or match.end() - at > best[0]):
-                best = (match.end() - at, found.fill([translate_text(value) for value in match.groups()]))
-        if best and HAN.search(text, at, at + best[0]):
-            out += _space(out, best[1])
-            at += best[0]
-        else:
-            out += text[at]
-            at += 1
-    return None if HAN.search(out) else out
+def _spacing(text):
+    """(leading space, text, trailing space)."""
+    core = text.strip()
+    if not core:
+        return text, '', ''
+    start = text.index(core[0])
+    return text[:start], core, text[start + len(core):]
 
 
 def _json(text):
@@ -192,7 +203,7 @@ def translate_line(text):
         return text
     if text in EXACT:
         return EXACT[text]
-    lead, core, trail = LINE_START.match(text).groups()
+    lead, core, trail = _spacing(text)
     if len(lead) >= 4 and CODE_LITERAL.search(core) and not JSON_STRING.match(core):
         return lead + _punctuation(_code(core)) + trail
     english = _message(core)
@@ -202,21 +213,19 @@ def translate_line(text):
             english = exception.group(1) + ': ' + translate_text(exception.group(2))
     if english is None:
         english = _json(core)
-    if english is None:
-        english = _parts(core)
     return lead + _punctuation(core if english is None else english) + trail
 
 
 def translate_text(text):
-    """Worker or engine output of one or more lines in English: as one message if it is one, else
-    line by line."""
+    """Worker or engine output of one or more lines in English: as one message when that leaves no
+    Chinese, else line by line."""
     if not CJK.search(text):
         return text
     if text in EXACT:  # an entry whose own spacing or line breaks are part of it
         return EXACT[text]
-    lead, core, trail = LINE_START.match(text).groups()
+    lead, core, trail = _spacing(text)
     english = _message(core)
-    if english is not None:
+    if english is not None and not HAN.search(english):
         return lead + english + trail
     return '\n'.join(translate_line(line) for line in text.split('\n'))
 

@@ -294,7 +294,7 @@ class StatusArea(W.QWidget):
         self.log = W.QPlainTextEdit()
         self.log.setReadOnly(True)
         self.log.setFont(theme.mono_font())
-        self.log.setLineWrapMode(W.QPlainTextEdit.NoWrap)
+        self.log.setLineWrapMode(W.QPlainTextEdit.WidgetWidth)  # instructions read without scrolling sideways
         self.log.setMinimumHeight(150)
         self.log.setMaximumHeight(220)
         self.log.setPlaceholderText(tr('完整运行日志与原始报错会显示在这里。'))

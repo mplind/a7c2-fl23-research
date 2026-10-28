@@ -77,7 +77,10 @@ def text(*, setup=False, mode=None):
             tr('\n\n开机后先不用拍照。接回 USB 海量存储，再点')+(tr('首页“继续安装”') if setup else tr('自定义外观页“继续槽位更改”'))+
             tr('。工具会核对新的冷启动和只读挂载，然后继续剩余程序，不重复写名称、不重装驱动。\n\n程序写完后还会提示最终重开，让新功能生效。点确定只关闭说明。'))
     reason = (tr('\n\n这次“启用 FL2／FL3”已写入程序文件。此前恢复原厂后的重开只加载了原厂状态；本次新的修改需要再次重开才能生效。')
-              if mode == 'fl23_enable' else '')
+              if mode == 'fl23_enable' else
+              tr('\n\n电子快门声已开启，断电重开后生效。') if mode == 'sound_on' else
+              tr('\n\n电子快门声已关闭，断电重开后生效。') if mode == 'sound_off' else
+              tr('\n\n已恢复原厂快门音效，断电重开后生效。') if mode == 'sound_restore_sound' else '')
     follow = (tr('接回 USB，选择海量存储，再点首页“继续安装”。工具先核对加载，不重复刷写。')
               if setup else tr('在相机中确认 FL2／FL3 能选择、拍摄及回放，即可使用。不必再接电脑点击核对；如需排查，可使用 FL23 页的可选诊断。')
               if mode in ('fl23_enable', 'fl23_disable') else

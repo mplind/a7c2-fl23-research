@@ -174,8 +174,8 @@ def run(action, args, job):
                     from looktool.buildprofile import JOB_OTHER_BUILD, refusal
                     found = refusal(str(exc))
                     if found and found[0] == JOB_OTHER_BUILD:
-                        print('上次恢复是为另一个固件版本做的（%s）。旧记录保留；按相机当前的固件版本和字节'
-                              '重新生成原厂恢复计划。' % exc, flush=True)
+                        print('上次恢复记录的固件版本是 %s，而相机现在是 %s。旧记录保留；按相机当前的固件版本和字节'
+                              '重新生成原厂恢复计划。' % found[1], flush=True)
                     else:
                         print('相机内容已与上次恢复结果不同（%s），通常是之后又安装或修改过功能。旧记录保留；'
                               '按当前相机字节重新生成原厂恢复计划。' % exc, flush=True)

@@ -6,6 +6,7 @@ on disk stay verbatim. No camera, no worker, no Terminal: dialogs are read inste
 import json
 from pathlib import Path
 import re
+import time
 from unittest.mock import Mock, patch
 
 import pytest
@@ -16,17 +17,17 @@ from desktopapp.en import STRINGS
 from desktopapp.en_engine import ENGINE
 from desktopapp.paths import write_json
 from looktool import buildprofile, devicesession
-from guihelpers import CJK, finish_job, shown_texts
+from desktopapp.engine_text import CJK, SPECIFIER, specifiers
+from guihelpers import finish_job, shown_texts
 from looksamples import look_file
 
-SPECIFIER = re.compile(r'%(?:\([^)]+\))?[#0\- +]*\d*(?:\.\d+)?[diouxXeEfFgGcrsa%]')
 SAMPLE = {'d': '7', 'i': '7', 'u': '7', 'x': '1f', 'X': '1F', 'o': '17', 'f': '2.5', 'F': '2.5', 'e': '2.5',
           'E': '2.5', 'g': '2.5', 'G': '2.5', 'c': 'c', '%': '%'}
 
 
 def sample(template, value='disk4'):
     """`template` filled as the engine would fill it: numbers for numeric specifiers, `value` for text."""
-    return SPECIFIER.sub(lambda m: SAMPLE.get(m.group()[-1], value), template)
+    return SPECIFIER.sub(lambda m: SAMPLE.get(m.group(2), value), template)
 
 
 def chinese(texts):
@@ -41,7 +42,7 @@ def test_no_english_entry_holds_a_cjk_character():
 
 def test_engine_entries_keep_their_specifiers_in_order_and_their_line_count():
     for source, english in ENGINE.items():
-        assert SPECIFIER.findall(source) == SPECIFIER.findall(english), source
+        assert specifiers(source) == specifiers(english), source
         assert source.count('\n') == english.count('\n'), source
 
 
@@ -59,15 +60,26 @@ def test_every_engine_message_is_shown_in_english(source):
         assert not CJK.search(engine_text.translate_line(line)), line
 
 
-@pytest.mark.parametrize('source', sorted(key for key in ENGINE if SPECIFIER.search(key)))
+@pytest.mark.parametrize('source', sorted(key for key in ENGINE if SPECIFIER.search(key) and '%s%s' not in key))
 def test_a_catalogued_message_inside_another_is_translated_too(source):
     # A value the engine fills in can itself be a message: the macOS prompt after a wait, an error
     # inside a summary. Fill every %s with one and both come out English. (Two values side by side
-    # are split at the first place the format allows, so the message chosen has no space.)
+    # are split at the first place the format allows, so the message chosen has no space, and a key
+    # with two values touching has its real line catalogued too; see the next test.)
     inner = '相機正在準備機身資訊，稍候再讀取。'
     shown = engine_text.translate_text(sample(source, inner))
     assert not CJK.search(shown), shown
     assert engine_text.translate_text(inner) in shown or '%s' not in source
+
+
+def test_the_one_click_review_line_reads_as_english_with_its_original_error():
+    # allinone joins the folder and a detail into one error; the line it raises has its own entry.
+    error = '相机仍在运行上次写入前加载的程序，本次没有写入。请先拔 USB、关机，取下电池至少一分钟，再开机接回 USB，点击“重启后核对并完成恢复”或再次点击恢复。'
+    for stage in ('WRITING', '未知'):
+        line = '上次安装结果需要核对，不会重复刷写。保留本目录并查看完整错误：/work/setup；原始阶段：%s；原始错误：%s' % (stage, error)
+        shown = engine_text.translate_text(line)
+        assert not CJK.search(shown), shown
+        assert ENGINE[error] in shown
 
 
 def test_every_interface_entry_also_reads_as_english_in_the_log():
@@ -75,15 +87,62 @@ def test_every_interface_entry_also_reads_as_english_in_the_log():
     assert [key for key in STRINGS if CJK.search(engine_text.translate_text(sample(key)))] == []
 
 
-@pytest.mark.parametrize('setup, mode', [(True, None), (True, 'resource_reload'), (False, None),
-                                         (False, 'factory_reset'), (False, 'fl23_enable')])
-def test_the_restart_steps_printed_by_one_click_setup_read_as_english(setup, mode):
-    # allinone prints these guides into worker.log in Chinese; the window shows them in English.
-    printed = '所有读写已结束。\n' + reloadguide.text(setup=setup, mode=mode)
-    shown = engine_text.translate_text(printed)
-    assert not CJK.search(shown), shown
-    for line in printed.split('\n'):
-        assert not CJK.search(engine_text.translate_line(line)), line
+@pytest.mark.parametrize('mode', [None, 'resource_reload'])
+def test_the_restart_steps_printed_by_one_click_setup_read_as_the_english_guide(mode):
+    # allinone prints these two guides into worker.log in Chinese (the only guides the worker prints);
+    # the log shows each line exactly as the English guide the window's dialog shows.
+    printed = reloadguide.text(setup=True, mode=mode)
+    try:
+        i18n.configure('en')
+        english = reloadguide.text(setup=True, mode=mode)
+    finally:
+        i18n.configure('zh_CN')
+    assert engine_text.translate_text('所有读写已结束。\n' + printed) == ENGINE['所有读写已结束。\n%s'] % english
+    assert [engine_text.translate_line(line) for line in printed.split('\n')] == english.split('\n')
+
+
+OLD_PAGE_NAMES = re.compile(r'One-Click Install|Connection & Drivers|Factory Restore|Vertical Display|'
+                            r'Custom Creative Looks|Shutter Sound|Film Recipes|\bHome\b')
+
+
+def test_no_english_text_names_a_page_by_an_old_name():
+    # The sidebar says One-click install, Connection and drivers, Factory restore, Custom looks, Vertical
+    # display, Shutter sound and Film recipes; copy that names a page must use those words.
+    stale = {text[:60] for text in list(STRINGS.values()) + list(ENGINE.values()) if OLD_PAGE_NAMES.search(text)}
+    assert sorted(stale) == []
+
+
+def test_one_chinese_text_has_one_english():
+    # Each Chinese text, whole entry or one line of a longer one, in either catalogue, reads one way.
+    assert engine_text.conflicts() == {}
+
+
+@pytest.mark.parametrize('line', ['确认关闭', '连接检测完成', '准备 disk4'])
+def test_label_words_are_never_put_together_into_a_message(line):
+    # Short interface labels (确认 Record, 关闭 Close, 连接 Connection…) are not engine output: a line built
+    # from them stays as it is rather than read as 'RecordClose'.
+    assert engine_text.translate_line(line) == line
+
+
+@pytest.mark.parametrize('line, source, value', [
+    ('正在卸载相机磁盘（不拔线）：测试', '正在卸载相机磁盘（不拔线）：%s', '测试'),
+    ('一键安装：良好', '一键安装：%s', '良好')])
+def test_a_value_the_engine_fills_in_stays_data(line, source, value):
+    # A disk or look name that happens to match an interface label is data: only the message is translated.
+    assert engine_text.translate_line(line) == sample(ENGINE[source], value)
+
+
+def test_a_value_that_is_a_whole_interface_sentence_is_translated():
+    clause = '相机设置已与此配方一致。'  # an interface sentence, ending its clause
+    assert engine_text.translate_line('一键安装：' + clause) == sample(ENGINE['一键安装：%s'], STRINGS[clause])
+
+
+@pytest.mark.parametrize('line', ['中' + 'a' * 32000, 'a' * 32000 + '中', '相机' * 16000,
+                                  '正在卸载相机磁盘（不拔线）：' + '测' * 32000, ('。：' * 8000) + '中'])
+def test_a_very_long_line_is_shown_at_once(line):
+    started = time.perf_counter()
+    engine_text.translate_line(line)
+    assert time.perf_counter() - started < 0.1
 
 
 def test_unknown_text_such_as_a_camera_file_name_is_shown_unchanged():
@@ -93,10 +152,10 @@ def test_unknown_text_such_as_a_camera_file_name_is_shown_unchanged():
 
 def test_display_translates_only_in_english():
     message = '正在卸载相机磁盘（不拔线）：disk4'
-    i18n.configure('zh_CN')
-    assert engine_text.display(message) == message
-    i18n.configure('en')
     try:
+        i18n.configure('zh_CN')
+        assert engine_text.display(message) == message
+        i18n.configure('en')
         assert engine_text.display(message) == sample(ENGINE['正在卸载相机磁盘（不拔线）：%s'])
     finally:
         i18n.configure('zh_CN')
@@ -134,22 +193,18 @@ def test_the_log_pane_shows_worker_output_in_english_and_keeps_the_log_verbatim(
     assert log.read_text(encoding='utf-8') == '\n'.join(ENGINE_LINES) + '\n'
 
 
-def test_the_log_opens_at_the_start_of_its_lines(window):
-    # The pane doesn't wrap, and English lines run longer than the Chinese. Lines that arrive while the
-    # log is closed must still read from their start when it opens (a failure opens it).
+def test_the_log_pane_wraps_long_lines_at_its_width(window):
+    # English runs longer than the Chinese; an instruction line must read without scrolling sideways.
     ui = window('en')
+    assert ui.log.lineWrapMode() == W.QPlainTextEdit.LineWrapMode.WidgetWidth
     ui.resize(1130, 760)
     ui.show()
-    W.QApplication.processEvents()
     ui.current_job = jobs.new_job('connect', {})
-    lines = ENGINE_LINES[:5] + ENGINE_LINES[1:2]  # the last one long, as a closing summary often is
-    (ui.current_job / 'worker.log').write_text('\n'.join(lines) + '\n', encoding='utf-8')
+    (ui.current_job / 'worker.log').write_text('\n'.join(ENGINE_LINES[:5]) + '\n', encoding='utf-8')
     ui.tail_log()
-    W.QApplication.processEvents()
     ui.status_area.show_log(True)
     W.QApplication.processEvents()
-    assert ui.log.horizontalScrollBar().maximum() > 0
-    assert ui.log.horizontalScrollBar().value() == 0
+    assert ui.log.horizontalScrollBar().maximum() == 0
 
 
 def test_the_log_pane_keeps_chinese_in_the_chinese_interface(window):
@@ -268,11 +323,15 @@ def test_no_page_shows_cjk(window, platform):
     assert chinese(seen + page_texts(ui)) == []
 
 
-def test_settings_shows_only_the_language_name_in_its_own_language(window):
+@pytest.mark.parametrize('language, chinese_name', [('en', 'Chinese (Simplified)'), ('zh_CN', '简体中文')])
+def test_the_language_menu_names_chinese_in_the_interface_language(window, language, chinese_name):
+    ui = window(language)
+    assert [ui.language.itemText(i) for i in range(ui.language.count())] == ['English', chinese_name]
+
+
+def test_settings_shows_no_cjk(window):
     ui = window('en')
-    texts = shown_texts(ui.settings_dialog)
-    assert chinese(texts) == ['简体中文']
-    assert [ui.language.itemText(i) for i in range(ui.language.count())] == ['English', '简体中文']
+    assert chinese(shown_texts(ui.settings_dialog)) == []
 
 
 GUIDE_MODES = [None, 'factory_prewrite_temporary', 'factory_reset', 'resource_reload', 'fl23_enable', 'fl23_disable',
@@ -400,6 +459,31 @@ def test_an_unfinished_look_job_is_explained_in_english(window, monkeypatch, tmp
     assert shown.texts and shown.chinese() == []
 
 
+# Buttons and the results they lead to ----------------------------------------------------------
+
+@pytest.mark.parametrize('action, mode, verb', [('direct_fl23_enable', 'fl23_enable', 'enabled'),
+                                                ('direct_fl23_disable', 'fl23_disable', 'removed')])
+def test_the_fl2_fl3_result_says_what_its_button_did(window, action, mode, verb):
+    ui = window('en')
+    with patch.object(W.QMessageBox, 'information'):
+        finish_job(ui, action, dict(phase='COMPLETED', mode=mode, reload_required=True, workspace='w'))
+    assert verb in ui.status.text() and 'read back' in ui.status.text()
+
+
+@pytest.mark.parametrize('mode, said', [('vertical_enable', 'Vertical display turned on'),
+                                        ('vertical_disable', 'Vertical display turned off'),
+                                        ('sound_on', 'Electronic shutter sound turned on'),
+                                        ('sound_off', 'Electronic shutter sound turned off'),
+                                        ('sound_restore_sound', 'Factory shutter sound restored')])
+def test_the_restart_guide_says_what_its_button_did(mode, said):
+    # Turn on → turned on, Restore… → restored: the dialog after the write names the outcome.
+    try:
+        i18n.configure('en')
+        assert said in reloadguide.text(mode=mode)
+    finally:
+        i18n.configure('zh_CN')
+
+
 # The macOS Terminal window ---------------------------------------------------------------------
 
 def terminal_script(tmp_path, monkeypatch, language):
@@ -424,23 +508,30 @@ def test_the_terminal_window_is_chinese_in_chinese(tmp_path, monkeypatch):
 
 def test_the_job_request_carries_the_interface_language_to_the_terminal(tmp_path, monkeypatch):
     monkeypatch.setenv('A7C2_DESKTOP_DATA', str(tmp_path / 'data'))
-    for language in ('en', 'zh_CN'):
-        i18n.configure(language)
-        job = jobs.new_job('connect', {})
-        assert json.loads((job / 'request.private.json').read_text(encoding='utf-8'))['language'] == language
-        opened = []
+    try:
+        for language in ('en', 'zh_CN'):
+            terminal_language_round_trip(language)
+    finally:
+        i18n.configure('zh_CN')
 
-        def run(argv, *args, **kwargs):
-            opened.append(Path(argv[3]).read_text(encoding='utf-8'))
-            (job / 'authorization.exit').write_text('closed\n', encoding='utf-8')
-            from types import SimpleNamespace
-            return SimpleNamespace(returncode=0, stdout='', stderr='')
-        with patch.object(macadmin.os, 'getuid', return_value=501, create=True), \
-                patch.object(macadmin.os, 'getgid', return_value=20, create=True), \
-                patch.object(macadmin.subprocess, 'run', side_effect=run):
-            macadmin.execute(job / 'request.private.json')
-        assert bool(CJK.search(opened[0])) == (language == 'zh_CN')
-    i18n.configure('zh_CN')
+
+def terminal_language_round_trip(language):
+    """One job in `language`: its request records it, and the Terminal script it opens uses it."""
+    i18n.configure(language)
+    job = jobs.new_job('connect', {})
+    assert json.loads((job / 'request.private.json').read_text(encoding='utf-8'))['language'] == language
+    opened = []
+
+    def run(argv, *args, **kwargs):
+        opened.append(Path(argv[3]).read_text(encoding='utf-8'))
+        (job / 'authorization.exit').write_text('closed\n', encoding='utf-8')
+        from types import SimpleNamespace
+        return SimpleNamespace(returncode=0, stdout='', stderr='')
+    with patch.object(macadmin.os, 'getuid', return_value=501, create=True), \
+            patch.object(macadmin.os, 'getgid', return_value=20, create=True), \
+            patch.object(macadmin.subprocess, 'run', side_effect=run):
+        macadmin.execute(job / 'request.private.json')
+    assert bool(CJK.search(opened[0])) == (language == 'zh_CN')
 
 
 def test_the_terminal_script_still_runs_in_bash(tmp_path, monkeypatch):

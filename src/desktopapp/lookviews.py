@@ -6,7 +6,7 @@ import tempfile
 import threading
 import numpy as np
 from PySide6 import QtCore, QtGui, QtWidgets as W
-from .engine_text import display as shown  # engine errors, in English when the interface is
+from .engine_text import display  # engine errors, shown in English when the interface is English
 from .i18n import tr
 from . import theme
 
@@ -21,7 +21,7 @@ def kind_word(kind):
 
 def fit_text(fit):
     if fit['rating'] == 'invalid':
-        return tr('无法读取此 A7Look：') + shown(fit['error'])
+        return tr('无法读取此 A7Look：') + display(fit['error'])
     if fit['rating'] == 'unknown':
         return tr('拟合：未知（文件没有留出验证数据）')
     text = tr('拟合：%s（MAE %.1f · P95 %.1f）') % (rating_word(fit['rating']), fit['mae'], fit['p95'])
@@ -342,7 +342,7 @@ class PreviewDialog(W.QDialog):
         self.timer.stop(); self.job = None
         self.progress.hide(); self.choose.setEnabled(True)
         if outcome == 'failed':
-            self.status.setText(tr('预览失败：') + shown(str(value)))
+            self.status.setText(tr('预览失败：') + display(str(value)))
             return
         panels = {panel['role']: panel for panel in value['panels']}
         for role, panel in self.panels.items():
@@ -363,4 +363,4 @@ class PreviewDialog(W.QDialog):
         try:
             shutil.copyfile(self.output, path)
         except OSError as exc:
-            W.QMessageBox.warning(self, tr('保存失败'), shown(str(exc)))
+            W.QMessageBox.warning(self, tr('保存失败'), display(str(exc)))
