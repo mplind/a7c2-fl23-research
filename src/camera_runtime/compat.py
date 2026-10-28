@@ -32,7 +32,7 @@ def plan(ap,cp,version=core.VERSION,*,transitions=True,build=None):
     before=dict(zip(core.PROGRAMS,[ap,cp]))
     # These are instruction-boundary checks, not file-source fingerprints.
     # A LUT converter already handles native FL2/FL3 and must not be replaced.
-    template=ap[0x35287f0:0x3528874].hex();templates=layout.runtime()['ap_templates']
+    template=ap[0x35287f0:0x3528874].hex();templates=layout.runtime_for(build)['ap_templates']
     lut=template in templates or ap[0x3528804:0x3528874]==LEGACY_CONVERTER
     mask=templates.index(template) if template in templates else None
     manifest=core.read_json(core.BASE/'assets/patches.json')

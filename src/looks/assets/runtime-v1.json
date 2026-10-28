@@ -519,5 +519,12 @@
     }
   ],
   "cp_zero_tables_sha256": "45c53a7a32190582ed985b4f6aa9fd878f014296d06d2710a6d3967ece4bf623",
-  "cp_code_sha256": "befd42d2531e31605a565f5c85ee467b932cfb9d60bb8e0866611ab9367e1695"
+  "cp_code_sha256": "befd42d2531e31605a565f5c85ee467b932cfb9d60bb8e0866611ab9367e1695",
+  "builds": {
+    "body-2.01-20250923": {
+      "stock_sha256": "77fa856ed5812124ffec507857ec48af43159357b2c8a341cb15f3d5c1076d54",
+      "fl23_sha256": "06d1f717c316135d2b52ea80a2fe74e136aa44d43745bd4fade9cad720faf03f",
+      "cp_code_sha256": "e3e9ef5709edd85abd9fbeb142188a190d5fb594751d78a23a5f780c56478e2f"
+    }
+  }
 }

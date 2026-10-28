@@ -68,7 +68,8 @@ class Guards(unittest.TestCase):
 class OriginalFirmware(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.layout,cls.firmware,cls.build,*_=compat.modules()
+        cls.layout,cls.firmware,cls.build,_,buildprofile=compat.modules()
+        cls.public=buildprofile.BUILDS[0]
         folder=Path(os.environ['A7C2_FIRMWARE_ROOT'])/'a7c2-2.01/components'
         cls.ap=(folder/'appFw.so').read_bytes();cls.cp=(folder/'cpapp-b.bin').read_bytes()
         if [core.sha(cls.ap),core.sha(cls.cp)]!=core.ORIGINAL:raise AssertionError('Original source required')
@@ -90,15 +91,15 @@ class OriginalFirmware(unittest.TestCase):
     def test_stock_lut_keeps_custom_data_and_updates_only_native_fl23_fields(self):
         for mask in [1,32,63]:
             with self.subTest(mask=mask):
-                source=self.layout._ap_target(self.ap,mask)
+                source=self.layout._ap_target(self.ap,mask,self.public)
                 identity,enabled,after,f,r=compat.plan(source,self.lutcp)
                 self.assertFalse(enabled);self.assertFalse(identity['provenance_checked']);self.assertEqual(identity['kind'],'lut')
-                self.assertEqual(after['appFw.so'],self.layout._ap_target(self.flap,mask))
+                self.assertEqual(after['appFw.so'],self.layout._ap_target(self.flap,mask,self.public))
                 self.assertTrue(after['cpapp-b.bin']==self.expected_native_update(self.lutcp))
                 self.assertEqual(self.firmware.apply(after,r),{'appFw.so':source,'cpapp-b.bin':self.lutcp})
                 self.assertEqual(self.firmware.apply(self.firmware.apply(after,r),f),after)
     def test_fl23_lut_is_recognized_without_reinstallation(self):
-        source=self.layout._ap_target(self.flap,63)
+        source=self.layout._ap_target(self.flap,63,self.public)
         identity,enabled,after,f,r=compat.plan(source,self.lutcp)
         self.assertFalse(enabled)
         identity,enabled,repeated,f,r=compat.plan(source,after['cpapp-b.bin'])
@@ -106,13 +107,13 @@ class OriginalFirmware(unittest.TestCase):
     def test_changes_outside_the_tool_regions_are_refused(self):
         # Such programs are no supported build (buildprofile.identify): nothing is planned for them.
         from looktool.buildprofile import UnsupportedFirmware
-        source=self.layout._ap_target(self.ap,1)
+        source=self.layout._ap_target(self.ap,1,self.public)
         changed_ap=bytearray(source);changed_ap[0x70000]^=1
         changed_cp=bytearray(self.lutcp);changed_cp[0x70000]^=1
         for ap,cp in ((bytes(changed_ap),self.lutcp),(source,bytes(changed_cp))):
             with self.assertRaises(UnsupportedFirmware):compat.plan(ap,cp)
     def test_actual_patch_position_conflict_is_not_overwritten(self):
-        source=self.layout._ap_target(self.ap,1)
+        source=self.layout._ap_target(self.ap,1,self.public)
         wrong=bytearray(source);wrong[0x4b2ed19]=0x77
         with self.assertRaisesRegex(ValueError,'衝突'):compat.plan(bytes(wrong),self.lutcp)
         wrong=bytearray(self.lutcp);wrong[0x138814]^=1
@@ -125,7 +126,7 @@ class OriginalFirmware(unittest.TestCase):
             with self.assertRaises(UnsupportedFirmware):compat.plan(ap,cp)
     def test_job_worker_compiles_without_firmware_hash_checks(self):
         from looktool import checkpointworker
-        source=self.layout._ap_target(self.ap,1)
+        source=self.layout._ap_target(self.ap,1,self.public)
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder);(root/'candidate').mkdir();(root/'original').mkdir()
             # Supply Zig explicitly for local verification without installation.
