@@ -99,6 +99,7 @@ def test_name_files_are_saved_under_resources_with_their_digests(tmp_path):
     for name in NAMES[:3]:
         data = name.encode() * 3
         assert (tmp_path / 'resources' / name).read_bytes() == data
+        assert (tmp_path / 'resources' / name).stat().st_mode & 0o777 == 0o444
         assert report[name] == {'bytes': len(data), 'sha256': sha(data)}
 
 

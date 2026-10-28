@@ -37,11 +37,12 @@ def build_fixtures(build_fixture_files):
 def build_resources(build_fixtures):
     """{build folder name: {name file: bytes}, or None while that build's name files are uncaptured},
     for public-2.01 and body-2.01-20250923 (see buildfixtures.resources). A resources folder missing
-    any of nameworker.filenames() fails the test."""
+    any of nameworker.filenames(), or holding a file without its recorded digest, fails the test."""
     from looktool import nameworker
     folder = os.environ['A7C2_BUILD_FIXTURES']
     try:
-        return {name: buildfixtures.resources(folder, name, nameworker.filenames()) for name in buildfixtures.FINDINGS}
+        return {name: buildfixtures.resources(folder, name, nameworker.filenames(), buildfixtures.RESOURCE_DIGESTS.get(name))
+                for name in buildfixtures.FINDINGS}
     except ValueError as error:
         pytest.fail(str(error), pytrace=False)
 

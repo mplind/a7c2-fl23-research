@@ -39,8 +39,9 @@ def name_files(archive, names):
 
 
 def save(files, out):
-    """Write each {name: bytes} into folder `out`. Refuses before writing anything when a file there
-    already holds other bytes; the same bytes again are left as they are."""
+    """Write each {name: bytes} into folder `out`, read-only (0444), as fixtures are. Refuses before
+    writing anything when a file there already holds other bytes; the same bytes again are left as
+    they are, made read-only."""
     out.mkdir(parents=True, exist_ok=True)
     for name, data in files.items():
         if (out / name).exists() and (out / name).read_bytes() != data:
@@ -48,6 +49,7 @@ def save(files, out):
     for name, data in files.items():
         if not (out / name).exists():
             (out / name).write_bytes(data)
+        (out / name).chmod(0o444)
 
 
 def main(argv=None):

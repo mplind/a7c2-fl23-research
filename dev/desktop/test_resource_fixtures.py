@@ -6,6 +6,7 @@ its own resources/ folder (a camera capture made by camera_fingerprint.py) or in
 <A7C2_BUILD_FIXTURES>-resources/<build>/ beside it (extract_resources.py's output for the public build).
 """
 from contextlib import contextmanager
+import hashlib
 import io
 import json
 
@@ -18,6 +19,10 @@ from desktopapp import official
 NAMES = ['string_alpha_horizontal.uxc', 'string_beta_vertical.uxc']
 
 
+def digests(files):
+    return {name: hashlib.sha256(data).hexdigest() for name, data in files.items()}
+
+
 def put(folder, files):
     folder.mkdir(parents=True, exist_ok=True)
     for name, data in files.items():
@@ -28,31 +33,57 @@ def put(folder, files):
 
 def test_a_builds_own_resources_folder_comes_first(tmp_path):
     fixtures = tmp_path / 'build-fixtures'
-    put(fixtures / 'body/resources', {name: b'camera ' + name.encode() for name in NAMES})
+    camera = {name: b'camera ' + name.encode() for name in NAMES}
+    put(fixtures / 'body/resources', camera)
     put(tmp_path / 'build-fixtures-resources/body', {name: b'beside' for name in NAMES})
     assert buildfixtures.resources_folder(fixtures, 'body') == fixtures / 'body/resources'
-    assert buildfixtures.resources(fixtures, 'body', NAMES) == {name: b'camera ' + name.encode() for name in NAMES}
+    assert buildfixtures.resources(fixtures, 'body', NAMES, digests(camera)) == camera
 
 
 def test_otherwise_the_folder_beside_the_read_only_fixtures_is_used(tmp_path):
     fixtures = tmp_path / 'build-fixtures'
     (fixtures / 'public').mkdir(parents=True)
-    put(tmp_path / 'build-fixtures-resources/public', {name: name.encode() for name in NAMES})
+    extracted = {name: name.encode() for name in NAMES}
+    put(tmp_path / 'build-fixtures-resources/public', extracted)
     assert buildfixtures.resources_folder(str(fixtures) + '/', 'public') == tmp_path / 'build-fixtures-resources/public'
-    assert buildfixtures.resources(fixtures, 'public', NAMES) == {name: name.encode() for name in NAMES}
+    assert buildfixtures.resources(fixtures, 'public', NAMES, digests(extracted)) == extracted
 
 
 def test_a_build_without_name_files_has_none(tmp_path):
     (tmp_path / 'build-fixtures/body').mkdir(parents=True)
     assert buildfixtures.resources_folder(tmp_path / 'build-fixtures', 'body') is None
-    assert buildfixtures.resources(tmp_path / 'build-fixtures', 'body', NAMES) is None
+    assert buildfixtures.resources(tmp_path / 'build-fixtures', 'body', NAMES, None) is None
 
 
 def test_a_resources_folder_missing_a_name_file_is_refused(tmp_path):
     fixtures = tmp_path / 'build-fixtures'
     put(fixtures / 'body/resources', {NAMES[0]: b'one'})
     with pytest.raises(ValueError, match=NAMES[1]):
-        buildfixtures.resources(fixtures, 'body', NAMES)
+        buildfixtures.resources(fixtures, 'body', NAMES, digests({NAMES[0]: b'one', NAMES[1]: b'two'}))
+
+
+def test_a_name_file_other_than_the_recorded_one_is_refused(tmp_path):
+    """Like every other real-firmware input, a name file must have its recorded digest."""
+    fixtures = tmp_path / 'build-fixtures'
+    recorded = {name: name.encode() for name in NAMES}
+    put(fixtures / 'body/resources', dict(recorded, **{NAMES[1]: b'one label byte changed'}))
+    with pytest.raises(ValueError, match=NAMES[1]):
+        buildfixtures.resources(fixtures, 'body', NAMES, digests(recorded))
+
+
+def test_name_files_without_recorded_digests_are_refused(tmp_path):
+    """A capture whose digests nobody has recorded yet is not a fixture: record them from report.json."""
+    fixtures = tmp_path / 'build-fixtures'
+    put(fixtures / 'body/resources', {name: name.encode() for name in NAMES})
+    with pytest.raises(ValueError, match='no recorded digests'):
+        buildfixtures.resources(fixtures, 'body', NAMES, None)
+
+
+def test_the_public_name_files_are_recorded_and_the_body_files_are_not_yet():
+    from looktool import nameworker
+    assert list(buildfixtures.RESOURCE_DIGESTS) == ['public-2.01']
+    assert list(buildfixtures.RESOURCE_DIGESTS['public-2.01']) == nameworker.filenames()
+    assert all(len(digest) == 64 and int(digest, 16) >= 0 for digest in buildfixtures.RESOURCE_DIGESTS['public-2.01'].values())
 
 
 # Pulling the public name files from the update file ----------------------------------------
@@ -91,6 +122,13 @@ def test_a_missing_name_file_is_refused(monkeypatch):
     monkeypatch.setattr(extract_resources.official, 'files', walked([('0700_part_image/a/share/app/' + NAMES[0], b'x')]))
     with pytest.raises(ValueError, match=NAMES[1]):
         extract_resources.name_files('archive', NAMES)
+
+
+def test_saved_name_files_are_read_only(tmp_path):
+    out = tmp_path / 'resources/public-2.01'
+    put(out, {NAMES[0]: b'one'})                      # already there, the same bytes, still writable
+    extract_resources.save({NAMES[0]: b'one', NAMES[1]: b'two'}, out)
+    assert [(out / name).stat().st_mode & 0o777 for name in NAMES] == [0o444, 0o444]
 
 
 def test_save_never_replaces_other_bytes(tmp_path):

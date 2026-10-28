@@ -72,14 +72,15 @@ def verdict(found):
 
 
 def save_resources(camera, names, out):
-    """Read each name file once from the camera's /usr/share/app/, save it in out/resources/ and
-    report its size and digest."""
+    """Read each name file once from the camera's /usr/share/app/, save it read-only (0444) in
+    out/resources/ and report its size and digest."""
     folder = out / 'resources'
     folder.mkdir(exist_ok=True)
     report = {}
     for name in names:
         data = camera.read(RESOURCES + name)
         (folder / name).write_bytes(data)
+        (folder / name).chmod(0o444)
         report[name] = {'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest()}
     return report
 

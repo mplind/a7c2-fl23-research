@@ -19,7 +19,6 @@ unset; the name-file comparison also skips, naming the build, until both builds'
 """
 import bisect
 import io
-import json
 from pathlib import Path
 import struct
 import sys
@@ -31,7 +30,7 @@ from elftools.elf.elffile import ELFFile
 import numpy as np
 import pytest
 
-from looktool import buildprofile, device_layout, nameworker, photobasis, photobuild, photoio, resources, six
+from looktool import buildprofile, device_layout, nameworker, photobasis, photoio, resources, six
 from looktool.buildprofile import BUILDS, identify, regions, translate
 from looktool.devicesession import modules
 import build_factory_reference
@@ -40,10 +39,8 @@ modules()
 import compat  # noqa: E402  (modules() puts src/camera_runtime on sys.path)
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path[:0] = [str(ROOT / 'src/vertical'), str(ROOT / 'src/shutter_sound')]
-from verticaltool import portraitlayout  # noqa: E402
-import boot_sound  # noqa: E402
-import candidate  # noqa: E402
+sys.path.insert(0, str(ROOT / 'src/vertical'))
+from verticaltool import portraitgauge, portraitlayout  # noqa: E402
 
 PUBLIC, BODY = BUILDS
 PROGRAMS = ('appFw.so', 'cpapp-b.bin')
@@ -63,10 +60,13 @@ BSS_SITES = {
 }
 CONTEXT = 256           # bytes either side of a write site that must match (R30)
 TARGET_BYTES = 16       # an accepted pair's two targets must hold at least this many equal bytes
-# Public .rodata addresses where the body's sits lower, as derive_shifts finds them in the fixtures:
-# 8 bytes from the extra ID at 0x4ba1744 (4 bytes of ID and, at 0x4ba179c, 4 of padding), 16 from
-# the padding that ends at 0x4c102e8, up to the end of public .rodata.
-SHIFTS = [(0, 0x4ba1744, 0), (0x4ba1744, 0x4c102e8, 8), (0x4c102e8, 0x51a09e4, 16)]
+CHANGED = 128           # bytes that differ within the shifted .rodata, all in one ID table (derive_shifts)
+# (start, end, shift) spans of public .rodata addresses and how many bytes lower the body holds each,
+# as derive_shifts finds them in the fixtures; None for public bytes the body has no counterpart of.
+# Public inserts a 4-byte ID at 0x4ba1744 and 4 bytes of padding at 0x4ba179c, then more padding
+# that ends at 0x4c102e8; the 16-byte shift holds to the end of public .rodata.
+SHIFTS = [(0, 0x4ba1744, 0), (0x4ba1744, 0x4ba1748, None), (0x4ba1748, 0x4ba179c, 4), (0x4ba179c, 0x4ba17a0, None),
+          (0x4ba17a0, 0x4c102e8, 8), (0x4c102e8, 0x51a09e4, 16)]
 # The build facts at tool sites: the bytes of Build.boot_log_add and Build.converter_add that differ.
 BUILD_FACTS = {0x3060a2d: 'start-up sound log add (Build.boot_log_add)',
                0x3060a2e: 'start-up sound log add (Build.boot_log_add)',
@@ -206,51 +206,55 @@ def shift_at(spans, address):
 
 
 def derive_shifts(public, body):
-    """SHIFTS as the fixtures show it: (start, end, shift) spans of public addresses. .rodata starts at
-    the same address in both builds and is 16 bytes shorter in the body. The first insertion is the
-    first byte of .rodata where the two differ; from there to the second, the body holds the public
-    bytes 8 lower, and from the second to the end of .rodata 16 lower."""
+    """SHIFTS as the fixtures show it. .rodata starts at the same address in both builds and is 16 bytes
+    shorter in the body, and every step is public bytes the body lacks:
+    - the 16-byte shift holds from where it starts (found from the end of .rodata backwards) to the
+      end of .rodata;
+    - before it, the first differing .rodata byte starts an insertion, as long as it takes (in 4-byte
+      steps) for the bytes after it to line up with the body's again, and that shift holds as far as
+      the two keep lining up, where the next insertion is measured the same way;
+    - this goes on until a shift explains the bytes all the way to the 16-byte one, apart from at most
+      CHANGED bytes (one ID table whose entries differ, at public 0x4bf9b12). That shift ends where
+      the zero padding before the 16-byte shift stops reading the same at it.
+    Every shifted span is checked to differ, so shifted, in at most CHANGED bytes."""
     p_offset, p_address, p_size = section(public, '.rodata')
     b_offset, b_address, b_size = section(body, '.rodata')
     assert p_offset == p_address == b_offset == b_address and p_size - b_size == 16
     end, body_end = p_offset + p_size, b_offset + b_size
     p, b = np.frombuffer(public, np.uint8), np.frombuffer(body, np.uint8)
     first = p_offset + int(np.flatnonzero(p[p_offset:body_end] != b[p_offset:body_end])[0])
-    # The 16-byte shift holds from where it starts (in the body) to the end of .rodata ...
-    sixteen = b[first:body_end] == p[first + 16:end]
-    start16 = first + int(np.flatnonzero(~sixteen)[-1]) + 1
-    # ... and the 8-byte shift up to the end of the padding both shifts read as zeros.
-    eight = b[start16:body_end] == p[start16 + 8:body_end + 8]
-    second = start16 + int(np.flatnonzero(~eight)[0]) + 8
-    return [(0, first, 0), (first, second, 8), (second, end, 16)]
+    start16 = first + int(np.flatnonzero(b[first:body_end] != p[first + 16:end])[-1]) + 1   # in the body
+    spans, at, shift = [(0, first, 0)], first, 0
+    while True:
+        size = next(size for size in range(4, 17, 4)
+                    if public[at + size:at + size + 64] == body[at - shift:at - shift + 64])
+        spans.append((at, at + size, None))
+        at, shift = at + size, shift + size
+        if int((p[at:start16 + shift] != b[at - shift:start16]).sum()) <= CHANGED:
+            stop = start16 + int(np.flatnonzero(b[start16:body_end] != p[start16 + shift:body_end + shift])[0]) + shift
+            spans += [(at, stop, shift), (stop, end, 16)]
+            break
+        stop = at + int(np.flatnonzero(p[at:at + body_end - (at - shift)] != b[at - shift:body_end])[0])
+        spans.append((at, stop, shift))
+        at = stop
+    for start, stop, shift in spans:
+        if shift:
+            assert int((p[start:stop] != b[start - shift:stop - shift]).sum()) <= CHANGED, (hex(start), shift)
+    return spans
 
 
-def write_sites():
-    """(tool, program, public offset, size) of every place a tool writes either program."""
-    sites = []
-    patches = json.loads((ROOT / 'src/camera_runtime/assets/patches.json').read_text(encoding='utf-8'))
-    for program, spec in zip(PROGRAMS, patches):
-        sites += [('FL2/FL3', program, int(w['file_offset'], 16), len(w['before_hex']) // 2) for w in spec['writes']]
-    runtime = device_layout.runtime()
-    for spec in runtime['ap_sources']:
-        sites += [('custom looks', 'appFw.so', w['offset'], len(w['hex']) // 2) for w in spec['restore']]
-    for spec in runtime['cp_sources']:
-        sites += [('custom looks', 'cpapp-b.bin', w['offset'], len(w['before']) // 2) for w in spec['windows']]
-    sites += [('custom looks', 'appFw.so', device_layout.CONVERTER, device_layout.CONVERTER_END - device_layout.CONVERTER),
-              ('custom looks', 'appFw.so', 0x1b5cd7c, 4), ('custom looks', 'appFw.so', PUBLIC.look_table, 12),
-              ('custom looks', 'cpapp-b.bin', six.TABLE_FILE, 32 + 6 * six.TABLE_BYTES)]
-    sites += [('custom looks', 'appFw.so', 0x59896f0 + slot * 0xb8, 4) for slot in range(6)]
-    sites += [('shutter sound', 'appFw.so', at, len(old)) for at, old, _ in boot_sound.expected_windows(PUBLIC)]
-    sites += [('shutter sound', 'cpapp-b.bin', at, len(old)) for at, old, _ in candidate.WINDOWS]
-    sites += [('vertical display', 'appFw.so', at, len(raw)) for at, raw in portraitlayout.stock_windows()]
-    sites += [('native photo', 'cpapp-b.bin', hook['offset'], len(hook['before']) // 2) for hook in photoio.template()['hooks']]
-    sites += [('native photo', 'cpapp-b.bin', photobuild.TABLE_FILE, 0xb27f0e - photobuild.TABLE_FILE),
-              ('native photo', 'cpapp-b.bin', photobuild.DATA_FILE, 1216)]
-    return sites
+def tool_spans(public):
+    """(program, public offset, size) of every span a tool writes in either program: the spans
+    build_factory_reference.py collects from the public programs, joined with the public identity
+    set, which also holds the regions of older tool releases."""
+    spans = build_factory_reference.program_spans(programs(public))
+    for program, rows in buildprofile.identity_regions(PUBLIC).items():
+        spans[program] = build_factory_reference.merged(spans[program] + [(at, len(raw)) for at, raw in rows])
+    return [(program, at, size) for program in PROGRAMS for at, size in spans[program]]
 
 
 def context_check(public, body, sites, *, text, shifts, moved, facts):
-    """R30 over the CONTEXT bytes either side of each (tool, program, offset, size) site, public and
+    """R30 over the CONTEXT bytes either side of each (program, offset, size) site, public and
     body being {program: bytes} and `moved` the body offset of a public appFw.so offset. Returns
     (pairs, failures): pairs maps the use offset of each accepted pair to (adrp offset, public target,
     body target); failures lists (program, public offset, reason) for every other differing byte. The
@@ -259,14 +263,14 @@ def context_check(public, body, sites, *, text, shifts, moved, facts):
     target is the public one less shift_at(shifts, it), and both targets hold the same TARGET_BYTES,
     not all one value."""
     differing = {}
-    for _, program, at, size in sites:
+    for program, at, size in sites:
         there = moved(at) if program == 'appFw.so' else at
         a = public[program][at - CONTEXT:at + size + CONTEXT]
         b = body[program][there - CONTEXT:there + size + CONTEXT]
         assert len(a) == len(b) == size + 2 * CONTEXT, (program, hex(at))
         for i in changed(a, b):
             differing[(program, at - CONTEXT + i)] = there - CONTEXT + i
-    written = [(program, at, at + size) for _, program, at, size in sites]
+    written = [(program, at, at + size) for program, at, size in sites]
     pairs, failures, instructions = {}, [], {}
     for (program, offset), there in sorted(differing.items()):
         if program == 'appFw.so' and offset in facts:
@@ -528,10 +532,10 @@ def shifts(build_fixtures):
 
 
 def test_rodata_shift_boundaries_come_from_the_fixtures(build_fixtures, shifts):
-    """The shift spans R30 uses are what the fixtures show: the extra 4-byte ID 0x00020000 at 0x4ba1744
-    (with 4 bytes of padding after its list, at 0x4ba179c, it moves the rest 8), the padding that ends
-    at 0x4c102e8, and the end of public .rodata. From there on the body's addresses are the public
-    ones: its first load segment is 16 bytes shorter and the second starts at the same address, so
+    """The shift spans R30 uses are what the fixtures show: the extra 4-byte ID 0x00020000 at 0x4ba1744,
+    4 bytes of padding after its list at 0x4ba179c (the two move the rest 8), the padding that ends at
+    0x4c102e8, and the end of public .rodata. From there on the body's addresses are the public ones:
+    its first load segment is 16 bytes shorter and the second starts at the same address, so
     .data.rel.ro (verticalpersist's descriptor at 0x57bbb90 included) is not shifted."""
     public, body = build_fixtures.public.ap, build_fixtures.body.ap
     assert shifts == SHIFTS
@@ -539,11 +543,14 @@ def test_rodata_shift_boundaries_come_from_the_fixtures(build_fixtures, shifts):
     assert public[0x4ba1748:0x4ba179c] == body[0x4ba1744:0x4ba1798]       # 4 lower until the padding
     assert public[0x4ba179c:0x4ba17a0] == bytes(4) != body[0x4ba1798:0x4ba179c]
     assert public[0x4ba17a0:0x4ba1900] == body[0x4ba1798:0x4ba18f8]       # 8 lower after it
+    p, b = np.frombuffer(public, np.uint8), np.frombuffer(body, np.uint8)
+    table = 0x4ba17a0 + np.flatnonzero(p[0x4ba17a0:0x4c102e8] != b[0x4ba1798:0x4c102e0])
+    assert len(table) == CHANGED and 0x4bf9b12 <= table[0] and table[-1] < 0x4bf9d8d   # the one changed ID table
     loads = [[(segment['p_offset'], segment['p_vaddr'], segment['p_filesz']) for segment in ELFFile(io.BytesIO(ap)).iter_segments()
               if segment['p_type'] == 'PT_LOAD'] for ap in (public, body)]
     assert loads[0][0][2] - loads[1][0][2] == 16 and loads[0][1:] == loads[1][1:]
-    _, start, size = section(public, '.data.rel.ro')
-    assert start <= 0x57bbb90 + 0x10000 < start + size and public[0x57bbb90:0x57bbbb0] == body[0x57bbb90:0x57bbbb0]
+    offset, _, size = section(public, '.data.rel.ro')   # 0x57bbb90 is a file offset, as verticalpersist reads it
+    assert offset <= 0x57bbb90 < offset + size and public[0x57bbb90:0x57bbbb0] == body[0x57bbb90:0x57bbbb0]
 
 
 def test_every_write_site_has_identical_context_in_both_builds(build_fixtures, shifts):
@@ -553,8 +560,7 @@ def test_every_write_site_has_identical_context_in_both_builds(build_fixtures, s
     facts = {0x3060a2c + i for i, (a, b) in enumerate(zip(PUBLIC.boot_log_add, BODY.boot_log_add)) if a != b}
     facts |= {0x3528810 + i for i, (a, b) in enumerate(zip(PUBLIC.converter_add, BODY.converter_add)) if a != b}
     assert facts == set(BUILD_FACTS)
-    sites = write_sites()
-    assert len(sites) == 189
+    sites = tool_spans(build_fixtures.public)
     text = section(build_fixtures.public.ap, '.text')
     pairs, failures = context_check(programs(build_fixtures.public), programs(build_fixtures.body), sites,
                                     text=(text[0], text[0] + text[2]), shifts=shifts,
@@ -562,7 +568,7 @@ def test_every_write_site_has_identical_context_in_both_builds(build_fixtures, s
     assert [(program, hex(at), reason) for program, at, reason in failures] == []
     assert pairs == RESOLVED_PAIRS
     for use, (adrp, target, body_target) in pairs.items():
-        assert target - body_target == 16 and SHIFTS[2][0] <= target < SHIFTS[2][1]
+        assert target - body_target == 16 and SHIFTS[-1][0] <= target < SHIFTS[-1][1]
 
 
 # R30's rules on a synthetic pair -------------------------------------------------------------
@@ -588,7 +594,7 @@ def synthetic(public_add, body_add, *, at=0x1180, data=(b'same data object', b's
         files.append({'appFw.so': bytes(ap), 'cpapp-b.bin': bytes(0x2000)})
     if other:
         other(*files)
-    return context_check(files[0], files[1], [('tool', 'appFw.so', 0x1100, 8)], text=(0x1000, 0x2000),
+    return context_check(files[0], files[1], [('appFw.so', 0x1100, 8)], text=(0x1000, 0x2000),
                          shifts=[(0, 0x4000, 0), (0x4000, 0x9000, 16)], moved=lambda offset: offset, facts={})
 
 
@@ -626,7 +632,7 @@ def test_a_build_fact_is_exempt_only_where_named():
     assert synthetic(0x120, 0x110, other=fact)[1] == [('appFw.so', 0x1104, 'inside a tool-written span')]
     files = [{'appFw.so': bytes(0x10000), 'cpapp-b.bin': bytes(16)} for _ in range(2)]
     files[1]['appFw.so'] = bytes(0x1104) + b'\xff' + bytes(0x10000 - 0x1105)
-    assert context_check(*files, [('tool', 'appFw.so', 0x1100, 8)], text=(0x1000, 0x2000), shifts=[],
+    assert context_check(*files, [('appFw.so', 0x1100, 8)], text=(0x1000, 0x2000), shifts=[],
                          moved=lambda offset: offset, facts={0x1104: 'named fact'}) == ({}, [])
 
 
@@ -648,6 +654,26 @@ def test_custom_look_windows_lie_inside_the_restore_regions(name, build):
         for window in spec['windows']:
             assert restore['cpapp-b.bin'].cover(window['offset'], len(window['before']) // 2), (spec['kind'], hex(window['offset']))
     assert restore['cpapp-b.bin'].cover(six.TABLE_FILE, 32 + 6 * six.TABLE_BYTES)
+
+
+def stock_layout():
+    """An appFw.so-sized buffer holding just what canonical_windows checks: every canvas root, every
+    original image ID, portrait and landscape, and both stock gauge blocks."""
+    raw = bytearray(max(max(portrait, landscape) + max(delta, 24) for portrait, landscape, delta, _ in portraitlayout.PAIRS) + 4)
+    for portrait, landscape, delta, original in portraitlayout.PAIRS:
+        for root, size in ((portrait, 0x028001e0), (landscape, 0x01e00280)):
+            struct.pack_into('<6I', raw, root, 0x82, 0xb81, 0x250e, 0, 0, size)
+            struct.pack_into('<I', raw, root + delta, original)
+    for at, stock in ((portraitgauge.OFFSET, portraitgauge.BEFORE), (portraitgauge.VERTICAL_OFFSET, portraitgauge.VERTICAL_BEFORE)):
+        raw[at:at + len(stock)] = stock
+    return bytes(raw)
+
+
+def test_stock_windows_are_the_planned_windows_without_program_bytes():
+    """stock_windows needs no appFw.so: it is what canonical_windows plans on stock, in its order."""
+    planned = portraitlayout.canonical_windows(stock_layout())
+    assert portraitlayout.stock_windows() == [(row['offset'], bytes.fromhex(row['before_hex'])) for row in planned]
+    assert len(planned) == VERTICAL_WINDOWS
 
 
 @EACH_BUILD
