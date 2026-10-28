@@ -15,6 +15,7 @@ import subprocess
 import sys
 import time
 import traceback
+from ..actions.catalog import DIAGNOSTIC_ACTIONS
 from ..i18n import translate
 from ..paths import data_root,write_json
 
@@ -30,15 +31,22 @@ def required(action):
     return action in CAMERA_ACTIONS
 
 
+def worker_environment(action,environment):
+    """`environment` for the administrator worker of `action`. libusb's debug log stays off (it writes
+    about 10 MB/min of root-owned stderr) unless the action is a diagnostic or LIBUSB_DEBUG is set."""
+    if action in DIAGNOSTIC_ACTIONS and not environment.get('LIBUSB_DEBUG'):
+        return {**environment,'LIBUSB_DEBUG':'4'}
+    return environment
+
+
 def shell_command(request,uid,gid,environment):
     from ..jobs import worker_command
     argv=worker_command(request)
     argv[argv.index('--worker')]='--privileged-worker'
     argv.extend([str(uid),str(gid)])
     assignments={key:environment[key] for key in ('HOME','USER','LOGNAME','PATH','TMPDIR',
-        'A7C2_ZIG_CACHE','A7LOOK_AUTO_SETTINGS') if environment.get(key)}
+        'A7C2_ZIG_CACHE','A7LOOK_AUTO_SETTINGS','LIBUSB_DEBUG') if environment.get(key)}
     assignments.update(A7C2_DESKTOP_DATA=str(data_root()),PYTHONUTF8='1',PYTHONIOENCODING='utf-8')
-    assignments['LIBUSB_DEBUG']=environment.get('LIBUSB_DEBUG','4')
     assignments.setdefault('A7C2_ZIG_CACHE',str(data_root()/'compiler-cache'))
     shell=shlex.join(['/usr/bin/env']+[key+'='+value for key,value in assignments.items()]+argv)
     parent=Path(request).parent
@@ -111,7 +119,8 @@ def execute(path):
     exit_file.unlink(missing_ok=True)
     code=None
     try:
-        opened=subprocess.run(command(path,os.getuid(),os.getgid(),os.environ,request.get('language','en')),
+        opened=subprocess.run(command(path,os.getuid(),os.getgid(),worker_environment(request['action'],os.environ),
+                                      request.get('language','en')),
                               capture_output=True,text=True,encoding='utf-8',errors='replace')
     except Exception as exc:
         opened=None;detail=repr(exc)

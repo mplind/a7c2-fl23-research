@@ -46,7 +46,7 @@ def test_terminal_launcher_quoting_preserves_spaces_quotes_and_metacharacters(tm
     sudo=[line for line in lines if line.startswith('/usr/bin/sudo ')]
     assert len(sudo)==1 and shlex.split(sudo[0])==['/usr/bin/sudo','/bin/sh','-c',shell]
     assert '--privileged-worker' in shell and 'A7C2_DESKTOP_DATA=' in shell and 'HOME=' in shell
-    assert 'LIBUSB_DEBUG=4' in shell
+    assert 'LIBUSB_DEBUG' not in shell  # off unless asked for: it writes about 10 MB/min of root-owned logs
     trap=shlex.split([line for line in lines if line.endswith(' HUP')][0])
     exit_file=str(request.parent/'authorization.exit')
     assert trap==['trap','echo closed > '+shlex.quote(exit_file)+'; exit 129','HUP']
@@ -58,10 +58,10 @@ def test_terminal_launcher_quoting_preserves_spaces_quotes_and_metacharacters(tm
                               capture_output=True,timeout=30).returncode==0
 
 
-def make_request(tmp_path,monkeypatch):
+def make_request(tmp_path,monkeypatch,action='direct_factory_reset'):
     monkeypatch.setenv('A7C2_DESKTOP_DATA',str(tmp_path/'app'))
     request=tmp_path/'job/request.private.json'
-    write_json(request,dict(action='direct_factory_reset',arguments={},job_dir=str(request.parent)))
+    write_json(request,dict(action=action,arguments={},job_dir=str(request.parent)))
     return request
 
 
@@ -145,6 +145,31 @@ def test_explicit_debug_level_is_preserved(tmp_path,monkeypatch):
     request=make_request(tmp_path,monkeypatch)
     shell=macadmin.shell_command(request,501,20,{'LIBUSB_DEBUG':'3'})
     assert 'LIBUSB_DEBUG=3' in shell
+
+
+def terminal_script(tmp_path,monkeypatch,action):
+    """The Terminal script execute() writes for a job of `action` that then succeeds."""
+    request=make_request(tmp_path,monkeypatch,action)
+    execute(request,terminal(request,'0',status=dict(phase='SUCCEEDED',action=action)))
+    return (request.parent/'authorize-in-terminal.command').read_text(encoding='utf-8')
+
+
+@pytest.mark.parametrize('action',['direct_factory_reset','setup_all','connect','sound_install'])
+def test_libusb_debug_is_off_for_ordinary_camera_jobs(tmp_path,monkeypatch,action):
+    monkeypatch.delenv('LIBUSB_DEBUG',raising=False)
+    assert 'LIBUSB_DEBUG' not in terminal_script(tmp_path,monkeypatch,action)
+
+
+def test_the_usb_stability_diagnostic_turns_libusb_debug_on(tmp_path,monkeypatch):
+    monkeypatch.delenv('LIBUSB_DEBUG',raising=False)
+    assert 'LIBUSB_DEBUG=4' in terminal_script(tmp_path,monkeypatch,'usb_stability')
+
+
+@pytest.mark.parametrize('action',['usb_stability','direct_factory_reset'])
+def test_an_explicit_debug_level_passes_through_for_every_job(tmp_path,monkeypatch,action):
+    monkeypatch.setenv('LIBUSB_DEBUG','1')
+    script=terminal_script(tmp_path,monkeypatch,action)
+    assert 'LIBUSB_DEBUG=1' in script and 'LIBUSB_DEBUG=4' not in script
 
 
 def test_dispatch_requests_authorization_before_loading_camera_backend(tmp_path,monkeypatch):
