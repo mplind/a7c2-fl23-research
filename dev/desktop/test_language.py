@@ -266,12 +266,23 @@ def test_every_label_the_english_copy_quotes_is_on_screen(window):
     # Buttons that change their label with the task state show these in other states.
     labels |= {i18n.tr(key) for key in ('继续安装', '开始新的一键安装', '继续槽位更改', '断电后重试恢复（本次尚未写入）',
                                         '重启后核对并完成恢复')}
+    # The verbs of the write confirmations (shell.ask): window.py's write and the recipe review.
+    labels |= {i18n.tr('写入相机'), i18n.tr('写入配方')}
     # Prose names a button without the ellipsis its label ends with ("Continue installation").
     labels |= {label.removesuffix('…') for label in labels}
     from desktopapp.en_engine import ENGINE  # the log and the banner quote labels too
     quoted = {text for english in list(STRINGS.values()) + list(ENGINE.values())
               for text in re.findall(r'"([^"]+)"', english)}
     assert sorted(quoted - labels - OUTSIDE_THE_APP) == []
+    # R57 M-2: buttons the copy names without quotes, each a label on screen.
+    unquoted = {'Verify and finish': 'click Verify and finish', 'Test': 'Click Test above', 'Restore': 'Click Restore',
+                'Retry restore': 'click Retry restore', 'Prepare': 'Click Prepare first',
+                'Write to camera': 'clicking Write to camera', 'Show saved summary': 'Show saved summary opens this again',
+                'Continue installation': 'click Continue installation', 'Write recipe': 'click Write recipe',
+                'Verify': 'This Verify checks'}
+    copy = ' '.join(list(STRINGS.values()) + list(ENGINE.values()))
+    assert sorted(label for label, phrase in unquoted.items() if phrase in copy and label not in labels) == []
+    assert sorted(phrase for phrase in unquoted.values() if phrase not in copy) == []  # the list stays current
 
 
 @pytest.mark.parametrize('language, cancel, close', [('zh_CN', '取消', '关闭'), ('en', 'Cancel', 'Close')])

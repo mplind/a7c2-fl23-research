@@ -260,7 +260,7 @@ ENGINE = {
     '只继续名称、设置与重新加载准备，不重复写入程序。':
         'Continuing names, settings and reload preparation only; programs are not rewritten.',
     '续接写入和读回已结束，恢复尚未完成：请拔 USB 和其他外部供电，等存取灯停止闪烁，再正常关机并等屏幕和灯完全熄灭；取下电池至少一分钟，再装回开机、接回 USB，点击“重启后核对并完成恢复”。':
-        'Unplug USB and any other power, wait for the access lamp to stop blinking, then turn the camera off and wait until the screen and lamp are dark. Take the battery out for at least one minute, put it back, turn on, reconnect USB and click "Verify and finish". The continued write and read-back are done, but the restore is not finished.',
+        'Reading and writing have ended. The restore isn\'t finished: unplug USB and any other power, wait for the access lamp to stop blinking, then turn the camera off and wait until the screen and lamp are dark. Take the battery out for at least 1 minute, put it back, turn on, reconnect USB and click "Verify and finish".',
     '相机仍在运行上次写入前加载的程序，本次没有写入。请先拔 USB、关机，取下电池至少一分钟，再开机接回 USB，点击“重启后核对并完成恢复”或再次点击恢复。':
         'Unplug USB, turn the camera off and take the battery out for at least one minute. Then turn it on, reconnect USB, and click "Verify and finish" or restore again. The camera is still running the programs it loaded before the last write; nothing was written.',
     '先写入名称资源，成功后才写入程序。': 'Writing names first; programs follow only after they succeed.',
@@ -296,7 +296,7 @@ ENGINE = {
     '名称内容已完成；只读挂载忙碌，待完成设置后断电重开核对。':
         'Names are done; the read-only mount is busy. After the settings, do a cold restart and verify.',
     '恢复完成，所有读写已结束。拔 USB 和其他外部供电，等存取灯停止闪烁，再正常关机并等屏幕和灯完全熄灭；取下电池至少一分钟，再装回开机、检查并核对。':
-        'Restore written; all reads and writes are finished. Unplug USB and any other power, wait for the access lamp to stop blinking, then turn the camera off and wait until the screen and lamp are dark. Take the battery out for at least one minute, put it back, turn on, check the camera and verify.',
+        'Reading and writing have ended. The restore is written. Unplug USB and any other power, wait for the access lamp to stop blinking, then turn the camera off and wait until the screen and lamp are dark. Take the battery out for at least 1 minute, put it back, turn on, check the camera and verify.',
     '原厂恢复后的 /usr 只读挂载尚未确认；不标记恢复完成，请保留日志':
         '/usr isn\'t back to read-only after the factory restore, so the restore isn\'t marked complete. Do the cold restart, then click "Verify and finish" again; if this repeats, export diagnostics',
     '名称写入已完成，但尚未确认新开机后的只读挂载；不清理旧资源':
@@ -483,9 +483,9 @@ ENGINE = {
     '所选片段（起点 %.3f 秒，长度 %.3f 秒）几乎没有声音。很多音频开头是一段静音，请把起点移到声音出现的位置，或加长片段后重新转换。':
         'The clip (start %.3f s, length %.3f s) is almost silent. Many recordings open with silence: move the start to where the sound begins, or lengthen the clip, then convert again.',
     '电子快门声尚未开启。请先点击“开启电子快门声”，完成断电重开后再试听；本次没有写入固件或注册试听。':
-        'The electronic shutter sound is off, so no trial was registered and no firmware was written. Click "Turn on…" beside "Shutter sound", do the cold restart, then try the sound.',
+        'The electronic shutter sound is off, so no trial was registered and no firmware was written. Click "Turn on…" under "Electronic shutter" on the Shutter sound page, do the cold restart, then try the sound.',
     '旧版快门声音尚未限制机械快门。请重新点击“开启电子快门声”更新后再试听；本次未注册声音。':
-        'The older shutter sound support also plays with the mechanical shutter, so no sound was registered. Click "Turn on…" beside "Shutter sound" again to update it, then try the sound.',
+        'The older shutter sound support also plays with the mechanical shutter, so no sound was registered. Click "Turn on…" under "Electronic shutter" again to update it, then try the sound.',
     '未找到相机 USB 连接。请拔插 USB 并选择海量存储后重试；尚未进行服务认证或声音写入。':
         'Unplug and reconnect USB, choose Mass Storage, then try again. No camera USB connection was found; no service authentication or sound write took place.',
     '上一次声音操作（%s）中途停止，结果还没确认，所以没有开始新的操作，也没有连接相机。请点窗口底部“导出诊断包”发给作者核对；不要删除声音工作目录。（Previous operation is unresolved: %s）':
@@ -555,11 +555,34 @@ ENGINE = {
         'One-click install: checking the earlier programs and names',
     '一键安装：RESOURCE_REVIEW_REQUIRED':
         'One-click install: checking the earlier names',
+    # desktopapp.allinone: each step of the one-click job by what it does (worker.log keeps the action id).
+    '执行：usb_prepare':
+        'Running: the USB connection setup',
+    '执行：connect':
+        'Running: the service connection test',
+    '执行：vertical_enable':
+        'Running: Vertical display, Turn on',
+    '执行：direct_install_all':
+        'Running: the install of the selected features',
+    '执行：direct_verify':
+        'Running: the check after the cold restart',
+    '执行：direct_resume_looks':
+        'Running: the names check, then the program install',
+    '执行：direct_resume_settings':
+        'Running: the settings, after the programs and names are checked',
+    '执行：review_failed_names':
+        'Running: the check of the earlier names',
+    '执行：sound_on':
+        'Running: Electronic shutter sound, Turn on',
+    '执行：plugin_install':
+        'Running: the Lightroom plugin install',
 }
 
-# Errors that give the user their own next step: a click, a cold restart, a fix, or "export diagnostics".
-# The failure banner adds its "Export diagnostics to report it" only to an error not listed here
-# (window.Window.stopped_text). Every key is an ENGINE entry, and means the same in both languages.
+# Errors whose English gives the user their own next step: a click, a cold restart, a fix, or "export
+# diagnostics". In the English interface the failure banner adds its "Export diagnostics to report it" only
+# to an error not listed here (window.Window.stopped_text). The set was chosen from the English, which gives
+# some errors a next step their Chinese source lacks, so the Chinese interface keeps the suffix on every
+# error. Every key is an ENGINE entry.
 NEXT_STEP = frozenset({
     # desktopapp: the Terminal password step, the worker, one-click install, ExifTool, look lists
     '管理员进程意外结束，相机操作结果未知。请导出诊断包，不要重复刚才的操作。',

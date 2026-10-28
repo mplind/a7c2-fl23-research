@@ -238,16 +238,20 @@ def translate_line(text):
 
 
 def translate_text(text):
-    """Worker or engine output of one or more lines in English: as one message when that leaves no
-    Chinese, else line by line."""
+    """Worker or engine output of one or more lines in English: as one message when an entry with as many
+    lines matches it whole and that leaves no Chinese, else line by line. The window reads worker.log in
+    chunks of several lines, and a one-line format such as '一键安装：%s' would otherwise take the lines after
+    its own as its value, so the first line would miss its exact entry."""
     if not CJK.search(text):
         return text
     if text in EXACT:  # an entry whose own spacing or line breaks are part of it
         return EXACT[text]
     lead, core, trail = _spacing(text)
-    english = _message(core)
-    if english is not None and not HAN.search(english):
-        return lead + english + trail
+    entry = source(core)
+    if entry is not None and entry.count('\n') == core.count('\n'):
+        english = _message(core)
+        if english is not None and not HAN.search(english):
+            return lead + english + trail
     return '\n'.join(translate_line(line) for line in text.split('\n'))
 
 

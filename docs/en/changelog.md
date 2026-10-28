@@ -2,6 +2,10 @@
 
 [Home](../../README.md) · [简体中文](../zh-CN/changelog.md)
 
+## Unreleased — messages that match what the app does
+
+- Buttons, help text, confirmations and job messages say what each control and job actually does, checked against the code. The FL2/FL3, Vertical display and Shutter sound switches are one row each with both buttons; buttons that open a dialog first end with an ellipsis; the write confirmation says the click confirms the battery level, which the app can't read, and what the build check does and doesn't cover; the banner while a task runs says whether the camera is in use; the log names each one-click step; and the Mac no longer shows the Prepare and driver rows, which do nothing there that Detect or Test doesn't. Nothing in the camera writes changed.
+
 ## 3.0.3 Intel macOS build r7 — firmware build gate and body-build support — 2026-10-28
 
 A local Intel macOS build, `A7C2Tools-3.0.3-macOS-x86_64-r7-buildgate.dmg`, on top of 3.0.3 and the earlier Intel and English builds.

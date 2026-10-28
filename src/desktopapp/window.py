@@ -1,5 +1,6 @@
 """Six explicit workflows, background workers and a complete diagnostic log."""
 from .i18n import configure, translate_qt, tr
+from . import i18n
 from datetime import datetime
 import json
 import os
@@ -37,17 +38,22 @@ def joined(text, rest):
 
 
 FIRMWARE = '2.01'  # the only firmware this release supports
-# What a Vertical display or Shutter sound button writes, for the "Target:" line of the write
-# confirmation. Their arguments name only a records folder, which says nothing about the write.
+# The "Target:" line of the write confirmation for every write whose target doesn't depend on its
+# arguments: the Vertical display and Shutter sound buttons (their arguments name only a records folder,
+# which says nothing about the write), the factory restore and FL2/FL3. launch() builds the others.
 WRITE_TARGETS = {'vertical_enable': '竖屏显示＋Fn／子菜单线框修正', 'vertical_disable': '关闭竖屏显示并撤销线框修正',
                  'sound_on': '电子快门声：开启', 'sound_off': '电子快门声：关闭',
                  'sound_audition': '临时试听当前转换的声音', 'sound_install': '保存当前转换的声音',
-                 'sound_restore_sound': '恢复索尼原厂快门声'}
+                 'sound_restore_sound': '恢复索尼原厂快门声', 'direct_factory_reset': '原厂 2.01 功能',
+                 'direct_fl23_enable': 'FL2／FL3：启用', 'direct_fl23_disable': 'FL2／FL3：从列表移除'}
 # The body of every write confirmation. The battery is the one check left to the user (the app can't
 # read its level, so the click confirms it); the model and the firmware build are checked by the app
-# before anything is written (transport.Session, devicesession's build gate).
+# before anything is written (transport.Session, devicesession's build gate). The build check puts the
+# regions this tool manages back to stock before it compares (buildprofile.identify), so another tool's
+# change inside them goes unseen, as compat.WARNING says too.
 WRITE_CHECKS = ('\n请确认电量至少 50%。本工具无法读取电量；点击“写入相机”即表示已确认。\n'
-                '写入前，本工具会核对相机是 ILCE-7CM2 且为受支持的 2.01 固件版本，不符合时停止。\n'
+                '写入前，本工具会核对相机是 ILCE-7CM2，且本工具管理区域以外的程序与受支持的 2.01 固件版本一致，不符合时停止。\n'
+                '其他工具在本工具管理区域内所做的修改无法检测，可能与本工具冲突。\n'
                 '在完整读回结束前，保持相机开机并连接 USB，不要关机或拔线。')
 # Sidebar: (section title shown above the first page of a section, page label, icon).
 NAVIGATION = (('安装与连接', '首页 · 一键安装', 'home'), (None, '连接与驱动', 'connection'), (None, '恢复原厂功能', 'restore'),
@@ -1250,15 +1256,12 @@ class Window(W.QMainWindow):
                       tr('自动选择已连接机身最早可用的完整备份') if action == 'restore_auto' else
                       arguments.get('backup') if action == 'restore' else
                       tr(WRITE_TARGETS[action]) if action in WRITE_TARGETS else arguments.get('look') or arguments.get('workspace'))
-            if action in jobs.DIRECT_ACTIONS:
+            if action in jobs.DIRECT_ACTIONS and action not in WRITE_TARGETS:
                 target = (tr('；').join(tr('自订 %s → %s') % (r['slot'], tr('恢复 ST 默认') if r['action']=='restore' else tr('写入 ')+r['name']) for r in arguments.get('operations', []))
                           if action == 'direct_looks_import' else
                           tr('继续已写好名称的外观安装：')+arguments.get('failed_workspace','') if action=='direct_resume_looks' else
                           (tr('核对上次恢复；相机内容若已改变，则按当前字节重新恢复：') if factory_finished else
                            tr('继续完成名称／设置恢复：')) + arguments.get('failed_workspace', '') if action == 'direct_resume_factory' else
-                          tr('原厂 2.01 功能') if action == 'direct_factory_reset' else
-                          tr('FL2／FL3：启用') if action == 'direct_fl23_enable' else
-                          tr('FL2／FL3：从列表移除') if action == 'direct_fl23_disable' else
                           tr('自订 %s：%s') % (arguments.get('slot'), tr('ST 默认') if action == 'direct_slot_default'
                                            else arguments.get('name') or Path(arguments.get('look', '')).stem))
             scope = (tr('一次应用清单内的写入和恢复，未添加的槽位保持原样；保留 FL23、声音和竖屏。写入读回完成后统一提示断电重开。\n') if action=='direct_looks_import' else
@@ -1466,11 +1469,12 @@ class Window(W.QMainWindow):
             self.show_setup_result()
 
     def stopped_text(self, status, code):
-        """The banner for a job that stopped: its error, then "Export diagnostics to report it" unless the
-        error gives its own next step already (en_engine.NEXT_STEP), such as a click or a cold restart. A
+        """The banner for a job that stopped: its error, then "Export diagnostics to report it" unless, in the
+        English interface, the error gives its own next step already (en_engine.NEXT_STEP), such as a click or
+        a cold restart. NEXT_STEP holds English next steps, so Chinese keeps the suffix on every error. A
         worker that quit without a status has an unknown result, so it always gets the suffix."""
         stopped = tr('操作停止：') + (self.error_text(status) if 'error' in status else tr('进程异常退出，退出码 ') + str(code))
-        if 'error' in status and catalogue_entry(status['error']) in NEXT_STEP:
+        if i18n.language() == 'en' and 'error' in status and catalogue_entry(status['error']) in NEXT_STEP:
             return joined(stopped, tr('。'))
         return joined(stopped, tr('。请导出诊断包。'))
 

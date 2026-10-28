@@ -299,20 +299,148 @@ OWN_STEP = '终端授权未完成（窗口已关闭或密码不正确）；本�
 NO_STEP = '读取 appFw.so 失败：0x3528804'
 
 
-@pytest.mark.parametrize('language', ['en', 'zh_CN'])
-def test_the_failure_banner_adds_export_diagnostics_only_when_the_error_has_no_next_step(window, language):
+def test_the_english_failure_banner_adds_export_diagnostics_only_when_the_error_has_no_next_step(window):
     from desktopapp.engine_text import display
-    ui = window(language)
-    suffix = '. Export diagnostics to report it.' if language == 'en' else '。请导出诊断包。'
+    ui = window('en')
+    suffix = '. Export diagnostics to report it.'
     finish_job(ui, 'direct_verify', error=OWN_STEP)
     own = ui.status.text()
-    assert suffix not in own and 'diagnostics' not in own and '诊断' not in own
-    assert own.rstrip('.。') == ('Stopped: ' if language == 'en' else '操作停止：') + display(OWN_STEP).rstrip('.。')
+    assert suffix not in own and 'diagnostics' not in own
+    assert own.rstrip('.') == 'Stopped: ' + display(OWN_STEP).rstrip('.')
     finish_job(ui, 'direct_verify', error=NO_STEP)
     assert ui.status.text().endswith(suffix)
+
+
+@pytest.mark.parametrize('error', [OWN_STEP, '当前声音文件长度与配置不同。', NO_STEP])
+def test_the_chinese_failure_banner_always_adds_export_diagnostics(window, error):
+    # R57 I-1: NEXT_STEP was chosen from the English, which gives some errors a next step their Chinese
+    # source lacks (当前声音文件长度与配置不同。 says only what is wrong). Chinese keeps its suffix.
+    ui = window('zh_CN')
+    finish_job(ui, 'direct_verify', error=error)
+    assert ui.status.text() == '操作停止：' + error.rstrip('。') + '。请导出诊断包。'
 
 
 def test_every_error_said_to_give_its_own_next_step_is_a_catalogued_message():
     from desktopapp.en_engine import ENGINE, NEXT_STEP
     assert sorted(NEXT_STEP - set(ENGINE)) == []
     assert OWN_STEP in NEXT_STEP and NO_STEP not in NEXT_STEP
+
+
+# Fix round 1 (R57) ------------------------------------------------------------------------------------
+
+# Words that make an English error's own next step: what the user does now.
+NEXT_STEP_WORDS = ('Click', 'click', 'cold restart', 'Export diagnostics', 'export diagnostics', 'try again',
+                   'Try again', 'Reinstall', 'Turn on', 'Unplug', 'Choose', 'Reconnect', 'Quit', 'Wait for',
+                   'Keep the log', 'Save the sound again', 'Move the start', 'move the start', 'Connect one',
+                   'Add at least', "Don't repeat", 'run a factory restore', 'test again', 'Use "Prepare',
+                   'Run its action first', 'check the network', 'Check the network', 'read the camera again',
+                   'Convert the clip first')
+
+
+def test_every_error_listed_with_its_own_next_step_gives_one_in_english():
+    # The /usr refusals take their step from the message checkpointworker fills in (REBOOT): read them so.
+    from desktopapp.en_engine import ENGINE, NEXT_STEP
+    from looktool.checkpointworker import REBOOT
+
+    def shown(key):
+        return ENGINE[key].replace('%s', ENGINE[REBOOT], 1) if key.startswith(('相机 /usr', '写入前检查')) else ENGINE[key]
+    assert sorted(key for key in NEXT_STEP if not any(word in shown(key) for word in NEXT_STEP_WORDS)) == []
+
+
+def test_the_write_confirmation_keeps_the_caution_the_build_check_cannot_cover(window):
+    # R57 I-2: identify() puts the regions this tool manages back to stock before it compares, so another
+    # tool's change inside them passes; the confirmation says so, as compat.WARNING does.
+    for language, words in (('en', "inside the regions this tool manages aren't detected and may conflict"),
+                            ('zh_CN', '本工具管理区域内')):
+        ui = window(language)
+        text = confirmation(ui, 'direct_fl23_enable', dict(firmware='2.01', workspace='w'))
+        assert words in text
+    english = plain(confirmation(window('en'), 'direct_fl23_enable', dict(firmware='2.01', workspace='w')))
+    assert 'outside the regions this tool manages' in english  # what the build check covers, and no more
+
+
+@pytest.mark.parametrize('phase, english', [('DRIVERS', 'One-click install: preparing the USB connection'),
+                                            ('INSTALLING', 'One-click install: writing the selected features'),
+                                            ('WAIT_RELOAD', 'One-click install: paused for the cold restart and check')])
+def test_a_chunk_of_one_click_lines_reads_each_line_by_its_own_entry(phase, english):
+    # R57 I-3: allinone prints the phase, then the step it runs, so the window reads both in one chunk.
+    from desktopapp import engine_text
+    action = {'DRIVERS': 'usb_prepare', 'INSTALLING': 'direct_install_all', 'WAIT_RELOAD': 'direct_verify'}[phase]
+    chunk = '一键安装：' + phase + '\n执行：' + action
+    shown = engine_text.translate_text(chunk).split('\n')
+    assert shown == [english, engine_text.translate_line('执行：' + action)]
+    assert phase not in shown[0] and not re.search(r'\b%s\b' % re.escape(action), shown[1])
+
+
+def test_every_step_the_one_click_job_runs_has_a_name_in_the_log():
+    # R57 C2: the log shows what each step is, not its action id; worker.log keeps the id.
+    import ast
+    from desktopapp import allinone, engine_text
+    tree = ast.parse(Path(allinone.__file__).read_text(encoding='utf-8'))
+    actions = {node.args[0].value for node in ast.walk(tree) if isinstance(node, ast.Call)
+               and isinstance(node.func, ast.Name) and node.func.id == 'call' and node.args
+               and isinstance(node.args[0], ast.Constant)}
+    assert len(actions) >= 10
+    for action in sorted(actions):
+        shown = engine_text.translate_line('执行：' + action)
+        assert not re.search(r'\b%s\b' % re.escape(action), shown) and '_' not in shown, shown
+
+
+def test_the_connection_page_gives_each_row_and_field_its_own_name(window):
+    # R57 C3: the volume field and the Eject row no longer share "Camera volume".
+    ui = window('en')
+    page = ui.pages.widget(1).widget()
+    names = [label.text() for label in page.findChildren(W.QLabel)
+             if label.text() and label.property('role') not in ('callout',)]
+    assert names.count('Camera volume') == 1
+    eject = ui.findChild(W.QPushButton, 'action_mac_unmount')
+    assert row_of(eject).title.text() != 'Camera volume'
+
+
+def test_the_factory_restore_confirmation_says_what_the_page_says(window):
+    # R57 C4: the same scope on the page and in the confirmation.
+    ui = window('en')
+    ui.nav.setCurrentRow(2)
+    text = plain(confirmation(ui, 'direct_factory_reset', dict(firmware='2.01', workspace='w', factory='builtin')))
+    page = plain(ui.page_detail.text())
+    removes = 'Removes everything this tool added to the camera (FL2 and FL3, looks, the shutter sound, vertical display) and resets Custom 1–6 to ST'
+    assert removes in page and removes in text
+    assert "earlier Custom 1–6 settings aren't recovered" in page and "earlier Custom 1–6 settings aren't recovered" in text
+
+
+@pytest.mark.parametrize('source', [
+    '恢复完成，所有读写已结束。拔 USB 和其他外部供电，等存取灯停止闪烁，再正常关机并等屏幕和灯完全熄灭；取下电池至少一分钟，再装回开机、检查并核对。',
+    '续接写入和读回已结束，恢复尚未完成：请拔 USB 和其他外部供电，等存取灯停止闪烁，再正常关机并等屏幕和灯完全熄灭；取下电池至少一分钟，再装回开机、接回 USB，点击“重启后核对并完成恢复”。',
+    '恢复尚未完成：本次写入和完整读回已结束，还必须重启后核对相机实际加载状态。\n\n',
+])
+def test_lines_that_end_camera_io_start_with_the_guides_cue(source):
+    # R57 M-1: the cold-restart guide waits for exactly this phrase.
+    from desktopapp.en_engine import ENGINE
+    english = ENGINE.get(source) or STRINGS[source]
+    assert english.startswith('Reading and writing have ended.')
+
+
+def test_constant_write_targets_come_from_one_table():
+    # R57 M-5: every target that doesn't depend on the arguments is in WRITE_TARGETS.
+    from desktopapp import window as window_module
+    assert {'direct_factory_reset', 'direct_fl23_enable', 'direct_fl23_disable'} <= set(window_module.WRITE_TARGETS)
+
+
+@pytest.mark.parametrize('action, target', [('direct_factory_reset', 'Factory state (firmware 2.01)'),
+                                            ('direct_fl23_enable', 'FL2/FL3: enable'),
+                                            ('direct_fl23_disable', 'FL2/FL3: remove from list')])
+def test_constant_direct_targets_are_unchanged(window, action, target):
+    ui = window('en')
+    text = confirmation(ui, action, dict(firmware='2.01', workspace='w', factory='builtin'))
+    assert 'Target: ' + target + '\n' in text
+
+
+def test_no_row_title_repeats_another_on_its_page_or_the_page_title(window):
+    # R57 M-6: each row says what it is; none repeats a sibling's title or the page's.
+    ui = window('en')
+    for index in range(ui.pages.count()):
+        page = ui.pages.widget(index).widget()
+        titles = [row.title.text() for row in page.findChildren(shell.ActionRow)]
+        repeated = sorted({title for title in titles if titles.count(title) > 1})
+        assert repeated == [], (ui.page_meta[index][0], repeated)
+        assert ui.page_meta[index][0] not in titles, ui.page_meta[index][0]
