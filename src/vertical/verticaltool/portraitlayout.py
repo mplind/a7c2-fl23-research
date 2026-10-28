@@ -50,6 +50,14 @@ def canonical_windows(ap,*,pairs=PAIRS):
     return windows
 
 
+def stock_windows():
+    """(offset, stock bytes) of every appFw.so window canonical_windows plans, in its order: the 17
+    portrait image references, then the two gauge blocks. Needs no program bytes."""
+    return ([(portrait+delta,struct.pack('<I',original)) for portrait,_,delta,original in PAIRS]+
+            [(portraitgauge.OFFSET,portraitgauge.BEFORE),
+             (portraitgauge.VERTICAL_OFFSET,portraitgauge.VERTICAL_BEFORE)])
+
+
 def references(ap,enabled,*,pairs=PAIRS):
     target=bytearray(ap);windows=[]
     for row in canonical_windows(ap,pairs=pairs):

@@ -235,13 +235,15 @@ def write_regions(path, programs, spans):
 def two_builds(tmp_path, monkeypatch):
     """Builds a and b shaped like public and body: b's data after 0x4000 sits 16 bytes earlier, so its
     12-byte table is at 0x7ff0 instead of 0x8000; one instruction in a shared region differs, and so
-    does a build stamp outside every region of cpapp-b.bin."""
+    does a build stamp outside every region of cpapp-b.bin. Two Vertical Display windows, which no
+    regions file holds, sit before 0x4000 and so hold the same bytes in both."""
     rng = random.Random(201)
     a_ap, a_cp = rng.randbytes(SIZE), rng.randbytes(SIZE)
     b_ap = bytearray(a_ap[:0x4000] + a_ap[0x4010:] + rng.randbytes(16))
     b_ap[0x1004:0x1008] = bytes.fromhex('00b03d91')
     b_cp = bytearray(a_cp)
     b_cp[0x9000:0x9008] = b'20250923'
+    vertical = [(0x2000, a_ap[0x2000:0x2004]), (0x2400, a_ap[0x2400:0x2440])]
     result = {}
     for key, ap, cp, table in (('a', a_ap, a_cp, 0x8000), ('b', bytes(b_ap), bytes(b_cp), 0x7ff0)):
         spans = {'appFw.so': [(0x1000, 16), (table, 12)], 'cpapp-b.bin': [(0x3000, 8), (SIZE - 16, 16)]}
@@ -252,15 +254,19 @@ def two_builds(tmp_path, monkeypatch):
         result[key] = SimpleNamespace(build=build, ap=ap, cp=cp, spans=spans, path=tmp_path / (key + '.json'))
     monkeypatch.setattr(buildprofile, 'ASSETS', tmp_path)
     monkeypatch.setattr(buildprofile, 'BUILDS', (result['a'].build, result['b'].build))
-    return SimpleNamespace(**result)
+    monkeypatch.setattr(buildprofile, 'vertical_display_windows', lambda: list(vertical))
+    return SimpleNamespace(**result, vertical=vertical)
 
 
-def installed(programs, fill=0xee):
-    """The programs with every region overwritten, as a finished tool install leaves them."""
+def installed(programs, fill=0xee, vertical=()):
+    """The programs with every region overwritten, as a finished tool install leaves them, and every
+    (offset, stock bytes) window in `vertical` too."""
     files = [bytearray(programs.ap), bytearray(programs.cp)]
     for data, name in zip(files, PROGRAMS):
         for at, size in programs.spans[name]:
             data[at:at + size] = bytes([fill]) * size
+    for at, raw in vertical:
+        files[0][at:at + len(raw)] = bytes([fill]) * len(raw)
     return files
 
 
@@ -271,6 +277,57 @@ def test_each_synthetic_build_identifies_stock_or_installed(two_builds, key):
     ap, cp = installed(programs)
     assert sha(ap) != programs.build.ap_sha256 and sha(cp) != programs.build.cp_sha256
     assert identify(bytes(ap), bytes(cp)) is programs.build
+
+
+@pytest.mark.parametrize('key', ['a', 'b'])
+def test_vertical_display_windows_are_normalised_too(two_builds, key):
+    """Factory Restore's regions leave Vertical Display out (the vertical tool puts it back), but a
+    camera with it installed must still identify, or every later write, the undo included, refuses."""
+    programs = getattr(two_builds, key)
+    ap, cp = installed(programs, vertical=two_builds.vertical)
+    assert identify(bytes(ap), bytes(cp)) is programs.build
+    # Only the first window written, as an interrupted install leaves it.
+    partial = bytearray(programs.ap)
+    partial[0x2000:0x2004] = b'\xee' * 4
+    assert identify(bytes(partial), programs.cp) is programs.build
+
+
+def test_identity_regions_are_the_restore_regions_and_the_vertical_windows(two_builds):
+    b = two_builds.b
+    restore = regions(b.build)
+    assert restore == {'appFw.so': [(0x1000, b.ap[0x1000:0x1010]), (0x7ff0, b.ap[0x7ff0:0x7ffc])],
+                       'cpapp-b.bin': [(0x3000, b.cp[0x3000:0x3008]), (SIZE - 16, b.cp[-16:])]}
+    assert buildprofile.identity_regions(b.build) == {
+        'appFw.so': [(0x1000, b.ap[0x1000:0x1010]), (0x2000, b.ap[0x2000:0x2004]), (0x2400, b.ap[0x2400:0x2440]),
+                     (0x7ff0, b.ap[0x7ff0:0x7ffc])],
+        'cpapp-b.bin': restore['cpapp-b.bin']}
+
+
+def test_a_vertical_window_the_regions_file_already_holds_is_taken_once(two_builds, monkeypatch):
+    """A regenerated regions file may hold the vertical windows itself; the bytes must then agree."""
+    a = two_builds.a
+    monkeypatch.setattr(buildprofile, 'vertical_display_windows', lambda: [(0x1004, a.ap[0x1004:0x1008])])
+    assert buildprofile.identity_regions(a.build) == regions(a.build)
+    assert identify(a.ap, a.cp) is a.build
+
+
+@pytest.mark.parametrize('window, message', [
+    ((0x1004, b'\x00\x00\x00\x00'), 'disagrees'),   # inside a region, other bytes
+    ((0x0ffe, b'\x00' * 4), 'overlaps'),              # across a region's start
+    ((0x100e, b'\x00' * 4), 'overlaps'),              # across a region's end
+    ((SIZE - 2, b'\x00' * 4), 'invalid'),             # past the end of the program
+    ((-4, b'\x00' * 4), 'invalid'),
+    ((0x2000, b''), 'invalid'),
+], ids=['disagrees', 'start edge', 'end edge', 'past the end', 'negative', 'empty'])
+def test_a_vertical_window_that_does_not_fit_is_refused(two_builds, monkeypatch, window, message):
+    a = two_builds.a
+    if message == 'disagrees':
+        window = (window[0], bytes(x ^ 0xff for x in a.ap[0x1004:0x1008]))
+    monkeypatch.setattr(buildprofile, 'vertical_display_windows', lambda: [window])
+    with pytest.raises(ValueError, match=message):
+        buildprofile.identity_regions(a.build)
+    with pytest.raises(ValueError, match=message):
+        identify(a.ap, a.cp)
 
 
 def test_another_builds_table_outside_these_regions_is_refused(two_builds):

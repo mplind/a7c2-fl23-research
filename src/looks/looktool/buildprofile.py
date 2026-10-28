@@ -2,9 +2,10 @@
 
 Each supported build has a full-file SHA-256 for appFw.so and cpapp-b.bin, its own table of
 tool-owned regions holding that build's stock bytes, and the three facts that differ between builds.
-A pair of program files is identified by writing a build's stock bytes over every one of its regions,
-which undoes any tool change, finished or interrupted, and comparing the whole-file digests. Only the
-program files take part: settings and calibration never do. Offline only; no camera access.
+A pair of program files is identified by writing a build's stock bytes over every region a tool may
+change (identity_regions), which undoes any tool change, finished or interrupted, and comparing the
+whole-file digests. Only the program files take part: settings and calibration never do. Offline
+only; no camera access.
 """
 import base64
 import binascii
@@ -13,9 +14,11 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import sys
 import zlib
 
 ASSETS = Path(__file__).resolve().parents[1] / 'assets'
+VERTICAL = Path(__file__).resolve().parents[2] / 'vertical'
 PROGRAMS = ('appFw.so', 'cpapp-b.bin')
 PUBLIC_LOOK_TABLE = 0x4c7cf7c
 LOOK_TABLE_BYTES = 12
@@ -65,8 +68,10 @@ BUILDS = (
 
 
 def regions(build):
-    """{'appFw.so': [(offset, stock bytes), …], 'cpapp-b.bin': […]}: every tool-owned region of the
-    build, in file order, holding that build's own stock bytes."""
+    """{'appFw.so': [(offset, stock bytes), …], 'cpapp-b.bin': […]}: the build's regions file, the
+    tool-owned regions Factory Restore writes back, in file order, holding that build's own stock
+    bytes. Vertical Display's windows are not among them: the vertical tool puts those back itself
+    (direct.plan), and identity_regions adds them for identification."""
     name = build.regions_file
     data = json.loads((ASSETS / name).read_text(encoding='utf-8'))
     if (data.get('schema'), data.get('model'), data.get('version')) != ('a7c2-factory-regions/1', 'ILCE-7CM2', '2.01'):
@@ -93,6 +98,45 @@ def _stock_regions(spec, size, where, key):
     return rows
 
 
+def vertical_display_windows():
+    """(offset, stock bytes) of every appFw.so window Vertical Display writes (verticaltool.portraitlayout).
+    They lie in .text and in .rodata before 0x4ba1744, which both 2.01 builds hold at the same offsets
+    with the same bytes, so one list serves every build (test_port_unchanged.py proves it)."""
+    if str(VERTICAL) not in sys.path:
+        sys.path.insert(0, str(VERTICAL))
+    from verticaltool import portraitlayout
+    return portraitlayout.stock_windows()
+
+
+def identity_regions(build):
+    """{'appFw.so': [(offset, stock bytes), …], 'cpapp-b.bin': […]}: every program region any tool may
+    change on `build`, in file order, holding the build's stock bytes. This is the set identify()
+    normalises: regions(build) together with the Vertical Display windows."""
+    result = regions(build)
+    result['appFw.so'] = _with_windows(result['appFw.so'], vertical_display_windows(), build.ap_bytes, build.key)
+    return result
+
+
+def _with_windows(rows, windows, size, key):
+    """`rows` and each (offset, stock bytes) window, in file order. A window that already lies inside
+    one row is taken once, and must hold the same bytes there; one that overlaps a row only in part,
+    is empty or lies outside the program is refused."""
+    result = list(rows)
+    for at, raw in windows:
+        if not raw or at < 0 or at + len(raw) > size:
+            raise ValueError('%s: invalid Vertical Display window %#x+%d' % (key, at, len(raw)))
+        holder = next(((start, stock) for start, stock in rows if start <= at and at + len(raw) <= start + len(stock)), None)
+        if holder is not None:
+            start, stock = holder
+            if stock[at - start:at - start + len(raw)] != raw:
+                raise ValueError('%s: Vertical Display window %#x disagrees with its regions file' % (key, at))
+            continue
+        if any(start < at + len(raw) and at < start + len(stock) for start, stock in result):
+            raise ValueError('%s: Vertical Display window %#x+%d overlaps a tool region' % (key, at, len(raw)))
+        result.append((at, raw))
+    return sorted(result)
+
+
 def _normalised_sha256(program, stock_regions):
     restored = bytearray(program)
     for at, raw in stock_regions:
@@ -101,12 +145,13 @@ def _normalised_sha256(program, stock_regions):
 
 
 def identify(ap, cp):
-    """The supported build that appFw.so `ap` and cpapp-b.bin `cp` are, whatever the tool's regions
-    hold. Raises UnsupportedFirmware naming the files' own digests when no build matches."""
+    """The supported build that appFw.so `ap` and cpapp-b.bin `cp` are, whatever the tools' regions
+    (identity_regions) hold. Raises UnsupportedFirmware naming the files' own digests when no build
+    matches."""
     for build in BUILDS:
         if len(ap) != build.ap_bytes or len(cp) != build.cp_bytes:
             continue
-        stock_regions = regions(build)
+        stock_regions = identity_regions(build)
         # cpapp-b.bin is the smaller file and already tells the two 2.01 builds apart.
         if (_normalised_sha256(cp, stock_regions['cpapp-b.bin']) == build.cp_sha256
                 and _normalised_sha256(ap, stock_regions['appFw.so']) == build.ap_sha256):

@@ -25,13 +25,10 @@ def merged(spans):
     return [(start, end - start) for start, end in result]
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--components', type=Path, required=True)
-    parser.add_argument('--legacy-fixtures', type=Path)
-    parser.add_argument('--output', type=Path, default=ROOT / 'src/looks/assets/factory-regions-2.01.json')
-    args = parser.parse_args()
-    programs = {name: (args.components / name).read_bytes() for name in ('appFw.so', 'cpapp-b.bin')}
+def program_spans(programs, legacy_fixtures=None):
+    """{'appFw.so': [(offset, size), …], 'cpapp-b.bin': […]}: every tool-owned span of the public
+    programs `programs` ({name: bytes}), merged in file order. `legacy_fixtures`, an index of older
+    tool outputs, adds every span where those differ from `programs`."""
     regions = {name: [] for name in programs}
     patches = json.loads((ROOT / 'src/camera_runtime/assets/patches.json').read_text(encoding='utf-8'))
     for name, spec in zip(programs, patches):
@@ -55,16 +52,24 @@ def main():
     regions['appFw.so'].extend((at, len(old)) for at, old, new in boot_sound.windows(programs['appFw.so'], build=public))
     sys.path.insert(0,str(ROOT/'src/vertical'))
     from verticaltool import portraitlayout
-    regions['appFw.so'].extend((portrait+delta,4) for portrait,_,delta,_ in portraitlayout.PAIRS)
-    from verticaltool import portraitgauge
-    regions['appFw.so'].append((portraitgauge.OFFSET,len(portraitgauge.BEFORE)))
-    regions['appFw.so'].append((portraitgauge.VERTICAL_OFFSET,len(portraitgauge.VERTICAL_BEFORE)))
-    if args.legacy_fixtures:
-        index = json.loads(args.legacy_fixtures.read_text(encoding='utf-8'))
+    regions['appFw.so'].extend((at, len(raw)) for at, raw in portraitlayout.stock_windows())
+    if legacy_fixtures:
+        index = json.loads(legacy_fixtures.read_text(encoding='utf-8'))
         for key, name in (('three_ap', 'appFw.so'), ('six_ap', 'appFw.so'),
                           ('three_cp', 'cpapp-b.bin'), ('v4_cp', 'cpapp-b.bin')):
             candidate = Path(index[key]).read_bytes()
             regions[name].extend((at, len(old)) for at, old, new in checkpointworker.differences(programs[name], candidate))
+    return {name: merged(spans) for name, spans in regions.items()}
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--components', type=Path, required=True)
+    parser.add_argument('--legacy-fixtures', type=Path)
+    parser.add_argument('--output', type=Path, default=ROOT / 'src/looks/assets/factory-regions-2.01.json')
+    args = parser.parse_args()
+    programs = {name: (args.components / name).read_bytes() for name in ('appFw.so', 'cpapp-b.bin')}
+    regions = program_spans(programs, args.legacy_fixtures)
     output = {'schema': 'a7c2-factory-regions/1', 'model': 'ILCE-7CM2', 'version': '2.01',
               'source': 'Sony ILCE-7CM2 2.01 official FDAT, model 0x20030014',
               'scope': 'Only supported project program regions and FL23 color-unit subranges; not full firmware or body calibration',
@@ -72,7 +77,7 @@ def main():
     encode = lambda raw: base64.b64encode(zlib.compress(raw, 9)).decode('ascii')
     for name, spans in regions.items():
         rows = []
-        for at, size in merged(spans):
+        for at, size in spans:
             raw = programs[name][at:at + size]
             if len(raw) != size:
                 raise ValueError('Reference region outside original file')
