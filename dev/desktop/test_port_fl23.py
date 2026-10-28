@@ -53,6 +53,14 @@ def plans(build_fixtures):
 
 # Real firmware -------------------------------------------------------------------------------
 
+def test_the_stored_identity_keeps_its_format(plans):
+    """R18 corrects the reminder's text only. validate() compares the identity a workspace stored with
+    the one plan() returns, so its keys and values, provenance_checked included, stay as they were."""
+    for name in ('public', 'body'):
+        assert plans[name][0] == {'kind': 'version-2.01', 'mask': None, 'provenance_checked': False,
+                                  'firmware_version': '2.01', 'version_source': 'user-camera-version-screen'}
+
+
 def test_body_plan_writes_the_same_bytes_as_public(build_fixtures, plans):
     public, body = plans['public'][2], plans['body'][2]
     expected = {name: bytearray(data) for name, data in programs(build_fixtures.body).items()}
@@ -197,6 +205,15 @@ def test_plan_takes_the_build_as_an_optional_keyword():
 def test_unidentified_programs_are_refused_before_any_planning():
     with pytest.raises(UnsupportedFirmware):
         compat.plan(b'stand-in appFw.so', b'stand-in cpapp-b.bin')
+
+
+def test_the_install_reminder_says_the_firmware_build_was_checked():
+    """R18: plan() identifies the build by full-file fingerprint, so the reminder shown before an install
+    no longer says the firmware goes unchecked, in Chinese or in English."""
+    from desktopapp.en_engine import ENGINE
+    english = ENGINE[compat.WARNING]
+    assert '不驗證' not in compat.WARNING and '指紋' in compat.WARNING
+    assert "isn't verified" not in english and 'fingerprint' in english
 
 
 def test_an_appfw_write_in_the_look_table_follows_the_build(monkeypatch):

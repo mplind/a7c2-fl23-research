@@ -8,7 +8,9 @@ from pathlib import Path
 import sys
 import core
 
-WARNING='不驗證韌體來源。非本倉庫修改的韌體可能與 FL23 衝突，造成相機無法正常啟動；請保留備份。'
+# Shown before an install. plan() identifies the build first; identity['provenance_checked'] below keeps its
+# stored value, because validate() compares stored identities and existing workspaces must stay valid.
+WARNING='韌體已檢查：完整檔案指紋確認為受支援的 2.01 版本。其他工具改過的程式會在寫入前被拒絕。請保留備份。'
 LEGACY_CONVERTER=bytes.fromhex('e1000035002800511f1400718800005400e4031140000039c0035fd63f2c007188020054800000100048613840000039c0035fd600030201100f1112050d13141f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d5')
 
 

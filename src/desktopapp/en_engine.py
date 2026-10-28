@@ -445,8 +445,8 @@ ENGINE = {
     '色度不等於供體目標值': "Chroma doesn't equal the donor target",
     '矩陣不等於供體目標值（逐槽）': "Matrix doesn't equal the donor target (slot by slot)",
     '未知的色彩參數／槽組合，拒絕寫入': 'Unknown colour parameter and slot combination; refusing to write',
-    '不驗證韌體來源。非本倉庫修改的韌體可能與 FL23 衝突，造成相機無法正常啟動；請保留備份。':
-        "The firmware's origin isn't verified. Firmware changed by other projects may conflict with FL2/FL3 and stop the camera starting normally; keep a backup.",
+    '韌體已檢查：完整檔案指紋確認為受支援的 2.01 版本。其他工具改過的程式會在寫入前被拒絕。請保留備份。':
+        'Firmware checked: its full-file fingerprint shows a supported 2.01 build. Programs changed by other tools are refused before anything is written. Keep a backup.',
     'LUT 相容模式缺少依賴，請更新完整工具並重新開啟 FL23.cmd。':
         'LUT compatibility mode is missing a dependency. Update to the complete tool and reopen FL23.cmd.',
     'FL23 只適用於 ILCE-7CM2 2.01；請依相機版本頁填寫':
