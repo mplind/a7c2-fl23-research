@@ -106,3 +106,12 @@ def test_optional_confirmation_does_not_require_a_previous_task(tmp_path,command
     state.update(audio_job=str(root/'missing'),pending=dict(command='old',job='missing'))
     result=(sound_cli.confirm_audio(root,state,'correct') if command=='audio' else sound_cli.confirm_recovery(root,state))
     assert result['camera_io'] is False and state['pending'] is None
+
+
+def test_the_sound_jobs_cold_restart_line_follows_the_guides_order():
+    # Task 8c, engine F3: unplug first, wait for the lamp, switch off, then the battery, as reloadguide.STEPS.
+    import sound_cli
+    line = sound_cli.RELOAD
+    order = [line.index(step) for step in ('Reading and writing have ended', 'Unplug USB', 'access lamp',
+                                           'switch the camera off', 'battery out for at least 1 minute')]
+    assert order == sorted(order)

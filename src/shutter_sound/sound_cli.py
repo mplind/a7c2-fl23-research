@@ -19,9 +19,11 @@ import trial
 from replacement import replace_request,optional_job,command_lock,supersede_pending
 
 SCHEMA = 'a7c2-sound-workspace/1'
-RELOAD = ('USB I/O ended. Shut down normally, wait for the access light, unplug '
-          'USB/all external power and remove the battery for at least one minute. '
-          'Reinstall, power on and test. Disk readback is not a loaded-state test.')
+# The steps of the app's cold-restart guide (desktopapp.reloadguide.STEPS), in its order.
+RELOAD = ('Reading and writing have ended. Unplug USB and any other power, wait for the access lamp to stop '
+          'blinking, then switch the camera off and wait until the screen and lamp are dark. Take the '
+          'battery out for at least 1 minute, put it back, switch on and test. Disk readback is not a '
+          'loaded-state test.')
 
 
 def load_job(path):

@@ -258,7 +258,10 @@ class DirectJob(Rollback):
             labels[phase] = 'FL23 操作完成：已写入并完整读回；重开后生效，无需再点核对。'
         elif phase=='AWAITING_RELOAD' and restoring:
             labels[phase]='恢复尚未完成：写入与读回已结束，等待重启后核对'
-        print(labels.get(phase, phase), flush=True)
+        # A phase saved again (WRITING, after the names) records new values; its label prints once.
+        if phase != getattr(self, '_announced', None):
+            print(labels.get(phase, phase), flush=True)
+            self._announced = phase
 
     def settings(self, camera, before, wanted):
         self.vertical_stage = None
@@ -665,7 +668,10 @@ class DirectJob(Rollback):
                 elif runtime['image_mode'].strip() not in ('0','2'):raise ValueError('Unknown retained image state')
             self.save('RESOURCE_RELOAD_VERIFIED' if ready else namespause.WAIT,
                 resource_reload_not_needed=ready,resource_reload_verified=ready)
-            print('所有读写已结束。名称已核对，程序未写入。'+('只读挂载已恢复，无需额外重开。' if ready else '请按弹窗断电重开后接回，继续剩余程序安装。'),flush=True)
+            # Ready, the worker installs the programs next in this same job (worker.py, direct_resume_looks),
+            # so reading and writing have not ended: say so only when the job stops here for the cold restart.
+            print('无需断电重开。接下来安装程序，请保持 USB 连接。' if ready else
+                  '所有读写已结束。名称已核对，程序未写入。请按弹窗断电重开后接回，继续剩余程序安装。',flush=True)
             return self.state
         except BaseException as exc:
             self.save('NEEDS_REVIEW',error=str(exc));raise

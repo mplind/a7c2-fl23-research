@@ -595,4 +595,7 @@ STRINGS = {
         'Turn on plays a sound with every electronic-shutter shot: Sony’s own, or your saved sound. Turn off keeps the electronic shutter silent. Needs Audio Signals set to On in the camera menu. Takes effect after a cold restart.',
     '完成。详情见日志。':
         'Done. Details are in the log.',
+    # The full stop the stopped banner ends with when the error gives its own next step (window.stopped_text).
+    '。':
+        '.',
 }

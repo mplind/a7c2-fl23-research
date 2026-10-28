@@ -291,3 +291,28 @@ def test_the_saved_summary_button_and_its_lines_say_it_reads_a_file(window, tmp_
     assert plain(ui.status.text()) == "Installation complete. Show saved summary opens this again; it doesn't use the camera."
     assert plain(completion.text(dict(phase='COMPLETE', options={}))).endswith(
         "This summary is saved on this computer; showing it doesn't use the camera.")
+
+
+# 10. The failure banner adds "Export diagnostics" only where the error gives no next step of its own ----
+
+OWN_STEP = '终端授权未完成（窗口已关闭或密码不正确）；本次相机操作尚未开始，可重新点击原按钮。'
+NO_STEP = '读取 appFw.so 失败：0x3528804'
+
+
+@pytest.mark.parametrize('language', ['en', 'zh_CN'])
+def test_the_failure_banner_adds_export_diagnostics_only_when_the_error_has_no_next_step(window, language):
+    from desktopapp.engine_text import display
+    ui = window(language)
+    suffix = '. Export diagnostics to report it.' if language == 'en' else '。请导出诊断包。'
+    finish_job(ui, 'direct_verify', error=OWN_STEP)
+    own = ui.status.text()
+    assert suffix not in own and 'diagnostics' not in own and '诊断' not in own
+    assert own.rstrip('.。') == ('Stopped: ' if language == 'en' else '操作停止：') + display(OWN_STEP).rstrip('.。')
+    finish_job(ui, 'direct_verify', error=NO_STEP)
+    assert ui.status.text().endswith(suffix)
+
+
+def test_every_error_said_to_give_its_own_next_step_is_a_catalogued_message():
+    from desktopapp.en_engine import ENGINE, NEXT_STEP
+    assert sorted(NEXT_STEP - set(ENGINE)) == []
+    assert OWN_STEP in NEXT_STEP and NO_STEP not in NEXT_STEP

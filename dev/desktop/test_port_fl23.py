@@ -214,6 +214,10 @@ def test_the_install_reminder_says_the_firmware_build_was_checked():
     english = ENGINE[compat.WARNING]
     assert '不驗證' not in compat.WARNING and '指紋' in compat.WARNING
     assert "isn't verified" not in english and 'fingerprint' in english
+    # R56: identify() puts every tool-owned region back to stock before hashing, so another tool's change
+    # inside those regions passes it; only changes outside them are refused before anything is written.
+    assert '其他工具改過的程式會在寫入前被拒絕' not in compat.WARNING and '以外' in compat.WARNING
+    assert 'Programs changed by other tools are refused' not in english and 'outside the regions' in english
 
 
 def test_an_appfw_write_in_the_look_table_follows_the_build(monkeypatch):

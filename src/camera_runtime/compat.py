@@ -10,7 +10,9 @@ import core
 
 # Shown before an install. plan() identifies the build first; identity['provenance_checked'] below keeps its
 # stored value, because validate() compares stored identities and existing workspaces must stay valid.
-WARNING='韌體已檢查：完整檔案指紋確認為受支援的 2.01 版本。其他工具改過的程式會在寫入前被拒絕。請保留備份。'
+# identify() puts every region this tool manages back to stock before it hashes, so it refuses another tool's
+# change outside those regions only; inside them FL23 refuses a change only where it hits its own edited sites.
+WARNING='韌體已檢查：完整檔案指紋確認為受支援的 2.01 版本。本工具管理區域以外的修改會在寫入前被拒絕。請保留備份。'
 LEGACY_CONVERTER=bytes.fromhex('e1000035002800511f1400718800005400e4031140000039c0035fd63f2c007188020054800000100048613840000039c0035fd600030201100f1112050d13141f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d5')
 
 

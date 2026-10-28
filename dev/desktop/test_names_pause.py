@@ -53,6 +53,23 @@ class NamesPauseTests(unittest.TestCase):
         self.camera.boot='boot-new';self.camera.usr_mount_readonly=True
         self.assertEqual(job.verify_names_reload()['phase'],'RESOURCE_RELOAD_VERIFIED')
 
+    def test_only_the_paused_path_says_reading_and_writing_have_ended(self):
+        # Ready, the worker writes the programs next in the same job (worker.py: direct_resume_looks), so
+        # that line would tell the user to pull the battery before the riskiest write. Paused, the job ends.
+        import contextlib, io
+        for readonly, ended in ((True, False), (False, True)):
+            with self.subTest(readonly=readonly):
+                self.camera.usr_mount_readonly = readonly
+                self.temps.update({'lut-names-staged.so': Path(self.build['path']).read_bytes(),
+                                   'a7c2.names.request': struct.pack('<8sII', b'A7NAM001', 1, 0), 'a7c2.names.result': self.raw})
+                output = io.StringIO()
+                with contextlib.redirect_stdout(output):
+                    SimDirect(self.root / ('said-' + str(readonly)), factory=self.camera).prepare_names_reload(
+                        self.failed, power_confirmed=True)
+                self.assertEqual('所有读写已结束' in output.getvalue(), ended)
+                if readonly:
+                    self.assertIn('无需断电重开。接下来安装程序，请保持 USB 连接。', output.getvalue())
+
     def test_already_readonly_does_not_force_an_extra_cold_boot(self):
         self.camera.usr_mount_readonly=True
         job=self.job();result=job.prepare_names_reload(self.failed,power_confirmed=True)

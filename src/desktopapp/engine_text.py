@@ -146,6 +146,20 @@ def _message(text):
     return EXACT[text] if text in EXACT else _format(text, FORMATS)
 
 
+def source(text):
+    """The catalogue key whose whole message `text` is: its exact text, or the format it fills in; None for
+    text no entry matches whole. The window asks it what an error says, in either language."""
+    core = text.strip()
+    if core in EXACT:
+        return core
+    if len(core) > LONGEST:
+        return None
+    for found in FORMATS:
+        if found.pattern.fullmatch(core):
+            return found.source
+    return None
+
+
 def _value(text, depth=0):
     """Text the engine filled into a message (a format's value, a JSON result's value, an exception's
     message), in English only when it is itself a message: an engine entry, or an interface sentence

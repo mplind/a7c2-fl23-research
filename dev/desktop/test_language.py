@@ -177,8 +177,8 @@ def finish_failed_job(window, root, error):
 
 @pytest.mark.parametrize('error,english', [
     ('管理员进程意外结束，相机操作结果未知。请导出诊断包，不要重复刚才的操作。', 'result is unknown'),
-    ('终端授权未完成（窗口已关闭或密码不正确）；本次相机操作尚未开始，可重新点击原按钮。', "hasn't started"),
-    ('尚未确认新的冷启动。完成断电重开后再核对，不要重复写入。', "don't repeat the write"),
+    ('终端授权未完成（窗口已关闭或密码不正确）；本次相机操作尚未开始，可重新点击原按钮。', 'never started'),
+    ('尚未确认新的冷启动。完成断电重开后再核对，不要重复写入。', "don't run the write again"),
 ])
 def test_safety_critical_worker_errors_are_shown_in_english(ui, error, english):
     create, _, root = ui

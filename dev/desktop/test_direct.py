@@ -226,6 +226,17 @@ class DirectTransactionTests(unittest.TestCase):
             job.verify_direct()
             self.assertEqual(calls.count(('forward_names',3)),1)
 
+    def test_each_phase_label_prints_once_though_the_names_save_the_phase_again(self):
+        # run_direct saves WRITING again after the names, to record their cleanup; the log says it once.
+        job, prepare, planned = self.named_job()
+        output = io.StringIO()
+        with patch.object(direct,'plan',side_effect=planned), patch.object(nameworker,'prepare',side_effect=prepare), \
+             patch.object(nameworker,'prepare_cleanup',side_effect=lambda build,*args:build), redirect_stdout(output):
+            job.run_direct('look_import',version='2.01',power_confirmed=True,slot=1)
+        printed = output.getvalue().splitlines()
+        self.assertEqual(printed.count('正在应用所选操作'), 1)
+        self.assertIn('先写入名称资源，成功后才写入程序。', printed)  # the names ran, then WRITING was saved again
+
 
 if __name__ == '__main__':
     unittest.main()

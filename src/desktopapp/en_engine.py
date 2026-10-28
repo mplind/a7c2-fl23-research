@@ -12,24 +12,24 @@ ENGINE = {
     '请在打开的「终端」窗口中输入 Mac 登录密码（输入时不显示）。':
         'Enter your Mac login password in the Terminal window that opened. It stays hidden as you type.',
     '等待在「终端」窗口输入 Mac 登录密码；尚未接管 USB 或开始相机操作。输入密码前关闭终端窗口不会刷写相机。\n':
-        'Waiting for your Mac login password in Terminal. USB is not taken over and no camera operation has started; closing Terminal before you enter the password writes nothing to the camera.\n',
+        "No camera access yet: USB isn't taken over until you enter the password, and closing Terminal now writes nothing.\n",
     '管理员进程意外结束，相机操作结果未知。请导出诊断包，不要重复刚才的操作。':
         "Don't repeat the task. The administrator process ended unexpectedly, so the camera result is unknown. Export diagnostics.",
     '终端授权未完成（窗口已关闭或密码不正确）；本次相机操作尚未开始，可重新点击原按钮。':
-        "Terminal authorization didn't finish (window closed or wrong password). The camera task hasn't started; click the same button to try again.",
+        "Terminal authorization didn't finish (Terminal closed, wrong password, or the camera process couldn't start). The camera task never started, so nothing was written. Click the same button to try again.",
     '终端授权未完成，相机操作未报告开始。请保留日志；系统详情：%s':
-        'Terminal authorization did not finish, and the camera operation never reported a start. Keep the log. System details: %s',
+        "Terminal authorization didn't finish, so the camera task never started and nothing was written. Click the same button to try again; if it fails again, export diagnostics. System details: %s",
     '相机授权 worker 必须由终端 sudo 启动。': 'The camera authorization worker must be started by sudo in Terminal.',
     '相机任务已结束，但文件所有权交还失败；请保留此日志。\n%s':
-        'The camera job finished, but returning file ownership to your account failed. Keep this log.\n%s',
+        "The camera job ended, but its files couldn't be handed back to your Mac account; some stay owned by root. The camera isn't affected. Export diagnostics.\n%s",
 
     # desktopapp.worker
     '读取相机程序文件以识别固件版本（只读）。': 'Reading the camera program files to identify the firmware build (read-only).',
-    '准备本次线框测试的 USB 驱动与服务连接。': 'Preparing the USB driver and service connection for this frame test.',
-    '先完成一次本页操作，再核对重新加载状态。': "Run this page's action once first, then verify the reload.",
+    '准备本次线框测试的 USB 驱动与服务连接。': 'Starting the vertical display job.',
+    '先完成一次本页操作，再核对重新加载状态。': 'Nothing to verify yet: this page has no finished job. Run its action first.',
     '所选目录没有旧备份恢复记录，本次没有连接相机。用内置原厂基准或固件文件恢复后，请点“重启后核对并完成恢复”。':
         'The chosen folder has no backup-restore record, so the camera was not connected. After a restore from the built-in factory data or a firmware file, click "Verify and finish".',
-    '恢复尚未结束，请先点击“恢复／继续恢复”': 'The restore is not finished. Click "Restore…" first',
+    '恢复尚未结束，请先点击“恢复／继续恢复”': 'The restore stopped before it finished writing, so there is nothing to verify yet. Click "Restore…" to continue it.',
     '所选恢复记录不可用（保留原样）；按当前连接的相机重新生成内建原厂恢复计划。':
         "The chosen restore record can't be used (it stays as is). Planning the built-in factory restore from the connected camera.",
     '上次恢复写入已结束；先核对，不重复写入。': 'The last restore finished writing. Verifying first; nothing is written again.',
@@ -59,25 +59,25 @@ ENGINE = {
     '上次程序与名称已完整读回；核对当前内容后只继续设置，不重装驱动、不重复刷写程序。':
         'Programs and names from last time read back in full. After checking the camera, only the settings continue: no driver reinstall, no program rewrite.',
     '名称已经写好；核对／准备资源重新加载，不重写名称，不重装驱动。':
-        'Names are already written. Checking and preparing the resource reload; names and drivers stay as they are.',
+        'Names are already written. Checking them on the camera before the program install; names and drivers are not redone.',
     '上次停在连接准备；本次只测试连接，不重复更换驱动。':
         'Last time stopped while preparing the connection. Testing the connection only; drivers stay as they are.',
     '继续已保存的安装计划；先核对新开机，不重新刷写。':
-        'Continuing the saved install plan. Checking the fresh start first; nothing is rewritten.',
-    '所有读写已结束。\n%s': 'All reads and writes are finished.\n%s',
+        'Continuing the saved install. Checking for the cold restart first; nothing is rewritten.',
+    '所有读写已结束。\n%s': 'Reading and writing have ended.\n%s',
     '本次程序／外观写入和完整读回已结束。\n%s': 'Programs and looks are written and read back in full.\n%s',
     '竖屏线框步骤没有返回已写入／已符合目标状态，请保留日志':
         "The vertical display frame step didn't report written or already in place. Keep the log",
     '竖屏持久化加载尚未确认，不以会话临时开启代替完成。请保留日志。':
-        "The saved vertical display setting isn't confirmed loaded, and a temporary switch-on doesn't count. Keep the log.",
+        "Vertical display isn't confirmed saved and running, so the install isn't marked complete; a temporary switch-on doesn't count. The other selected features are done. Export diagnostics.",
     '上次安装在写入前停止；保留失败记录，使用新版代码重新生成方案，不重装驱动。':
         'The last install stopped before writing. Keeping its record and planning again with this version; drivers stay as they are.',
     '上次在名称提交前空间不足；先核对现有字节并清理该次已完成的临时报告。':
-        "Last time the camera ran out of space before the names were committed. Checking the current bytes and clearing that run's finished temporary reports first.",
+        "Last time the camera ran out of space before the names were saved. Checking that nothing was changed, then clearing that run's temporary files.",
     '；原始阶段：%s；原始错误：%s': '; original stage: %s; original error: %s',
-    '缺少原始错误，请导出包含子事务的新诊断包': 'original error missing; export new diagnostics, which include the sub-transactions',
+    '缺少原始错误，请导出包含子事务的新诊断包': 'original error not recorded; export new diagnostics, which include the inner job',
     '上次安装结果需要核对，不会重复刷写。保留本目录并查看完整错误：%s%s':
-        "The last install's result needs checking, so nothing is rewritten. Keep this folder and read the full error: %s%s",
+        "The last install stopped in a state this tool can't continue automatically, so nothing was written this time. Export diagnostics and keep this folder: %s%s",
 
     # Lines the worker builds from several messages, each catalogued whole (engine_text never pieces a
     # line together). The one-click summary appends the vertical display outcome:
@@ -87,9 +87,9 @@ ENGINE = {
         'The selected install is complete. Check live view, names, shooting and playback on the camera. This older install turned on vertical display until the camera powers off. Use the Vertical display page to keep it on.',
     # the review error joins the folder and the child job's stage and error:
     '上次安装结果需要核对，不会重复刷写。保留本目录并查看完整错误：%s；原始阶段：%s；原始错误：%s':
-        "The last install's result needs checking, so nothing is rewritten. Keep this folder and read the full error: %s; original stage: %s; original error: %s",
+        "The last install stopped in a state this tool can't continue automatically, so nothing was written this time. Export diagnostics and keep this folder: %s; original stage: %s; original error: %s",
     '上次安装结果需要核对，不会重复刷写。保留本目录并查看完整错误：%s；原始阶段：未知；原始错误：%s':
-        "The last install's result needs checking, so nothing is rewritten. Keep this folder and read the full error: %s; original stage: unknown; original error: %s",
+        "The last install stopped in a state this tool can't continue automatically, so nothing was written this time. Export diagnostics and keep this folder: %s; original stage: unknown; original error: %s",
     # and the restart steps it prints (reloadguide.text(setup=True), plain and resource_reload) join
     # interface texts into these lines; the English matches the guide the window shows.
     '下一步：接回 USB，选择海量存储，再点首页“继续安装”。工具先核对加载，不重复刷写。':
@@ -101,25 +101,25 @@ ENGINE = {
 
     # desktopapp.exiftool, official, presets, lookbatch, reviewnames
     '正在准备 Lightroom 的 ExifTool 辅助程序（仅电脑端，不连接相机）。':
-        'Preparing ExifTool for Lightroom (on this computer only; the camera is not connected).',
+        "Preparing ExifTool for Lightroom (on this computer only; the camera isn't used).",
     'ExifTool 自动下载失败，本次未开始相机操作。请检查网络后再点同一按钮；完整错误：\n%s':
-        'ExifTool failed to download, so no camera operation started. Check the network and click the same button again. Full error:\n%s',
+        "ExifTool couldn't be downloaded; this step doesn't use the camera. Check the network and click the same button again. Full error:\n%s",
     'ExifTool 已就绪：%s': 'ExifTool ready: %s',
     '下载官方 ExifTool：%s': 'Downloading the official ExifTool: %s',
     'ExifTool 启动失败：%s\n%s': 'ExifTool failed to start: %s\n%s',
-    '正在解码原厂文件，仅操作电脑文件…': 'Decoding the factory file on this computer…',
-    '原厂文件已解码 %.0f MiB': 'Factory file decoded: %.0f MiB',
+    '正在解码原厂文件，仅操作电脑文件…': 'Decoding the Sony firmware file on this computer…',
+    '原厂文件已解码 %.0f MiB': 'Sony firmware file: %.0f MiB decoded',
     '内置六款外观文件缺失，请使用完整工具包；尚未连接相机：%s':
-        'Built-in look files are missing; use the complete app package. The camera was not connected: %s',
-    '内置外观名称／照片阶段不符：%s': "A built-in look's name or photo stage doesn't match: %s",
+        'A built-in look file is missing: %s. Reinstall the complete app; nothing was written to the camera.',
+    '内置外观名称／照片阶段不符：%s': "A built-in look file doesn't match its expected name or format: %s. Reinstall the complete app.",
     '请至少添加一个操作项；未添加的槽位保持原样。': "Add at least one change. Slots you don't add stay as they are.",
     '每个目标槽位只能有一个操作，范围为 1–6。': 'Each slot, 1 to 6, takes one change only.',
     '外观名称必须是文字。': 'The look name must be text.',
     '请为自订 %s 选择 A7Look 文件。': 'Choose an A7Look file for Custom %s.',
     '已确认此前没有提交名称或程序；只清理了对应临时报告／worker。原失败记录保留，下一次使用新的事务。':
-        'Confirmed that no names or programs were committed. Cleared only the matching temporary reports and worker. The failed record stays; the next run starts a new transaction.',
+        "Confirmed: last time's names and programs were not written. Cleared its temporary files on the camera; its record stays. The next run starts fresh.",
     '核对已完成的名称失败报告、原程序窗口与名称绑定；不写固件或设置。':
-        'Checking the finished name-failure report, the original program windows and name bindings. No firmware or settings are written.',
+        'Reading the programs and names to confirm they are unchanged. No firmware or settings are written.',
 
     # desktopapp.platforms.usb_drivers (Windows)
     '等待 Windows 管理员确认…': 'Waiting for Windows administrator approval…',
@@ -159,7 +159,7 @@ ENGINE = {
     'USB 稳定性检测未通过（%s）：%s。请换线或直连电脑 USB 接口后重测；本次没有固件或设置写入。':
         'USB stability check failed (%s): %s. Try another cable or a USB port on the computer itself, then test again. No firmware or settings were written.',
     'USB 稳定性检测：第 %d 轮只读读取程序文件（至少 %d 轮、连续 %d 秒），不写固件或设置。':
-        'USB stability check: read-only round %d of the program files (at least %d rounds over %d seconds). No firmware or settings are written.',
+        'USB check, round %d (minimum %d rounds over %d seconds); read-only.',
     'USB 稳定性检测未完成：%s。本次没有固件或设置写入。': 'USB stability check incomplete: %s. No firmware or settings were written.',
     '已读 %d 轮，达到轮数上限，但连续读取只持续 %.0f 秒，未满 %d 秒；本次不算通过':
         'read %d rounds, the most allowed, but reading lasted only %.0f of the %d seconds needed, so this run does not pass',
@@ -173,7 +173,7 @@ ENGINE = {
     # desktopapp.actions.sound_state
     '当前自定义声音配置不存在，请重新保存或恢复原厂音效。':
         "The camera's custom sound settings are missing. Save the sound again, or restore the factory sound.",
-    '当前声音文件长度与配置不同。': 'The sound file on the camera is not the length its settings expect.',
+    '当前声音文件长度与配置不同。': "The sound file on the camera isn't the length its settings expect. Save the sound again, or restore the factory sound.",
     '当前声音尚未按磁盘配置加载，请按写入后的提示断电重开。':
         "The camera hasn't loaded the saved sound yet. Do the cold restart the dialog showed after the write.",
 
@@ -195,7 +195,7 @@ ENGINE = {
     # looktool.devicesession
     '等待相机普通 USB 连接（最多 %d 秒）。%s': "Waiting up to %d seconds for the camera's normal USB connection. %s",
     '普通 USB 身份未出现；只读取已有服务会话的机身序列，核对后续接，不重复认证。':
-        "The normal USB identity didn't appear. Reading only the camera serial from the open service session, then continuing; no new authentication.",
+        "The camera is still in service mode from the last job. Confirming it's the same camera, then continuing on that session.",
     '相机没有以普通“海量存储”身份连接（可能仍停在上次的服务模式 054C:0336）。请拔掉 USB、关机并取出电池约 1 分钟，再开机选择海量存储、接回 USB 后重试；本次没有写入相机。（Normal Mass Storage USB serial is required for body binding）':
         'Unplug USB, turn the camera off and take the battery out for about 1 minute. Then turn it on, choose Mass Storage, reconnect USB and try again. The camera did not connect as Mass Storage (it may still be in service mode, 054C:0336). Nothing was written. (Normal Mass Storage USB serial is required for body binding)',
     '读取相机文件时 USB 通信出错：%s': 'USB error while reading camera file: %s',
@@ -206,25 +206,25 @@ ENGINE = {
     '请完整断电重开（拔 USB、关机、取下电池至少 1 分钟后装回开机），再接回 USB 点同一个恢复按钮。':
         'Do a cold restart (unplug USB, turn the camera off, take the battery out for at least 1 minute, put it back and turn on), then reconnect USB and click the same restore button.',
     '相机 /usr 分区的临时空间用完了：已恢复 %d/%d 个名称文件，程序和已恢复的部分保持不变，相机可以正常开机使用。旧文件占用的空间要断电后才释放。%s只会处理剩下的部分。':
-        "The camera's /usr partition ran out of temporary space: %d/%d name files restored. Programs and the restored files are unchanged, and the camera starts and works normally. Old files free their space only after a power-off. %s Only the remaining files are processed.",
+        "The camera's /usr partition ran out of temporary space after %d of %d name files were restored. Everything already written stays as written, programs included, and the camera starts and works normally. The space frees up only after a power-off. %s Only the remaining files are written then.",
     '写入前检查发现相机 /usr 分区临时空间不足，本次没有写入。%s':
-        "The pre-write check found too little temporary space on the camera's /usr partition. Nothing was written. %s",
+        "The pre-write check found too little temporary space on the camera's /usr partition, so no programs, names or settings were written. %s",
     '相机 /usr 分区仍处于可写挂载，通常是上一次操作后还没有完整断电重开；本次没有写入。%s':
-        "The camera's /usr partition is still mounted writable, usually because the camera has not had a cold restart since the last operation. Nothing was written. %s",
+        "The camera's /usr partition is still writable, usually because it hasn't had a cold restart since the last job, so no programs, names or settings were written. %s",
     '名称内容已完成，但只读挂载忙碌；需要完成设置与重新加载准备后再重开核对。':
-        'Names are done, but the read-only mount is busy. Finish the settings and reload preparation, then restart and verify.',
+        'Names are written, but /usr is still in use, so the job stopped before the settings. Do a cold restart, then click the same button; finished parts are not written again.',
     '旧任务名称备份清理未完成，相机名称文件没有改动；请完整断电重开后再点恢复。Backup cleanup incomplete: %s':
         "The old job's name backup cleanup didn't finish; the camera's name files are unchanged. Do a cold restart, then click restore again. Backup cleanup incomplete: %s",
 
     # A failed name operation raises its guidance followed by the native report (checkpointworker.py:155).
     '相机 /usr 分区的临时空间用完了：已恢复 %d/%d 个名称文件，程序和已恢复的部分保持不变，相机可以正常开机使用。旧文件占用的空间要断电后才释放。%s只会处理剩下的部分。Checkpoint name operation incomplete: %s':
-        "The camera's /usr partition ran out of temporary space: %d/%d name files restored. Programs and the restored files are unchanged, and the camera starts and works normally. Old files free their space only after a power-off. %s Only the remaining files are processed. Checkpoint name operation incomplete: %s",
+        "The camera's /usr partition ran out of temporary space after %d of %d name files were restored. Everything already written stays as written, programs included, and the camera starts and works normally. The space frees up only after a power-off. %s Only the remaining files are written then. Checkpoint name operation incomplete: %s",
     '写入前检查发现相机 /usr 分区临时空间不足，本次没有写入。%sCheckpoint name operation incomplete: %s':
-        "The pre-write check found too little temporary space on the camera's /usr partition. Nothing was written. %s Checkpoint name operation incomplete: %s",
+        "The pre-write check found too little temporary space on the camera's /usr partition, so no programs, names or settings were written. %s Checkpoint name operation incomplete: %s",
     '相机 /usr 分区仍处于可写挂载，通常是上一次操作后还没有完整断电重开；本次没有写入。%sCheckpoint name operation incomplete: %s':
-        "The camera's /usr partition is still mounted writable, usually because the camera has not had a cold restart since the last operation. Nothing was written. %s Checkpoint name operation incomplete: %s",
+        "The camera's /usr partition is still writable, usually because it hasn't had a cold restart since the last job, so no programs, names or settings were written. %s Checkpoint name operation incomplete: %s",
     '名称内容已完成，但只读挂载忙碌；需要完成设置与重新加载准备后再重开核对。Checkpoint name operation incomplete: %s':
-        'Names are done, but the read-only mount is busy. Finish the settings and reload preparation, then restart and verify. Checkpoint name operation incomplete: %s',
+        'Names are written, but /usr is still in use, so the job stopped before the settings. Do a cold restart, then click the same button; finished parts are not written again. Checkpoint name operation incomplete: %s',
 
     # looktool.compilelook, coupledfit: making an A7Look on the computer.
     '已生成近似结果；最终优化未完全收敛。验证色样平均预测误差 %.2f / 255，不能代表实机色彩准确度。':
@@ -240,22 +240,22 @@ ENGINE = {
     '核对名称资源': 'Checking names',
     '恢复原厂外观设置': 'Restoring the factory look settings',
     '应用并核对所选设置': 'Applying and checking the selected settings',
-    '准备重新加载': 'Preparing the reload',
-    '写入前检查通过，接下来应用更改': 'Pre-write check passed; applying the changes next',
-    '正在应用所选操作': 'Applying the selected changes',
+    '准备重新加载': 'Preparing the camera for the cold restart',
+    '写入前检查通过，接下来应用更改': 'Pre-write check passed',
+    '正在应用所选操作': 'Writing to the camera',
     '读回完成，等待断电重开': 'Read-back done; waiting for a cold restart',
-    '加载状态符合目标': 'The camera loaded what was written',
+    '加载状态符合目标': 'The camera matches the target',
     '完成': 'Done',
-    '已停止，请保留日志核对结果': 'Stopped. Keep the log to check the result',
-    '名称已写好；请按提示断电重开，再继续程序安装': 'Names written. Do the cold restart as prompted, then continue the program install',
+    '已停止，请保留日志核对结果': 'Stopped; the reason follows',
+    '名称已写好；请按提示断电重开，再继续程序安装': 'Names written and checked; programs not written yet',
     '名称及只读挂载已确认，可以继续程序安装': 'Names and read-only mount confirmed; the program install can continue',
     'FL23 操作完成：已写入并完整读回；重开后生效，无需再点核对。':
-        'FL2/FL3 done: written and read back in full. They work after a restart; no need to verify.',
-    '恢复尚未完成：写入与读回已结束，等待重启后核对': 'Restore not finished: writing and read-back are done. Waiting for the check after a restart',
+        'FL2/FL3 written and read back in full',
+    '恢复尚未完成：写入与读回已结束，等待重启后核对': 'Restore written and read back. It finishes only when "Verify and finish" passes after the cold restart',
     '已清理旧任务遗留的名称备份 %d 个，释放相机 /usr 空间。':
         "Cleared %d name backups left by old jobs to free space on the camera's /usr partition.",
     '已核对程序和名称均符合原安装计划，只续做设置与重新加载准备；没有重复刷写程序。':
-        'Programs and names match the install plan. Continuing with settings and reload preparation only; programs are not rewritten.',
+        'Settings written. Programs and names already matched the install plan, so they were not rewritten.',
     '所选槽位已保存为 ST。': 'The selected slot is saved as ST.',
     '只继续名称、设置与重新加载准备，不重复写入程序。':
         'Continuing names, settings and reload preparation only; programs are not rewritten.',
@@ -266,25 +266,25 @@ ENGINE = {
     '先写入名称资源，成功后才写入程序。': 'Writing names first; programs follow only after they succeed.',
     '正在逐文件更新名称（共 %d 项）；名称完成后才写入程序。':
         'Updating names file by file (%d in all); programs follow once names are done.',
-    '正在写入程序窗口批次 %d/%d': 'Writing program window batch %d/%d',
+    '正在写入程序窗口批次 %d/%d': 'Writing programs: batch %d of %d',
     '名称内容已完成；只读挂载忙碌。完成设置与重新加载准备后，需要断电重开核对挂载状态。':
-        'Names are done; the read-only mount is busy. After the settings and reload preparation, do a cold restart so the mount can be verified.',
+        "Names restored, but /usr is still in use and can't return to read-only yet. Continuing with the settings; the cold restart at the end clears this.",
     '所有读写已结束。68 个名称已完整核对，程序和配方尚未写入。旧资源仍被占用，需要断电重开释放后，再点同一按钮继续；不重复写名称。':
-        'All reads and writes are finished. All 68 names are verified; programs and recipes are not written yet. Do a cold restart to release the old resources, then click the same button to continue. Names are not written again.',
+        'Reading and writing have ended. Do the cold restart shown in the dialog to release the old resources, then click the same button to install the programs and recipes. Names are not written again.',
     '安装／关闭任务已结束，没有后续待写入步骤。以下断电仅用于让相机加载已写入的程序，电脑端核对可选。':
-        'The install or removal job is finished; nothing is left to write. The cold restart below only makes the camera load the written programs. Verifying from the computer is optional.',
+        'Nothing is left to write. The cold restart only makes the camera load the new programs; verifying from the computer is optional.',
     '所有读写已结束。拔 USB 和其他外部供电，等存取灯停止闪烁，再正常关机并等屏幕和灯完全熄灭；取下电池至少一分钟，再装回开机、检查功能并核对。':
-        'All reads and writes are finished. Unplug USB and any other power, wait for the access lamp to stop blinking, then turn the camera off and wait until the screen and lamp are dark. Take the battery out for at least one minute, put it back, turn on, check the features and verify.',
+        'Reading and writing have ended. Do the cold restart shown in the dialog, then check the camera.',
     '磁盘与设置已符合目标，本次没有重复写入；实际预览、照片和声音仍需在机身检查。':
         'The camera already matches the target, so nothing was written again. Check live view, photos and sound on the camera.',
-    '所有读写已结束。名称已核对，程序未写入。只读挂载已恢复，无需额外重开。':
-        'All reads and writes are finished. Names verified; programs not written. The read-only mount is back, so no extra restart is needed.',
     '所有读写已结束。名称已核对，程序未写入。请按弹窗断电重开后接回，继续剩余程序安装。':
-        'All reads and writes are finished. Names verified; programs not written. Do the cold restart in the dialog, reconnect, and continue the program install.',
+        'Reading and writing have ended. Do the cold restart shown in the dialog, reconnect USB and click the same button to install the programs.',
+    '无需断电重开。接下来安装程序，请保持 USB 连接。':
+        'No cold restart needed. Installing the programs next; keep USB connected.',
     '尚未确认新的冷启动与只读挂载；没有重复写入。请按弹窗完成断电重开、接回。':
-        'Do the cold restart in the dialog and reconnect. No fresh cold start or read-only mount is confirmed yet; nothing was written again.',
+        'No cold restart detected since the names were written, or /usr is still writable, so nothing was written. Do the cold restart shown in the dialog, reconnect USB and click the same button.',
     '尚未确认新的冷启动。完成断电重开后再核对，不要重复写入。':
-        "No fresh cold start confirmed yet. Do the cold restart, then verify again; don't repeat the write.",
+        "No cold restart detected since the write. Do the cold restart, then verify again; don't run the write again.",
     '恢复写入已结束，请核对重新加载状态，不重复写入': 'Restore writing finished. Verify the reload; nothing is written again',
     '已完整读回确认程序与名称均符合原厂目标；只继续设置和重新加载准备，只读挂载将在新开机后核对。':
         'Programs and names read back and match the factory target. Continuing with settings and reload preparation only; the read-only mount is checked after the next start.',
@@ -298,20 +298,20 @@ ENGINE = {
     '恢复完成，所有读写已结束。拔 USB 和其他外部供电，等存取灯停止闪烁，再正常关机并等屏幕和灯完全熄灭；取下电池至少一分钟，再装回开机、检查并核对。':
         'Restore written; all reads and writes are finished. Unplug USB and any other power, wait for the access lamp to stop blinking, then turn the camera off and wait until the screen and lamp are dark. Take the battery out for at least one minute, put it back, turn on, check the camera and verify.',
     '原厂恢复后的 /usr 只读挂载尚未确认；不标记恢复完成，请保留日志':
-        "The read-only /usr mount after the factory restore isn't confirmed, so the restore is not marked complete. Keep the log",
+        '/usr isn\'t back to read-only after the factory restore, so the restore isn\'t marked complete. Do the cold restart, then click "Verify and finish" again; if this repeats, export diagnostics',
     '名称写入已完成，但尚未确认新开机后的只读挂载；不清理旧资源':
-        "Names are written, but the read-only mount after the next start isn't confirmed. Old resources stay",
+        "Names are written, but /usr isn't back to read-only after the restart, so the old name backups stay for now. Do another cold restart, then verify again; if this repeats, export diagnostics",
 
     # looktool.factoryrecover: resuming an interrupted factory restore.
     '相机执行插件仍存在，不能在执行期间覆盖；本次尚未恢复写入，请结束连接后完整断电再重试':
-        "The camera's run plugin is still present and can't be overwritten while it runs. The restore hasn't written anything; disconnect, do a cold restart and try again",
+        'A tool process from an earlier job is still on the camera (libJit.so), so this job stopped before writing anything. Wait for the access lamp to stop, do a cold restart, then try again',
     '相机存在启用中的 preload，尚未覆盖临时工作文件或开始恢复写入':
-        "The camera has an active preload. The temporary work files are untouched and the restore hasn't started writing",
-    '相机执行插件出现，已保存诊断，未覆盖工作文件': "The camera's run plugin appeared. Diagnostics saved; work files untouched",
+        'The camera has an active /etc/ld.so.preload, so this job stopped before writing anything. Export diagnostics',
+    '相机执行插件出现，已保存诊断，未覆盖工作文件': 'A tool process started on the camera during cleanup (libJit.so). Its files are saved for diagnostics and left in place; nothing was written. Wait for the access lamp to stop, do a cold restart, then try again',
     '相机临时状态仍在变化，已保存诊断，未覆盖工作文件：%s':
-        "The camera's temporary state is still changing. Diagnostics saved; work files untouched: %s",
+        "The camera's temporary file %s changed during cleanup, so it was saved for diagnostics and left in place; nothing was written. Wait for the access lamp to stop, do a cold restart, then try again",
     '旧临时工作文件已保存诊断并清理；重新读取相机现况，直接按内建原厂基准生成恢复计划，不重放旧任务。':
-        'Saved diagnostics for the old temporary work files and cleared them. Rereading the camera and planning the restore from the built-in factory data; the old job is not replayed.',
+        'Saved copies of the leftover temporary work files, then removed them from the camera. The old job is not replayed.',
     '本地记录无法读取，未用于自动续接（记录保留）：%s':
         "This local record can't be read, so it is not resumed automatically (the record stays): %s",
     '恢复记录缺少机身身份，未用于自动续接（记录保留）：%s':
@@ -328,28 +328,28 @@ ENGINE = {
         "The camera's result report is missing, so the outcome can't be confirmed yet. Temporary files stay; nothing was rewritten",
 
     # looktool.namespause, portraitjob, verticalpersist
-    '正在读取原程序，核对尚未写入的程序窗口。': 'Reading the original programs to check the program windows not yet written.',
-    '名称完整读回：%d/%d': 'Names read back in full: %d/%d',
+    '正在读取原程序，核对尚未写入的程序窗口。': "Reading the camera's programs to confirm they haven't been changed yet.",
+    '名称完整读回：%d/%d': 'Name files read back and checked: %d/%d',
     '所有读写已结束。按弹窗完整断电重开后，检查横握／两侧竖握的 Fn 网格、创意外观选择页和参数调整页。':
-        'All reads and writes are finished. After the cold restart in the dialog, check the Fn grid, the Creative Look list and its adjustment page, held level and upright both ways.',
+        'Reading and writing have ended. After the cold restart shown in the dialog, check the Fn grid, the Creative Look list and its adjustment page, holding the camera level and upright both ways.',
     '当前内容已符合所选状态，没有重复写入。': 'The camera already matches the selected state; nothing was written again.',
     '竖屏开关和线框步骤已写好，继续安装其余所选功能。':
-        'Vertical display switch and frames written. Installing the other selected features.',
+        'Vertical display switch and frames are in place. Installing the other selected features.',
     '请保留日志。下次点击同一操作会重新读取当前资源和机内撤销记录，不重放旧任务。':
         'Keep the log. Next time you click the same action, it rereads the current resources and the undo record on the camera; the old job is not replayed.',
     '恢复本测试版的原线框引用和资源索引。': "Restoring this test version's original frame references and resource index.",
     '竖屏资源处理已结束，仍需冷重开恢复 /usr 只读状态；不标记加载成功':
-        'Vertical display resources are done, but /usr needs a cold restart to return to read-only. Not marked as loaded',
+        "Vertical display files are in place, but /usr is still writable, so it isn't marked as loaded. Do a cold restart, then verify again",
     '竖屏保存值已读取，但开机运行状态／资源尚不符合目标；不以 RAM 临时开启代替持久化验证':
-        "Read the saved vertical display value, but the running state or resources don't match the target yet. A temporary switch-on in RAM doesn't count as saved",
+        "Vertical display: the saved setting is right, but the camera isn't running it or its files don't match. A temporary switch-on doesn't count. Export diagnostics",
     '线框资源已清理，但只读挂载仍忙；完整断电后再核对恢复':
-        'Frame resources are cleared, but the read-only mount is still busy. Do a cold restart, then verify the restore',
+        'Vertical display frames are removed, but /usr is still in use. Do a cold restart, then verify again',
 
     # camera_runtime.macos_host: taking USB over on macOS.
     '若相机屏幕询问 USB 连接方式，请选择第 2 项「影像传输（MSC）」。':
         'If the camera asks how to connect over USB, choose item 2, Mass Storage (MSC).',
     '请只连接一台海量存储模式的 A7C II，再准备 USB 连接。%s':
-        'Connect one A7C II only, in Mass Storage mode, then prepare the USB connection. %s',
+        'Connect one A7C II only, in Mass Storage mode, then try again. %s',
     '相机磁盘尚未稳定，尚未接管 USB。%s等存取灯停止后重试。':
         "The camera disk isn't settled yet, so USB wasn't taken over. %s Wait for the access lamp to stop, then try again.",
     '相机或磁盘在卸载前发生变化，尚未接管 USB。请重新连接后重试。':
@@ -370,7 +370,7 @@ ENGINE = {
     '相機操作超出有界等待時間': 'The camera operation ran past its time limit',
     '找不到 libusb 程式庫': "Can't find the libusb library",
     '需要且只能連接一台目標相機（USB %s）；請確認大量儲存模式及驅動':
-        'Connect exactly one camera (USB %s). Check Mass Storage mode and the driver',
+        'Found no camera at USB %s, or more than one. Connect one camera in Mass Storage mode (on Windows, also check its driver)',
     '無法讀取 USB 配置': "Can't read the USB configuration",
     '等待相機完成 USB 初始化。': 'Waiting for the camera to finish USB start-up.',
     '相機正在準備機身資訊，稍候再讀取。': 'The camera is preparing its body information; reading again shortly.',
@@ -380,20 +380,20 @@ ENGINE = {
     '只读通信出错后，已让相机退出服务模式（未写入相机）。':
         'After the read error, the camera left service mode. Nothing was written to the camera.',
     '相机未能自动退出服务模式（%s）；请拔 USB、取电池约 1 分钟后重开。':
-        "The camera didn't leave service mode by itself (%s). Unplug USB, take the battery out for about 1 minute, then turn the camera on.",
+        "The camera didn't leave service mode by itself (%s). Nothing was written. Unplug USB and take the battery out for at least 1 minute, then turn the camera on.",
     '只支援 %s；USB 型號不符': "Only the %s is supported; the USB model doesn't match",
     '服务身份 0336 已出现，但接口无法打开；请保留驱动与 USB 日志，不重新认证。':
-        "Service identity 0336 appeared, but its interface won't open. Keep the driver and USB logs; no new authentication.",
+        "The camera entered service mode (USB 0336), but its interface wouldn't open, so nothing was written. On Windows, keep the camera on and install the 0336 driver (Zadig guide, part 2), then try again. On a Mac, do a cold restart and try again.",
     '认证后相机未进入服务模式（期间出现的 Sony USB 身份：%s）。':
         "The camera didn't enter service mode after authentication (Sony USB identities seen: %s).",
     '无': 'none',
     '服務身份未出現；若是第一次，請依文件安裝0336驅動（已嘗試 %d 次）':
-        "The service identity didn't appear. On a first connection, install the 0336 driver as the documentation describes (%d attempts made)",
+        "The camera didn't enter service mode after %d attempts, so nothing was written. Do a cold restart, then try again. On Windows, also check the 0336 driver (Zadig guide).",
     '服務身份未出現，相機也未回到普通 USB；請在相機選擇「影像傳輸（MSC）」後重新連接':
         "Choose Mass Storage (MSC) on the camera, then reconnect. The service identity didn't appear, and the camera didn't return to normal USB",
     '相机已回到普通 USB，冷却后自动重试（第 %d/%d 次）。':
         'The camera is back on normal USB. Retrying after a cool-down (attempt %d/%d).',
-    '目前機身與備份機身不同': "This camera isn't the one the backup came from",
+    '目前機身與備份機身不同': "This isn't the camera this job or backup belongs to, so nothing was written.",
     '會話結果未知，停止後續命令': 'Session result unknown; stopping further commands',
     '不允許此 Jiritsu 命令': 'This Jiritsu command is not allowed',
     'Jiritsu 回應格式錯誤': 'Jiritsu response is malformed',
@@ -424,7 +424,7 @@ ENGINE = {
     '既有矩陣被改動': 'Existing matrix changed',
     '設定項目集合改變': 'The set of settings changed',
     '目標設定讀回不符': "Target setting read-back doesn't match",
-    '發現額外設定變動：chip%s/%s，請保存紀錄後檢查': 'Found an extra settings change: chip%s/%s. Save the record, then check it',
+    '發現額外設定變動：chip%s/%s，請保存紀錄後檢查': 'Found an unexpected settings change: chip%s/%s. Export diagnostics before doing anything else',
     '安裝器結果長度不符': "Installer result length doesn't match",
     '安裝器未完整成功；請勿重試或重新開機': "The installer didn't fully succeed. Don't retry or restart the camera",
     '寫入前完整檔案雜湊不符': "Whole-file hash before writing doesn't match",
@@ -433,7 +433,7 @@ ENGINE = {
     '診斷結果過短': 'Diagnostic result too short',
     '型號欄位、權限或診斷結果不符': "Model field, permissions or diagnostic result doesn't match",
     '開機快照結果長度不符': "Boot snapshot result length doesn't match",
-    '開機快照處理未驗證，請勿重複執行': "Boot snapshot handling isn't verified. Don't run it again",
+    '開機快照處理未驗證，請勿重複執行': "The boot snapshot step (wbi) didn't report success. Don't run this job again; export diagnostics",
     '不支援此開機快照起始狀態': 'This boot snapshot starting state is not supported',
     '開機快照寫入或讀回不完整': 'Boot snapshot write or read-back incomplete',
     '執行期結果長度不符': "Runtime result length doesn't match",
@@ -445,10 +445,10 @@ ENGINE = {
     '色度不等於供體目標值': "Chroma doesn't equal the donor target",
     '矩陣不等於供體目標值（逐槽）': "Matrix doesn't equal the donor target (slot by slot)",
     '未知的色彩參數／槽組合，拒絕寫入': 'Unknown colour parameter and slot combination; refusing to write',
-    '韌體已檢查：完整檔案指紋確認為受支援的 2.01 版本。其他工具改過的程式會在寫入前被拒絕。請保留備份。':
-        'Firmware checked: its full-file fingerprint shows a supported 2.01 build. Programs changed by other tools are refused before anything is written. Keep a backup.',
+    '韌體已檢查：完整檔案指紋確認為受支援的 2.01 版本。本工具管理區域以外的修改會在寫入前被拒絕。請保留備份。':
+        'Firmware checked: its full-file fingerprint shows a supported 2.01 build. Changes outside the regions this tool manages are refused before anything is written. Keep a backup.',
     'LUT 相容模式缺少依賴，請更新完整工具並重新開啟 FL23.cmd。':
-        'LUT compatibility mode is missing a dependency. Update to the complete tool and reopen FL23.cmd.',
+        "Part of this app is missing (the looktool package), so FL2/FL3 couldn't be planned and nothing was written. Reinstall the complete app and open it again.",
     'FL23 只適用於 ILCE-7CM2 2.01；請依相機版本頁填寫':
         "FL2/FL3 works only on the ILCE-7CM2 with firmware 2.01. Enter the version shown on the camera's version page",
     'CP FL23 呼叫位置衝突：%s；沒有寫入': 'CP FL2/FL3 call site conflict: %s; nothing written',
@@ -465,12 +465,12 @@ ENGINE = {
     '另一个声音操作仍在执行，请等它结束后再点击。': 'Another sound operation is still running. Click again when it finishes.',
     '使用本次选择替换声音；旧任务已归档，接下来读取相机现况，不重放旧命令。':
         'Replacing the sound with this selection. The old job is archived; reading the camera next. Old commands are not replayed.',
-    '当前声音操作的机身绑定不一致': "This sound operation's camera binding doesn't match",
+    '当前声音操作的机身绑定不一致': "This isn't the camera this sound job was started on, so the job stopped.",
     '相机执行入口当前仍被占用，本次声音操作尚未开始。请等待正在执行的操作结束。':
-        "Wait for the running operation to finish. The camera's run entry is busy, so this sound operation hasn't started.",
-    '相机开始了另一项操作，本次声音替换尚未执行。': "The camera started another operation, so this sound replacement hasn't run.",
-    '相机临时状态仍在变化，请等待当前操作结束。': "The camera's temporary state is still changing. Wait for the current operation to finish.",
-    '当前声音临时文件替换未完成：%s': "The temporary sound file replacement didn't finish: %s",
+        "A tool process is still on the camera (libJit.so), so this sound operation didn't start; nothing was written. Wait for the access lamp to stop, do a cold restart, then try again.",
+    '相机开始了另一项操作，本次声音替换尚未执行。': 'A tool process started on the camera (libJit.so), so this sound operation stopped before changing anything. Wait for the access lamp to stop, do a cold restart, then try again.',
+    '相机临时状态仍在变化，请等待当前操作结束。': "The camera's temporary files are still changing, so this sound operation stopped before changing anything. Wait for the access lamp to stop, do a cold restart, then try again.",
+    '当前声音临时文件替换未完成：%s': "Couldn't clear the camera's temporary file %s, so this sound operation stopped; no programs or settings were written. Do a cold restart, then try again.",
     '旧自定义声音配置过大，无法作为本次替换的依据': 'The old custom sound settings are too large to base this replacement on',
     '旧自定义声音配置包含冲突的文件引用，请保留诊断包': 'The old custom sound settings hold conflicting file references. Keep the diagnostics',
     '旧自定义声音配置包含冲突的文件引用': 'The old custom sound settings hold conflicting file references',
@@ -489,7 +489,7 @@ ENGINE = {
     '未找到相机 USB 连接。请拔插 USB 并选择海量存储后重试；尚未进行服务认证或声音写入。':
         'Unplug and reconnect USB, choose Mass Storage, then try again. No camera USB connection was found; no service authentication or sound write took place.',
     '上一次声音操作（%s）中途停止，结果还没确认，所以没有开始新的操作，也没有连接相机。请点窗口底部“导出诊断包”发给作者核对；不要删除声音工作目录。（Previous operation is unresolved: %s）':
-        'The last sound operation (%s) stopped partway and its result is unconfirmed, so nothing new started and the camera was not connected. Click "Export diagnostics…" at the bottom of the window and send the file to the author; keep the sound folder. (Previous operation is unresolved: %s)',
+        'The last sound operation (%s) stopped partway and its result is unconfirmed, so nothing new started and the camera was not connected. Click "Export diagnostics…" at the bottom of the window and keep the sound folder. (Previous operation is unresolved: %s)',
     '旧声音任务已确认停在写入前，检查结果和临时清理均完整；已解除占用，原日志保留。':
         'Confirmed the old sound job stopped before writing; its checks and temporary cleanup are complete. Released; the original log stays.',
     '上次保存停在电脑端准备阶段，未执行相机写入；已解除占用，保留原日志。':
@@ -499,16 +499,16 @@ ENGINE = {
     '上次试听因旧标记在分配前停止，没有注册新声音；本次按当前状态新建试听。':
         'The last trial stopped at an old marker before allocation, so no new sound was registered. Starting a new trial from the current state.',
     '电子快门声已启用；已核对并接入声音工具，没有重复刷写。':
-        'Electronic shutter sound is on. Checked and linked to the sound tools; nothing was rewritten.',
+        'Electronic shutter sound is already on; nothing was written.',
     '声音支援已准备，继续保存当前片段；全部写入结束后统一提示断电。':
-        'Sound support is ready. Saving the clip next; the cold restart prompt comes once all writing is done.',
+        'Sound support is ready. Saving the clip next; the cold restart comes once all writing is done.',
     '本次只接入已启用的声音开关，保持开机继续。': 'Using the sound switch already on. Keep the camera on and continue.',
     '请先转换所选片段，再调节音量。': 'Convert the clip first, then adjust the volume.',
     '请先点「转换所选片段」，转换成功后再试听。': 'Click "Convert" first, and try the sound once it converts.',
     '试听结果已记录；可直接保存当前转换片段，无需先断电恢复。':
         'Trial result recorded. You can save the converted clip now; no cold restart needed first.',
     '自动准备电子快门声支援；已有开关直接接入，不要求先手动开启或关联旧任务。':
-        'Preparing electronic shutter sound support. An existing switch is used as is; no need to turn it on first or link an old job.',
+        'Checking the electronic shutter sound support first; it is turned on if needed.',
     '这个声音工作目录里没有可用的永久声音安装记录，本次没有连接相机。要还原相机的原厂快门音效，请点“恢复原厂功能”：它按相机当前字节还原全部声音程序，不依赖旧记录。':
         "This sound folder has no usable install record, so the camera was not connected. To get the factory shutter sound back, use the Factory restore page: it restores every sound program from the camera's current bytes, without old records.",
     '最近的声音安装记录不可直接恢复；改用同一机身最近一次完成的安装记录，从相机当前字节规划恢复。':
@@ -528,4 +528,115 @@ ENGINE = {
     # verticaltool.portraitworker
     '竖屏线框操作停止：文件 %d，步骤 %d，窗口 %d，错误 %d；已写 %d 字节。原生报告：%s':
         'Vertical display frame operation stopped: file %d, step %d, window %d, error %d; %d bytes written. Native report: %s',
+    # desktopapp.allinone: each phase of the one-click job by name; an exact entry is matched before the format '一键安装：%s'.
+    '一键安装：DRIVERS':
+        'One-click install: preparing the USB connection',
+    '一键安装：PREPARED':
+        'One-click install: ready for the next step',
+    '一键安装：PREPARING_VERTICAL':
+        'One-click install: vertical display',
+    '一键安装：INSTALLING':
+        'One-click install: writing the selected features',
+    '一键安装：WAIT_RESOURCE_RELOAD':
+        'One-click install: paused for a cold restart (names written, programs not yet)',
+    '一键安装：WAIT_RELOAD':
+        'One-click install: paused for the cold restart and check',
+    '一键安装：FINALIZING':
+        'One-click install: finishing the remaining steps',
+    '一键安装：COMPLETE':
+        'One-click install: complete',
+    '一键安装：NEEDS_REVIEW':
+        'One-click install: stopped',
+    '一键安装：RESUMING_SETTINGS':
+        'One-click install: continuing with the settings',
+    '一键安装：RESUMING_RESOURCES':
+        'One-click install: continuing after the names',
+    '一键安装：SETTINGS_REVIEW_REQUIRED':
+        'One-click install: checking the earlier programs and names',
+    '一键安装：RESOURCE_REVIEW_REQUIRED':
+        'One-click install: checking the earlier names',
 }
+
+# Errors that give the user their own next step: a click, a cold restart, a fix, or "export diagnostics".
+# The failure banner adds its "Export diagnostics to report it" only to an error not listed here
+# (window.Window.stopped_text). Every key is an ENGINE entry, and means the same in both languages.
+NEXT_STEP = frozenset({
+    # desktopapp: the Terminal password step, the worker, one-click install, ExifTool, look lists
+    '管理员进程意外结束，相机操作结果未知。请导出诊断包，不要重复刚才的操作。',
+    '终端授权未完成（窗口已关闭或密码不正确）；本次相机操作尚未开始，可重新点击原按钮。',
+    '终端授权未完成，相机操作未报告开始。请保留日志；系统详情：%s',
+    '先完成一次本页操作，再核对重新加载状态。',
+    '所选目录没有旧备份恢复记录，本次没有连接相机。用内置原厂基准或固件文件恢复后，请点“重启后核对并完成恢复”。',
+    '恢复尚未结束，请先点击“恢复／继续恢复”',
+    '竖屏持久化加载尚未确认，不以会话临时开启代替完成。请保留日志。',
+    '上次安装结果需要核对，不会重复刷写。保留本目录并查看完整错误：%s%s',
+    '上次安装结果需要核对，不会重复刷写。保留本目录并查看完整错误：%s；原始阶段：%s；原始错误：%s',
+    '上次安装结果需要核对，不会重复刷写。保留本目录并查看完整错误：%s；原始阶段：未知；原始错误：%s',
+    'ExifTool 自动下载失败，本次未开始相机操作。请检查网络后再点同一按钮；完整错误：\n%s',
+    '内置六款外观文件缺失，请使用完整工具包；尚未连接相机：%s',
+    '内置外观名称／照片阶段不符：%s',
+    '请至少添加一个操作项；未添加的槽位保持原样。',
+    '请为自订 %s 选择 A7Look 文件。',
+    # desktopapp.platforms.usb_drivers (Windows) and usbcheck
+    '未找到服务身份 054C:0336，请先使用“两阶段驱动与连接”入口。当前检测：%s。完整设备／接口信息已保存，不会为未知 PID 自动更换驱动。',
+    '未找到相机的海量存储身份 054C:0E8A，请在相机选择“海量存储”后重新连接。当前检测：%s。完整设备／接口信息已保存，不会为未知 PID 自动更换驱动。',
+    '驱动安装超过 180 秒，已停止等待；请保留日志核对当前绑定，不自动重复安装。',
+    'USB 稳定性检测未通过（%s）：%s。请换线或直连电脑 USB 接口后重测；本次没有固件或设置写入。',
+    # desktopapp.actions.sound_state
+    '当前自定义声音配置不存在，请重新保存或恢复原厂音效。',
+    '当前声音文件长度与配置不同。',
+    '当前声音尚未按磁盘配置加载，请按写入后的提示断电重开。',
+    # looktool: devicesession, checkpointworker, direct, factoryrecover, verticalpersist
+    '相机没有以普通“海量存储”身份连接（可能仍停在上次的服务模式 054C:0336）。请拔掉 USB、关机并取出电池约 1 分钟，再开机选择海量存储、接回 USB 后重试；本次没有写入相机。（Normal Mass Storage USB serial is required for body binding）',
+    '相机 /usr 分区的临时空间用完了：已恢复 %d/%d 个名称文件，程序和已恢复的部分保持不变，相机可以正常开机使用。旧文件占用的空间要断电后才释放。%s只会处理剩下的部分。',
+    '相机 /usr 分区的临时空间用完了：已恢复 %d/%d 个名称文件，程序和已恢复的部分保持不变，相机可以正常开机使用。旧文件占用的空间要断电后才释放。%s只会处理剩下的部分。Checkpoint name operation incomplete: %s',
+    '写入前检查发现相机 /usr 分区临时空间不足，本次没有写入。%s',
+    '写入前检查发现相机 /usr 分区临时空间不足，本次没有写入。%sCheckpoint name operation incomplete: %s',
+    '相机 /usr 分区仍处于可写挂载，通常是上一次操作后还没有完整断电重开；本次没有写入。%s',
+    '相机 /usr 分区仍处于可写挂载，通常是上一次操作后还没有完整断电重开；本次没有写入。%sCheckpoint name operation incomplete: %s',
+    '名称内容已完成，但只读挂载忙碌；需要完成设置与重新加载准备后再重开核对。',
+    '名称内容已完成，但只读挂载忙碌；需要完成设置与重新加载准备后再重开核对。Checkpoint name operation incomplete: %s',
+    '旧任务名称备份清理未完成，相机名称文件没有改动；请完整断电重开后再点恢复。Backup cleanup incomplete: %s',
+    '相机仍在运行上次写入前加载的程序，本次没有写入。请先拔 USB、关机，取下电池至少一分钟，再开机接回 USB，点击“重启后核对并完成恢复”或再次点击恢复。',
+    '尚未确认新的冷启动。完成断电重开后再核对，不要重复写入。',
+    '原厂恢复后的 /usr 只读挂载尚未确认；不标记恢复完成，请保留日志',
+    '名称写入已完成，但尚未确认新开机后的只读挂载；不清理旧资源',
+    '相机执行插件仍存在，不能在执行期间覆盖；本次尚未恢复写入，请结束连接后完整断电再重试',
+    '相机存在启用中的 preload，尚未覆盖临时工作文件或开始恢复写入',
+    '相机执行插件出现，已保存诊断，未覆盖工作文件',
+    '相机临时状态仍在变化，已保存诊断，未覆盖工作文件：%s',
+    '竖屏资源处理已结束，仍需冷重开恢复 /usr 只读状态；不标记加载成功',
+    '竖屏保存值已读取，但开机运行状态／资源尚不符合目标；不以 RAM 临时开启代替持久化验证',
+    '线框资源已清理，但只读挂载仍忙；完整断电后再核对恢复',
+    # camera_runtime: macos_host, transport, core, compat
+    '请只连接一台海量存储模式的 A7C II，再准备 USB 连接。%s',
+    '相机磁盘尚未稳定，尚未接管 USB。%s等存取灯停止后重试。',
+    '相机或磁盘在卸载前发生变化，尚未接管 USB。请重新连接后重试。',
+    '无法卸载相机存储卷。请关闭照片、图像捕捉及使用存储卡的程序后重试。',
+    '相机存储卷未能全部卸载，尚未接管 USB。请关闭照片、图像捕捉及使用存储卡的程序后重试。',
+    '需要且只能連接一台目標相機（USB %s）；請確認大量儲存模式及驅動',
+    '服务身份 0336 已出现，但接口无法打开；请保留驱动与 USB 日志，不重新认证。',
+    '服務身份未出現；若是第一次，請依文件安裝0336驅動（已嘗試 %d 次）',
+    '服務身份未出現，相機也未回到普通 USB；請在相機選擇「影像傳輸（MSC）」後重新連接',
+    '發現額外設定變動：chip%s/%s，請保存紀錄後檢查',
+    '開機快照處理未驗證，請勿重複執行',
+    'LUT 相容模式缺少依賴，請更新完整工具並重新開啟 FL23.cmd。',
+    '補丁位置衝突：%s %s；沒有寫入；目前位元組(%s bytes, first 64)=%s。若使用過舊版本，請先依 README 恢復原廠功能後再安裝；保留本次日誌。',
+    # shutter_sound
+    '另一个声音操作仍在执行，请等它结束后再点击。',
+    '相机执行入口当前仍被占用，本次声音操作尚未开始。请等待正在执行的操作结束。',
+    '相机开始了另一项操作，本次声音替换尚未执行。',
+    '相机临时状态仍在变化，请等待当前操作结束。',
+    '当前声音临时文件替换未完成：%s',
+    '当前相机的电子快门声音尚未开启，请先开启；本次没有注册试听声音。',
+    '请重新开启电子快门声以更新机械快门过滤，再进行试听；本次未注册声音。',
+    '所选片段（起点 %.3f 秒，长度 %.3f 秒）几乎没有声音。很多音频开头是一段静音，请把起点移到声音出现的位置，或加长片段后重新转换。',
+    '电子快门声尚未开启。请先点击“开启电子快门声”，完成断电重开后再试听；本次没有写入固件或注册试听。',
+    '旧版快门声音尚未限制机械快门。请重新点击“开启电子快门声”更新后再试听；本次未注册声音。',
+    '未找到相机 USB 连接。请拔插 USB 并选择海量存储后重试；尚未进行服务认证或声音写入。',
+    '上一次声音操作（%s）中途停止，结果还没确认，所以没有开始新的操作，也没有连接相机。请点窗口底部“导出诊断包”发给作者核对；不要删除声音工作目录。（Previous operation is unresolved: %s）',
+    '请先转换所选片段，再调节音量。',
+    '请先点「转换所选片段」，转换成功后再试听。',
+    # desktopapp.actions.recipe: the outcome hint tells the user to read the camera again
+    '%s 相机可能已执行、也可能未执行最后一次写入；请先重新读取相机，再做任何操作。',
+})

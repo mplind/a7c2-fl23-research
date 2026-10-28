@@ -11,6 +11,8 @@ from PySide6 import QtCore, QtGui, QtWidgets as W
 from . import VERSION
 from . import jobs
 from .engine_text import display  # worker and engine text, shown in English when the interface is English
+from .engine_text import source as catalogue_entry
+from .en_engine import NEXT_STEP
 from . import presets
 from . import reloadguide
 
@@ -1404,7 +1406,7 @@ class Window(W.QMainWindow):
                            tr('名称与只读挂载已确认；程序尚未安装，请点首页“继续安装”。') if resource_ready and status.get('action')=='setup_all' else
                            tr('名称与只读挂载已确认；程序尚未安装，请点自定义外观页“继续槽位更改”。') if resource_ready else
                            tr('完成。详情见日志。') if success else
-                           joined(tr('操作停止：') + (self.error_text(status) if 'error' in status else tr('进程异常退出，退出码 ') + str(code)), tr('。请导出诊断包。')))
+                           self.stopped_text(status, code))
         if success and status.get('action')=='recipe_apply':self.status.setText(tr('配方已写入并读回核对。'))
         refused_build=connection_checked and self.build_unsupported
         if refused_build:self.status.setText(self.build_label.text())
@@ -1462,6 +1464,15 @@ class Window(W.QMainWindow):
             self.setup_result_button.setVisible(True)
             for box in (self.setup_presets,self.setup_fl23,self.setup_sound,self.setup_vertical,self.setup_plugin):box.setEnabled(True)
             self.show_setup_result()
+
+    def stopped_text(self, status, code):
+        """The banner for a job that stopped: its error, then "Export diagnostics to report it" unless the
+        error gives its own next step already (en_engine.NEXT_STEP), such as a click or a cold restart. A
+        worker that quit without a status has an unknown result, so it always gets the suffix."""
+        stopped = tr('操作停止：') + (self.error_text(status) if 'error' in status else tr('进程异常退出，退出码 ') + str(code))
+        if 'error' in status and catalogue_entry(status['error']) in NEXT_STEP:
+            return joined(stopped, tr('。'))
+        return joined(stopped, tr('。请导出诊断包。'))
 
     def show_firmware_build(self, key):
         """The Connection page's line for what the connection test found: the supported build named by
