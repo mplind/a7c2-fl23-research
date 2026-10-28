@@ -107,11 +107,14 @@ class NameReportTests(unittest.TestCase):
 
 class LockTests(unittest.TestCase):
     def test_other_process_is_blocked_and_lock_releases(self):
-        script="import sys\nfrom looktool.devicelock import DeviceLock\ntry:\n with DeviceLock(sys.argv[1]):print('acquired')\nexcept ValueError:print('blocked')"
+        # The child imports looktool from the folder this process did, whatever its working directory.
+        import looktool
+        packages=str(Path(looktool.__file__).resolve().parents[1])
+        script="import sys\nsys.path.insert(0,sys.argv[2])\nfrom looktool.devicelock import DeviceLock\ntry:\n with DeviceLock(sys.argv[1]):print('acquired')\nexcept ValueError:print('blocked')"
         with tempfile.TemporaryDirectory() as folder:
             path=Path(folder)/'device.lock'
             def child():
-                result=subprocess.run([sys.executable,'-c',script,str(path)],capture_output=True,text=True,timeout=20)
+                result=subprocess.run([sys.executable,'-c',script,str(path),packages],capture_output=True,text=True,timeout=20)
                 self.assertEqual(result.returncode,0,result.stderr);return result.stdout.strip()
             with DeviceLock(path):self.assertEqual(child(),'blocked')
             self.assertEqual(child(),'acquired')

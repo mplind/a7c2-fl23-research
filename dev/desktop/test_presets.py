@@ -14,7 +14,8 @@ AVAILABLE = (presets.ROOT / 'desktop-assets/presets' / presets.PACK / 'slot6.a7l
 class PresetTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory(); self.addCleanup(temporary.cleanup)
-        self.root = Path(temporary.name)
+        # The setup stores resolved paths; macOS's temp folder is /var/..., a link to /private/var/....
+        self.root = Path(temporary.name).resolve()
         env = patch.dict(os.environ, {'A7C2_DESKTOP_DATA': str(self.root / 'app')})
         env.start(); self.addCleanup(env.stop)
 

@@ -32,7 +32,8 @@ class RecoveryTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
+        # Recovery stores resolved paths; macOS's temp folder is /var/..., a link to /private/var/....
+        self.root = Path(self.temp.name).resolve()
         self.env = patch.dict(os.environ, {'A7C2_DESKTOP_DATA': str(self.root / 'app')})
         self.env.start()
         self.addCleanup(self.env.stop)

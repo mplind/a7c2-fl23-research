@@ -41,7 +41,10 @@ class IdentityTests(unittest.TestCase):
         usb.backend=types.ModuleType('usb.backend');usb.backend.__path__=[]
         usb.backend.libusb1=types.ModuleType('usb.backend.libusb1');usb.backend.libusb1.get_backend=Mock()
         t.libusb_package=types.SimpleNamespace(find_library=Mock())
-        with patch.dict(sys.modules,{'usb':usb,'usb.core':usb.core,'usb.backend':usb.backend,'usb.backend.libusb1':usb.backend.libusb1}),patch('looktool.devicesession.modules',return_value=(t,types.SimpleNamespace(MODEL='ILCE-7CM2'))):
+        # On macOS a connection first unmounts the camera's storage through macos_host, which runs
+        # ioreg and diskutil: a fake host keeps the test off the real disks on every platform.
+        host=types.ModuleType('macos_host');host.unmount_camera=Mock(return_value={})
+        with patch.dict(sys.modules,{'usb':usb,'usb.core':usb.core,'usb.backend':usb.backend,'usb.backend.libusb1':usb.backend.libusb1,'macos_host':host}),patch('looktool.devicesession.modules',return_value=(t,types.SimpleNamespace(MODEL='ILCE-7CM2'))):
             one=Camera(expected)._connect();two=Camera(expected)._connect()
             link.call.assert_not_called()
             self.assertEqual(one.identity['usb_serial_sha256'],two.identity['usb_serial_sha256'])

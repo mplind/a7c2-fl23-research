@@ -150,7 +150,12 @@ class XMPTests(unittest.TestCase):
     def test_uppercase_sidecar_is_merged_instead_of_creating_another(self):
         sidecar=self.raw.with_suffix('.XMP');sidecar.write_bytes(existing())
         result=raw.merge_xmp(self.raw,'NC',True)
-        self.assertEqual(Path(result['file']),sidecar)
+        # On a case-insensitive filesystem (macOS's default) test.xmp and test.XMP name one file, and
+        # the result may spell it either way: compare the files, and count the sidecars.
+        self.assertTrue(Path(result['file']).samefile(sidecar))
+        self.assertEqual(len([p for p in self.raw.parent.iterdir() if p.suffix.lower()=='.xmp']),1)
+        node=next(ET.parse(sidecar).iter('{'+raw.RDF+'}Description'))
+        self.assertEqual(node.get('{'+raw.CRS+'}CameraProfile'),'NC')
 
 
 if __name__=='__main__':unittest.main()
