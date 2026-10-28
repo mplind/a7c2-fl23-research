@@ -2,11 +2,11 @@
 import re
 from unittest.mock import Mock
 from desktopapp import jobs
-from desktopapp.engine_text import CJK  # noqa: F401  every CJK character Task 8b names, shared with the translator
 from desktopapp.paths import write_json
 
-# Han characters and full-width punctuation: none may appear in the English interface.
-HAN = re.compile('[㐀-鿿（），：；、。“”]')
+# Han characters and the common full-width punctuation: none may appear in the English interface. Not
+# engine_text.HAN (the ideographs alone) nor engine_text.CJK (every CJK block), hence the longer name.
+HAN_OR_PUNCTUATION = re.compile('[㐀-鿿（），：；、。“”]')
 
 
 def stopped_banner(english):

@@ -28,7 +28,7 @@ from test_checkpoint import Camera, fake_compile, stock_names
 from test_device_job import Prop
 from test_direct import SimDirect
 from test_language import finish_failed_job
-from guihelpers import HAN, stopped_banner
+from guihelpers import HAN_OR_PUNCTUATION, stopped_banner
 
 PUBLIC, BODY = BUILDS
 PROGRAMS = ('appFw.so', 'cpapp-b.bin')
@@ -478,4 +478,4 @@ def test_factory_refusals_are_shown_in_english(window, tmp_path, template, value
     error = getattr(buildprofile, template) % values if values else getattr(buildprofile, template)
     text = finish_failed_job(window(language='en'), tmp_path, error)
     assert text == stopped_banner(english)
-    assert not HAN.search(text)
+    assert not HAN_OR_PUNCTUATION.search(text)

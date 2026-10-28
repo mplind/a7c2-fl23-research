@@ -6,7 +6,7 @@ from PySide6 import QtCore, QtGui, QtWidgets as W
 
 from desktopapp import connectionguide, i18n, lookeditor, shell, theme, window as window_module
 from desktopapp.paths import load_settings, save_settings
-from guihelpers import HAN
+from guihelpers import HAN_OR_PUNCTUATION
 
 
 def menu_actions(ui, title):
@@ -21,7 +21,7 @@ def test_each_sidebar_row_shows_its_page_title_and_description_in_the_header(win
         ui.nav.setCurrentRow(index)
         title, detail = ui.page_meta[index]
         assert ui.pages.currentIndex() == index
-        assert ui.page_title.text() == title and title and not HAN.search(title)
+        assert ui.page_title.text() == title and title and not HAN_OR_PUNCTUATION.search(title)
         assert ui.page_detail.text() == detail
         assert ui.page_detail.isHidden() == (not detail)
 
@@ -74,7 +74,7 @@ def test_help_menu_opens_each_guide(window):
         actions[1].trigger()
         actions[2].trigger()
     assert notice.call_args.args[1:] == (i18n.tr(connectionguide.TITLE), i18n.tr(connectionguide.TEXT))
-    assert not HAN.search(''.join(notice.call_args.args[1:]))
+    assert not HAN_OR_PUNCTUATION.search(''.join(notice.call_args.args[1:]))
     reload_guide.assert_called_once()
     format_guide.assert_called_once()
 

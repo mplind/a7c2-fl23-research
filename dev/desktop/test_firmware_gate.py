@@ -31,7 +31,7 @@ import candidate  # noqa: E402
 import trial  # noqa: E402
 from verticaltool import device as vertical, portraitstage  # noqa: E402
 
-from guihelpers import HAN, stopped_banner  # noqa: E402
+from guihelpers import HAN_OR_PUNCTUATION, stopped_banner  # noqa: E402
 from simbuild import PUBLIC, identified as identified_as  # noqa: E402
 
 AP, CP = '/usr/lib/appFw.so', '/cp/cpapp-b.bin'
@@ -505,7 +505,7 @@ def test_firmware_refusals_are_shown_in_english(window, tmp_path, refused, engli
     error = UNSUPPORTED_ERROR if refused == 'unsupported' else devicesession.UNIDENTIFIED
     text = finish_failed_job(window(language='en'), tmp_path, error)
     assert text == stopped_banner(english)
-    assert not HAN.search(text)
+    assert not HAN_OR_PUNCTUATION.search(text)
 
 
 def test_firmware_refusal_stays_verbatim_in_chinese(window, tmp_path):

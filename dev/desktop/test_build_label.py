@@ -17,7 +17,7 @@ from desktopapp.paths import data_root, write_json
 from looktool import buildprofile, checkpointworker, devicesession
 from looktool.buildprofile import BUILDS, UnsupportedFirmware
 
-from guihelpers import HAN, stopped_banner  # noqa: E402
+from guihelpers import HAN_OR_PUNCTUATION, stopped_banner  # noqa: E402
 from test_firmware_gate import AP, CP, UNKNOWN, GateCamera  # noqa: E402
 
 PUBLIC, BODY = BUILDS
@@ -62,7 +62,7 @@ def test_connection_test_shows_the_cameras_build(window, key, english):
     ui = window('en')
     finish(ui, 'connect', connect_result(key))
     assert ui.build_label.text() == english
-    assert not HAN.search(ui.build_label.text())
+    assert not HAN_OR_PUNCTUATION.search(ui.build_label.text())
 
 
 def test_every_supported_build_has_its_english_label():

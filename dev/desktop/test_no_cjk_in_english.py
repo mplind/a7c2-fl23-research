@@ -112,6 +112,34 @@ def test_no_english_text_names_a_page_by_an_old_name():
     assert sorted(stale) == []
 
 
+def test_no_english_message_in_the_source_names_a_page_by_an_old_name():
+    # English the engine raises or prints itself (outside the catalogues) follows the sidebar too.
+    import ast
+    from test_engine_text_coverage import sources, statements_only
+    stale = []
+    for relative, path in sources():
+        tree = ast.parse(path.read_text(encoding='utf-8'))
+        silent = statements_only(tree)
+        stale += ['%s:%d %s' % (relative, node.lineno, node.value[:50]) for node in ast.walk(tree)
+                  if isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in silent
+                  and not CJK.search(node.value) and OLD_PAGE_NAMES.search(node.value)]
+    assert stale == []
+
+
+def test_the_guides_keep_their_safety_facts():
+    # What the guides promise about the camera, kept whole through every rewrite.
+    from desktopapp import lookguide, zadigguide
+    zadig, lut = STRINGS[zadigguide.TEXT], STRINGS[lookguide.TEXT]
+    assert 'This whole process never writes to the camera' in zadig
+    assert 'choose another and check again' in zadig
+    assert 'Never replace the driver of a keyboard, mouse, USB drive, network adapter or any other device' in zadig
+    assert 'keep the cable in and the camera on' in zadig
+    assert 'never connects to the camera' in lut
+    assert "isn't automatically the same input" in lut and '33 is recommended' in lut
+    assert 'approximate' in lut.split('4. DCP files')[1].split('5. ')[0]
+    assert '….' not in lut + zadig
+
+
 def test_one_chinese_text_has_one_english():
     # Each Chinese text, whole entry or one line of a longer one, in either catalogue, reads one way.
     assert engine_text.conflicts() == {}
@@ -130,6 +158,31 @@ def test_label_words_are_never_put_together_into_a_message(line):
 def test_a_value_the_engine_fills_in_stays_data(line, source, value):
     # A disk or look name that happens to match an interface label is data: only the message is translated.
     assert engine_text.translate_line(line) == sample(ENGINE[source], value)
+
+
+@pytest.mark.parametrize('line', ['  "name": "良好",', '"look": "测试"', 'RuntimeError: 良好', 'ValueError: 测试'])
+def test_a_json_value_or_an_exception_message_that_is_a_label_stays_data(line):
+    # A look named 良好 in a printed result, or an exception that carries a label word, is data.
+    assert engine_text.translate_line(line) == line
+
+
+@pytest.mark.parametrize('line, english', [
+    ('  "note": "无可读设备",', '  "note": "no readable device",'),
+    ('RuntimeError: 普通 USB 连接已恢复。', 'RuntimeError: Normal USB connection is back.'),
+    ('  "message": "相机设置已与此配方一致。"', '  "message": "The camera settings already match this recipe."')])
+def test_a_json_value_or_an_exception_message_that_is_a_message_is_translated(line, english):
+    assert engine_text.translate_line(line) == english
+
+
+@pytest.mark.parametrize('prefix', ['执行：', '一键安装：'])
+def test_deeply_nested_formats_stop_at_a_bound(prefix):
+    # A value that is again the same format, hundreds of times over: translated to a depth, then the rest
+    # stays as printed, with no RecursionError.
+    line = prefix * (399 if prefix == '一键安装：' else 300) + 'x'
+    shown = engine_text.translate_line(line)
+    english = ENGINE[prefix + '%s'] % ''
+    assert shown.startswith(english * engine_text.DEEPEST)
+    assert shown.endswith(line[-len(prefix) * 3:])
 
 
 def test_a_value_that_is_a_whole_interface_sentence_is_translated():

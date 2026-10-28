@@ -2,6 +2,7 @@
 area with its log, the Settings window and camera-write confirmations. Never opens a camera."""
 from PySide6 import QtCore, QtGui, QtSvg, QtWidgets as W
 from . import theme
+from .engine_text import display
 from .i18n import tr
 
 # 16 px line icons, 1.5 px strokes, in the spirit of SF Symbols (which Qt cannot load).
@@ -43,6 +44,11 @@ def modal(dialog):
         return dialog.exec()
     finally:
         dialog.deleteLater()
+
+
+def warn(parent, title, exc):
+    """An alert titled `title` showing the error `exc` raised; engine text in the interface language."""
+    W.QMessageBox.warning(parent, title, display(str(exc)))
 
 
 def ask(parent, title, text, verb, *, details=None):

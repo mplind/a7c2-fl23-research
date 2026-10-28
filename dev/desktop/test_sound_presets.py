@@ -5,7 +5,7 @@ import pytest
 from PySide6 import QtWidgets as W
 
 from desktopapp import shuttersounds
-from guihelpers import HAN
+from guihelpers import HAN_OR_PUNCTUATION
 from test_shuttersounds import entry, write_catalog, write_wav
 
 NAMES = ['Leica M3', 'Hasselblad 500C', 'Pentax 6x7']
@@ -32,7 +32,7 @@ def test_the_page_offers_your_own_file_then_the_presets_most_loved_first(window,
     menu = preset(ui)
     assert [menu.itemText(i) for i in range(menu.count())] == ['Your own file'] + NAMES
     assert menu.currentIndex() == 0
-    assert 'ranked' in ui.sound_credit.text() and not HAN.search(ui.sound_credit.text())
+    assert 'ranked' in ui.sound_credit.text() and not HAN_OR_PUNCTUATION.search(ui.sound_credit.text())
 
 
 def test_choosing_a_preset_fills_the_file_start_and_length_and_shows_its_credit(window, library):

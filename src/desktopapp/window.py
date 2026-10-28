@@ -673,7 +673,7 @@ class Window(W.QMainWindow):
         try:
             looks=looklibrary.catalog()
         except looklibrary.READ_ERRORS as exc:
-            self.warn(tr('胶片外观库无法读取'), exc);return
+            shell.warn(self, tr('胶片外观库无法读取'), exc);return
         if not looks:
             W.QMessageBox.information(self,tr('胶片外观库'),tr('此安装没有附带胶片外观库。'));return
         dialog=FilmLibraryDialog(looks,self,notices=looklibrary.location())
@@ -696,7 +696,7 @@ class Window(W.QMainWindow):
         try:
             dialog=PreviewDialog(path,cache=data_root()/'preview-cache',parent=self)
         except READ_ERRORS as exc:
-            self.warn(tr('无法预览此外观'), exc);return
+            shell.warn(self, tr('无法预览此外观'), exc);return
         shell.modal(dialog)
 
     def setup_looks(self,arguments):
@@ -1100,7 +1100,7 @@ class Window(W.QMainWindow):
         if not path:return
         try:hald.write_identity(path)
         except (OSError,ValueError) as exc:
-            self.warn(tr('保存失败'), exc);return
+            shell.warn(self, tr('保存失败'), exc);return
         W.QMessageBox.information(self,tr('HALD 图像已保存'),
             tr('在 DxO PhotoLab 中打开此图像，先应用“无校正”预设，再只应用 FilmPack 胶片渲染；不要加颗粒、暗角、锐化或其他效果。以原尺寸导出为未压缩的 16 位 TIFF（sRGB），再把导出的 TIFF 选为这里的源文件。'))
 
@@ -1111,7 +1111,7 @@ class Window(W.QMainWindow):
         try:
             _,report=hald.accept(hald.read(path))
         except ValueError as exc:
-            self.warn(tr('HALD 导出有问题'), exc);return
+            shell.warn(self, tr('HALD 导出有问题'), exc);return
         if report['identity_error_max']<=hald.CLEAN:
             text=tr('导出与原始 HALD 一致（最大差 %.2f 级）：没有开启任何自动校正。用同样的设置导出胶片外观。')%report['identity_error_max']
         else:
@@ -1141,7 +1141,7 @@ class Window(W.QMainWindow):
             try:
                 fit_looks = self.setup_looks(arguments)
             except READ_ERRORS as exc:  # before any driver, fit, power or administrator prompt
-                self.warn(tr('请检查所选外观'), exc); return
+                shell.warn(self, tr('请检查所选外观'), exc); return
         if action == 'setup_all' and not self.drivers_first(arguments):
             return
         if action=='direct_looks_import' and arguments.get('failed_workspace'):
@@ -1156,13 +1156,13 @@ class Window(W.QMainWindow):
                 arguments=dict(arguments,operations=chosen['slot_operations'])
                 fit_looks=[r for r in arguments['operations'] if r['action']=='write']
             except READ_ERRORS as exc:
-                self.warn(tr('请检查操作清单'), exc);return
+                shell.warn(self, tr('请检查操作清单'), exc);return
         if action == 'sound_audition':
             from .actions.sound import has_conversion
             try:
                 ready = has_conversion(arguments['workspace'])
             except (ValueError, OSError, KeyError) as exc:
-                self.warn(tr('声音工作区需要核对'), exc);return
+                shell.warn(self, tr('声音工作区需要核对'), exc);return
             if not ready:
                 W.QMessageBox.information(self, tr('请先转换片段'), tr('还没有转换好的声音。请先选择声音文件、设置起点和长度，点「转换所选片段」，成功后再试听。'));return
         if action == 'restore_verify' and not Path(arguments.get('workspace', ''), 'rollback.private.json').is_file():
@@ -1279,10 +1279,6 @@ class Window(W.QMainWindow):
             with (self.current_job / 'process.log').open('a', encoding='utf-8') as stream:
                 stream.write(text)
             self.append_log(text.rstrip())
-
-    def warn(self, title, exc):
-        """An alert titled `title` that shows the error `exc` raised, engine text in the interface language."""
-        W.QMessageBox.warning(self, title, display(str(exc)))
 
     def append_log(self, text):
         """Worker output in the log pane, in the interface language; worker.log and process.log keep it
@@ -1496,7 +1492,7 @@ class Window(W.QMainWindow):
             try:
                 jobs.export_support(self.current_job, path)
             except Exception as exc:
-                self.warn(tr('导出失败'), exc)
+                shell.warn(self, tr('导出失败'), exc)
 
     def cancel_offline(self):
         if self.process and not self.camera_operation:

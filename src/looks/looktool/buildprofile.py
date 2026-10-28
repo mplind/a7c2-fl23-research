@@ -193,15 +193,15 @@ def _with_windows(rows, windows, size, key):
     result = list(rows)
     for at, raw in windows:
         if not raw or at < 0 or at + len(raw) > size:
-            raise ValueError('%s: invalid Vertical Display window %#x+%d' % (key, at, len(raw)))
+            raise ValueError('%s: invalid vertical display window %#x+%d' % (key, at, len(raw)))
         holder = next(((start, stock) for start, stock in rows if start <= at and at + len(raw) <= start + len(stock)), None)
         if holder is not None:
             start, stock = holder
             if stock[at - start:at - start + len(raw)] != raw:
-                raise ValueError('%s: Vertical Display window %#x disagrees with its regions file' % (key, at))
+                raise ValueError('%s: vertical display window %#x disagrees with its regions file' % (key, at))
             continue
         if any(start < at + len(raw) and at < start + len(stock) for start, stock in result):
-            raise ValueError('%s: Vertical Display window %#x+%d overlaps a tool region' % (key, at, len(raw)))
+            raise ValueError('%s: vertical display window %#x+%d overlaps a tool region' % (key, at, len(raw)))
         result.append((at, raw))
     return sorted(result)
 

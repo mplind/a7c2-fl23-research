@@ -18,7 +18,7 @@ from desktopapp.en import STRINGS
 from desktopapp.paths import write_json
 from desktopapp.window import Window
 
-from guihelpers import HAN  # noqa: E402
+from guihelpers import HAN_OR_PUNCTUATION  # noqa: E402
 
 
 @pytest.fixture
@@ -71,7 +71,7 @@ def test_new_install_defaults_to_english_and_no_page_shows_chinese(ui):
         app.processEvents()
         assert window.pages.currentIndex() == index
     window.look_editor.add_row(4)
-    chinese = [text for text in visible_texts(window) if HAN.search(text)]
+    chinese = [text for text in visible_texts(window) if HAN_OR_PUNCTUATION.search(text)]
     assert chinese == []
     assert window.common() == {'firmware': '2.01'}
     assert window.current_job is None
@@ -147,14 +147,14 @@ def test_english_write_confirmation_can_cancel_without_creating_job(ui):
     assert title == 'Write to the camera?'
     assert 'ILCE-7CM2' in text and '2.01' in text and '50%' in text
     assert 'Custom 3' in text
-    assert not HAN.search(title + text)
+    assert not HAN_OR_PUNCTUATION.search(title + text)
 
 
 def test_safety_guides_and_completion_are_english_without_translating_user_names(ui):
     create, _, _ = ui
     create('en')
     guide = reloadguide.text()
-    assert 'at least 1 minute' in guide and not HAN.search(guide)
+    assert 'at least 1 minute' in guide and not HAN_OR_PUNCTUATION.search(guide)
     assert 'aren’t written yet' in reloadguide.text(mode='resource_reload')
     notice = reloadguide.sound_notice('sound_audition', dict(
         phase='temporary_pcm_registered_cold_reload_required_after_test'))
@@ -184,7 +184,7 @@ def test_safety_critical_worker_errors_are_shown_in_english(ui, error, english):
     create, _, root = ui
     text = finish_failed_job(create(), root, error)
     assert text.startswith('Stopped: ') and english in text
-    assert not HAN.search(text)
+    assert not HAN_OR_PUNCTUATION.search(text)
 
 
 def test_other_worker_errors_are_shown_verbatim_inside_the_english_frame(ui):
@@ -199,7 +199,7 @@ def test_english_entries_keep_format_specifiers_and_file_extensions():
         assert specifiers(source) == specifiers(english), source
         for extension in re.findall(r'\*\.[A-Za-z0-9]+', source):
             assert extension in english, source
-        assert not HAN.search(english), source
+        assert not HAN_OR_PUNCTUATION.search(english), source
     assert i18n.tr('unmapped diagnostic') == 'unmapped diagnostic'
 
 

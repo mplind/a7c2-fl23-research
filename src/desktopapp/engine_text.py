@@ -10,7 +10,9 @@ and the engine), keyed by the Chinese source:
 - by its format: each %s, %d … in a key matches the value the code filled in.
 A value is translated only when it is itself a message: an engine entry, or an interface sentence that
 ends its clause (。；：！？). Anything else is data and stays as printed, so a catalogued format with an
-uncatalogued Chinese value, such as a disk or look name, shows that value unchanged. A line no entry
+uncatalogued Chinese value, such as a disk or look name, shows that value unchanged. The same rule reads
+the value of a printed JSON result line and the message of an exception line. A value that is again a
+format is read to DEEPEST levels; past that the rest of the line stays as printed. A line no entry
 matches as a whole is shown unchanged too, never pieced together from shorter entries; a line the code
 builds from several messages needs its own entry. A traceback's source line keeps its code and shows a
 Chinese string literal in English, or as … when the literal is only part of a message. Lines longer than
@@ -33,6 +35,7 @@ VALUE = {**dict.fromkeys('diu', r'-?\d+'), **dict.fromkeys('fFeEgG', r'-?(?:\d+(
          **dict.fromkeys('xXo', r'[0-9a-fA-F]+')}
 CLAUSE_END = ('\u3002', '\uff1b', '\uff1a', '\uff01', '\uff1f')  # an interface entry ending so is a sentence
 LONGEST = 2000  # longer lines skip the formats: a format with two values can take quadratic time
+DEEPEST = 8  # values are read as messages this many levels deep; deeper text stays as printed
 # Full-width punctuation left between translated or ASCII text, once no Chinese word remains.
 PUNCTUATION = {'，': ', ', '。': '. ', '；': '; ', '：': ': ', '（': ' (', '）': ') ', '、': ', ', '！': '! ', '？': '? ',
                '「': '"', '」': '"', '『': '"', '』': '"', '《': '"', '》': '"', '【': '[', '】': ']', '／': '/',
@@ -92,10 +95,11 @@ class Format:
         self.pattern = re.compile(regex, re.S)
         self.text = ''.join(literal)  # the key without its specifiers: how specific it is
 
-    def translate(self, match):
-        """The English for the text `match` found, each specifier filled with its value: in English when
-        the value is itself a message (see _value), else as printed. Named specifiers fill by name."""
-        values = [_value(value) for value in match.groups()]
+    def translate(self, match, depth):
+        """The English for the text `match` found, `depth` formats deep, each specifier filled with its
+        value: in English when the value is itself a message (see _value), else as printed. Named
+        specifiers fill by name."""
+        values = [_value(value, depth + 1) for value in match.groups()]
         named, ordered = dict(zip(self.names, values)), iter(values)
 
         def fill(specifier):
@@ -126,14 +130,14 @@ EXACT, FORMATS, VALUES = _catalogue()
 VALUE_FORMATS = [found for found in FORMATS if found.engine]
 
 
-def _format(text, formats):
+def _format(text, formats, depth=0):
     """English for `text` by the first of `formats` it fully matches, or None."""
     if len(text) > LONGEST:
         return None
     for found in formats:
         match = found.pattern.fullmatch(text)
         if match:
-            return found.translate(match)
+            return found.translate(match, depth)
     return None
 
 
@@ -142,15 +146,18 @@ def _message(text):
     return EXACT[text] if text in EXACT else _format(text, FORMATS)
 
 
-def _value(text):
-    """A value the code filled into a format, in English only when it is itself a message: an engine
-    entry, or an interface sentence ending its clause. Anything else, such as a disk or look name that
-    happens to match a short interface label, is data and stays as printed."""
-    if not CJK.search(text):
+def _value(text, depth=0):
+    """Text the engine filled into a message (a format's value, a JSON result's value, an exception's
+    message), in English only when it is itself a message: an engine entry, or an interface sentence
+    ending its clause, line by line if need be. Anything else, such as a disk or look name that happens to
+    match a short interface label, is data and stays as printed; so does anything deeper than DEEPEST."""
+    if not CJK.search(text) or depth > DEEPEST:
         return text
     if text in VALUES:
         return VALUES[text]
-    english = _format(text, VALUE_FORMATS)
+    english = _format(text, VALUE_FORMATS, depth)
+    if english is None and '\n' in text:
+        return '\n'.join(_value(line, depth) for line in text.split('\n'))
     return text if english is None else english
 
 
@@ -164,7 +171,7 @@ def _spacing(text):
 
 
 def _json(text):
-    """A "key": "value" line of a result the worker printed as JSON, with the value in English."""
+    """A "key": "value" line of a result the worker printed as JSON, its value read by the value rule."""
     match = JSON_STRING.match(text)
     if not match:
         return None
@@ -172,7 +179,7 @@ def _json(text):
         value = json.loads('"' + match.group(2) + '"')
     except ValueError:
         return None
-    return match.group(1) + json.dumps(translate_text(value), ensure_ascii=False) + match.group(3)
+    return match.group(1) + json.dumps(_value(value), ensure_ascii=False) + match.group(3)
 
 
 def _code(line):
@@ -210,7 +217,7 @@ def translate_line(text):
     if english is None:
         exception = EXCEPTION.match(core)
         if exception and not CJK.search(exception.group(1)):
-            english = exception.group(1) + ': ' + translate_text(exception.group(2))
+            english = exception.group(1) + ': ' + _value(exception.group(2))
     if english is None:
         english = _json(core)
     return lead + _punctuation(core if english is None else english) + trail

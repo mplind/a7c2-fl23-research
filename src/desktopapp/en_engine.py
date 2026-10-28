@@ -12,7 +12,7 @@ ENGINE = {
     '请在打开的「终端」窗口中输入 Mac 登录密码（输入时不显示）。':
         'Enter your Mac login password in the Terminal window that opened. It stays hidden as you type.',
     '等待在「终端」窗口输入 Mac 登录密码；尚未接管 USB 或开始相机操作。输入密码前关闭终端窗口不会刷写相机。\n':
-        'Waiting for your Mac login password in Terminal. USB is not taken over and no camera operation has started; closing Terminal before you enter the password writes nothing.\n',
+        'Waiting for your Mac login password in Terminal. USB is not taken over and no camera operation has started; closing Terminal before you enter the password writes nothing to the camera.\n',
     '管理员进程意外结束，相机操作结果未知。请导出诊断包，不要重复刚才的操作。':
         "Don't repeat the task. The administrator process ended unexpectedly, so the camera result is unknown. Export diagnostics.",
     '终端授权未完成（窗口已关闭或密码不正确）；本次相机操作尚未开始，可重新点击原按钮。':
@@ -133,11 +133,11 @@ ENGINE = {
         'Opening the camera service connection (this step writes no firmware). Checking both USB identities.',
     '正在让 Windows 重新识别设备…': 'Asking Windows to detect the device again…',
     '已列出所有 Sony USB 身份；未知 PID 不等于已确认的 A7C II。请核对设备名称、接口类型及海量存储模式，不会给未知设备自动换驱动。':
-        'Listed every Sony USB identity. An unknown PID is not a confirmed A7C II: check the device name, interface type and Mass Storage mode. Unknown devices never get a driver change.',
+        'Listed every Sony USB identity. An unknown PID is not a confirmed A7C II: check the device name, interface type and Mass Storage mode. Unknown devices never get an automatic driver change.',
     '未找到服务身份 054C:0336，请先使用“两阶段驱动与连接”入口。当前检测：%s。完整设备／接口信息已保存，不会为未知 PID 自动更换驱动。':
-        'Service identity 054C:0336 not found. Use "Prepare drivers and test the connection" first. Found: %s. Full device and interface details are saved; unknown PIDs never get a driver change.',
+        'Service identity 054C:0336 not found. Use "Prepare drivers and test the connection" first. Found: %s. Full device and interface details are saved; unknown PIDs never get an automatic driver change.',
     '未找到相机的海量存储身份 054C:0E8A，请在相机选择“海量存储”后重新连接。当前检测：%s。完整设备／接口信息已保存，不会为未知 PID 自动更换驱动。':
-        "Choose Mass Storage on the camera, then reconnect. The camera's Mass Storage identity 054C:0E8A was not found. Found: %s. Full device and interface details are saved; unknown PIDs never get a driver change.",
+        "Choose Mass Storage on the camera, then reconnect. The camera's Mass Storage identity 054C:0E8A was not found. Found: %s. Full device and interface details are saved; unknown PIDs never get an automatic driver change.",
     '054C:%s 已安装 %s，直接沿用，跳过驱动安装与管理员申请。':
         '054C:%s already has %s. Keeping it; no driver install or administrator prompt needed.',
     '驱动安装超过 180 秒，已停止等待；请保留日志核对当前绑定，不自动重复安装。':

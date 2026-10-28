@@ -8,7 +8,7 @@ import numpy as np
 from PySide6 import QtCore, QtGui, QtWidgets as W
 from .engine_text import display  # engine errors, shown in English when the interface is English
 from .i18n import tr
-from . import theme
+from . import shell, theme
 
 
 def rating_word(rating):
@@ -363,4 +363,4 @@ class PreviewDialog(W.QDialog):
         try:
             shutil.copyfile(self.output, path)
         except OSError as exc:
-            W.QMessageBox.warning(self, tr('保存失败'), display(str(exc)))
+            shell.warn(self, tr('保存失败'), exc)

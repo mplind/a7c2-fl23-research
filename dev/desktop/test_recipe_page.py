@@ -8,7 +8,7 @@ import pytest
 from PySide6 import QtWidgets as W
 from desktopapp import jobs, recipes, shell
 from desktopapp.actions import recipe as job
-from guihelpers import HAN, finish_job as finish
+from guihelpers import HAN_OR_PUNCTUATION, finish_job as finish
 
 
 def requested(ui):
@@ -67,7 +67,7 @@ def test_a_reviewed_plan_is_written_only_after_yes_with_the_exact_reviewed_steps
     assert '• Creative Look: ST → FL' in text and 'Position Key: not offered' in text and 'not been tested' in text
     assert text.index('After the look or white balance switches') < text.index('• Contrast: -2')
     assert 'This writes 2 camera settings' in text
-    assert not HAN.search(title + text)
+    assert not HAN_OR_PUNCTUATION.search(title + text)
     request = requested(ui)
     assert request['action'] == 'recipe_apply'
     assert request['arguments'] == dict(recipe=plan_result()['recipe'], stop_ptpcamerad=True,
@@ -131,4 +131,4 @@ def test_the_english_page_shows_no_chinese(window):
     page = ui.pages.widget(7)
     texts = [w.text() for kind in (W.QLabel, W.QAbstractButton) for w in page.findChildren(kind)] + \
             [ui.recipe_target.itemText(i) for i in range(ui.recipe_target.count())]
-    assert not any(HAN.search(text) for text in texts)
+    assert not any(HAN_OR_PUNCTUATION.search(text) for text in texts)

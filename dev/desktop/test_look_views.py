@@ -13,7 +13,7 @@ from PySide6 import QtWidgets as W
 from desktopapp import i18n, jobs, looklibrary
 from desktopapp.lookeditor import LookEditor
 from desktopapp.lookviews import FilmLibraryDialog, PreviewDialog, fit_text
-from guihelpers import HAN
+from guihelpers import HAN_OR_PUNCTUATION
 from looksamples import look_file
 
 
@@ -80,8 +80,8 @@ def test_preview_and_library_buttons_ask_the_window(app, tmp_path):
 
 def test_fit_text_lists_every_rating_in_english(english):
     for rating in ('good', 'fair', 'poor'):
-        assert not HAN.search(fit_text(dict(rating=rating, mae=1.0, p95=2.0)))
-    assert not HAN.search(fit_text(dict(rating='unknown', mae=None, p95=None)))
+        assert not HAN_OR_PUNCTUATION.search(fit_text(dict(rating=rating, mae=1.0, p95=2.0)))
+    assert not HAN_OR_PUNCTUATION.search(fit_text(dict(rating='unknown', mae=None, p95=None)))
 
 
 PORTRA = ['#6C5043', '#BB9281', '#607FA2', '#616645', '#D8954D', '#313332', '#79797A', '#C0C2C5']
@@ -164,7 +164,7 @@ def test_library_lists_looks_and_shows_source_licence_and_notes(app, english, tm
                  'Slight cyan cast', 'MAE 3.5'):
         assert text in details
     assert 'https://github.com/andreavolpato/spektrafilm' in dialog.details.toHtml()
-    assert not any(HAN.search(text) for text in [dialog.windowTitle(), details] +
+    assert not any(HAN_OR_PUNCTUATION.search(text) for text in [dialog.windowTitle(), details] +
                    [b.text() for b in dialog.findChildren(W.QAbstractButton)])
 
 
@@ -209,7 +209,7 @@ def test_a_poor_fit_asks_before_the_write_confirmation_and_cancel_starts_nothing
     new.assert_not_called()
     assert asked.call_count == 1
     title, text = asked.call_args.args[1:3]
-    assert title == 'Some looks may not match on the camera' and 'Custom 3' in text and 'poor' in text and not HAN.search(title + text)
+    assert title == 'Some looks may not match on the camera' and 'Custom 3' in text and 'poor' in text and not HAN_OR_PUNCTUATION.search(title + text)
 
 
 def test_accepting_the_fit_warning_continues_to_the_write_confirmation(window, tmp_path):
@@ -277,7 +277,7 @@ def test_preview_shows_each_returned_panel_with_its_caption_and_can_be_saved(app
     assert Image.open(tmp_path / 'saved.png').size == (60, 20)
     texts = [dialog.windowTitle(), dialog.status.text()] + [p.caption.text() for p in dialog.panels.values()] + \
             [b.text() for b in dialog.findChildren(W.QAbstractButton)]
-    assert not any(HAN.search(text) for text in texts)
+    assert not any(HAN_OR_PUNCTUATION.search(text) for text in texts)
 
 
 def test_a_failed_preview_reports_the_error_and_allows_another_photo(app, english, tmp_path):
