@@ -56,20 +56,6 @@ def legacy_chinese_interface(monkeypatch):
     monkeypatch.setattr(window, 'load_settings', lambda: {'language': 'zh_CN', **original()})
 
 
-DANGEROUS_PROGRAMS = ('sudo', 'pkill', 'kill', 'killall', 'pgrep', 'osascript')
-
-
-def dangerous(argv):
-    """The name of a command that would reach the administrator prompt or camera services, or None."""
-    words = argv.split() if isinstance(argv, (str, bytes)) else [str(word) for word in argv]
-    program = Path(str(words[0])).name if words else ''
-    if program in DANGEROUS_PROGRAMS:
-        return program
-    if program == 'open' and 'Terminal' in words:
-        return 'open -a Terminal'
-    return None
-
-
 @pytest.fixture(autouse=True)
 def release_widgets():
     """Delete every top-level widget a test leaves behind. Widgets left alive are restyled on every
@@ -90,23 +76,20 @@ def release_widgets():
 
 
 @pytest.fixture(autouse=True)
-def blocked_side_effects(monkeypatch):
+def blocked_side_effects(monkeypatch, blocked_programs):
     """No test may start a worker, ask for administrator rights, enumerate USB, stop macOS camera
-    services or block on a modal dialog. Each attempt is refused and recorded, and fails the test at
-    teardown, because Qt prints and swallows an exception raised inside a slot."""
+    services or block on a modal dialog. Each attempt is refused and recorded in the root conftest's
+    blocked_programs list, which also refuses the dangerous commands (subprocess.run) and fails the test
+    at teardown, because Qt prints and swallows an exception raised inside a slot."""
     import subprocess
     import usb.core
     from PySide6 import QtCore
     from camera_runtime import ptpremote
-    attempts, real_run = [], subprocess.run
+    attempts, guarded_run = blocked_programs, subprocess.run  # the root conftest's guarded run
 
     def refuse(name):
         attempts.append(name)
         raise AssertionError('Forbidden in tests: ' + name)
-
-    def guarded_run(argv, *args, **kwargs):
-        name = dangerous(argv)
-        return refuse(name) if name else real_run(argv, *args, **kwargs)
 
     monkeypatch.setattr(QtCore.QProcess, 'start', lambda *a, **k: refuse('starting a worker process'))
     # An unpatched modal dialog would wait forever for a click offscreen: refuse it instead.
@@ -114,12 +97,10 @@ def blocked_side_effects(monkeypatch):
     monkeypatch.setattr(QtWidgets.QDialog, 'exec', lambda *a, **k: refuse('opening a modal dialog'))
     monkeypatch.setattr(QtWidgets.QMessageBox, 'exec', lambda *a, **k: refuse('opening a modal dialog'))
     monkeypatch.setattr(usb.core, 'find', lambda *a, **k: refuse('USB enumeration'))
-    monkeypatch.setattr(subprocess, 'run', guarded_run)
     # ptpremote binds subprocess.run as a default argument when it is imported.
     monkeypatch.setitem(ptpremote.claim_after_stopping_ptpcamerad.__kwdefaults__, 'run', guarded_run)
     monkeypatch.setattr(ptpremote.running_camera_apps, '__defaults__', (guarded_run,))
     yield attempts
-    assert not attempts, 'This test tried: ' + ', '.join(attempts)
 
 
 @pytest.fixture

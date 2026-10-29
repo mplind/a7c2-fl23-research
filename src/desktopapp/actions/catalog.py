@@ -17,10 +17,12 @@ POWER_ACTIONS.add('setup_all')
 CAMERA_ACTIONS.add('setup_all')
 CAMERA_ACTIONS.add('review_failed_names')
 CAMERA_ACTIONS.add('usb_stability')
-# Read-only diagnostics the user asks for by name ("Check USB connection stability"): their macOS
-# administrator worker runs with libusb's debug log on (LIBUSB_DEBUG=4, about 10 MB/min).
-DIAGNOSTIC_ACTIONS = {'usb_stability'}
 # PC Remote recipe jobs: camera I/O through the user-space PTP interface, so no
 # administrator worker and no power confirmation (settings only, no firmware).
 RECIPE_ACTIONS = ('recipe_plan', 'recipe_apply')
 REMOTE_ACTIONS = set(RECIPE_ACTIONS)
+# The jobs whose macOS administrator worker runs with libusb's debug log on (LIBUSB_DEBUG=4, about
+# 10 MB/min of root-owned log): every camera write, since a failed write is the case that needs a trace,
+# and the USB stability check the user asks for by name. Read-only routine jobs (Detect, Test, Eject,
+# the verifies) run without it. An explicit LIBUSB_DEBUG passes through for any job.
+LIBUSB_TRACED_ACTIONS = frozenset(POWER_ACTIONS | {'usb_stability'})

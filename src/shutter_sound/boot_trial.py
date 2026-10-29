@@ -360,7 +360,7 @@ def restore(root, zig=None, camera_factory=trial.factory):
         with camera_factory(state['identity']) as camera:
             before = trial.capture(camera)
             # Never put another build's stock bytes back into this camera's programs.
-            buildprofile.same_build(saved, camera.require_build())
+            buildprofile.same_build(saved.key, camera.require_build().key)
             camera.programs_pinned = True
             runtime = probe(camera, root, state, components)
             reverse = [(w['offset'], bytes.fromhex(w['after_hex']), bytes.fromhex(w['before_hex']))

@@ -191,6 +191,20 @@ def test_body_sound_restore_returns_body_stock(saves):
     assert boot_log_string(restored['appFw.so']) == (0x4c14ab3, BOOT_LOG_STRING)
 
 
+@pytest.mark.parametrize('name', ['public', 'body'])
+def test_restore_sound_puts_back_program_bytes_only(saves, name):
+    """I-1: Restore original sound plans program bytes alone (the files it plans are the files it read),
+    so the saved custom sound's files stay on the camera, unused; the English must say so."""
+    from desktopapp.en import STRINGS
+    installed = dict(saves[name].target)
+    restored = sound_restore(installed)
+    assert set(restored) == set(installed) and not any('avsystemsound' in key for key in restored)
+    assert [key for key in restored if restored[key] != installed[key]] == ['appFw.so']
+    english = STRINGS['改回相机原来的快门声。']
+    assert 'Your saved sound stays on the camera, unused.' in english and 'Removes your saved sound' not in english
+    assert english.startswith("Puts Sony’s original program bytes back")
+
+
 def test_body_sound_restore_finishes_an_interrupted_install(saves):
     body = saves['body']
     partial = bytearray(body.stock['appFw.so'])

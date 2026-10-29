@@ -598,7 +598,17 @@ def workspace_command(args):
         return status(state,root)
 
 
+def build_refusal(exc):
+    """Whether `exc` is the firmware-build gate's refusal (looktool.buildprofile.Refusal), raised before
+    anything was written. Only looktool.buildprofile raises one, so while that module is not loaded (an
+    offline command) no exception is one."""
+    profile = sys.modules.get('looktool.buildprofile')
+    return profile is not None and isinstance(exc, profile.Refusal)
+
+
 def main(argv=None, *, report=None, failure=None):
+    """Run one command. `report(result)` receives a result's public fields; `failure(exc, message)`
+    receives the exception that stopped a command and the message printed for it."""
     args = parser().parse_args(argv)
     try:
         if args.command == 'doctor':
@@ -630,12 +640,14 @@ def main(argv=None, *, report=None, failure=None):
         print(json.dumps(public if args.command not in ('status', 'doctor') else result, indent=2))
         return 0
     except (ValueError, OSError, ImportError, RuntimeError, KeyError) as exc:
-        detail=('\n电脑端音频处理失败，本次没有相机读写；请修正输入后重试。' if args.command=='volume' else
+        # A firmware-build refusal says itself that nothing was written: no unknown write to warn about.
+        detail=('' if build_refusal(exc) else
+                '\n电脑端音频处理失败，本次没有相机读写；请修正输入后重试。' if args.command=='volume' else
                 '\n电脑端转换失败，本次没有相机读写；请修正输入后重新转换。' if args.command=='import' else
                 '\nKeep the workspace and backup; do not repeat unknown writes.')
         print('Stopped: ' + str(exc) + detail, file=sys.stderr)
         if failure is not None:
-            failure(str(exc) + detail)
+            failure(exc, str(exc) + detail)
         return 2
     except KeyboardInterrupt:
         print('Interrupted. Preserve the workspace; inspect status before further device operations.', file=sys.stderr)

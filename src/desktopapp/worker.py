@@ -145,7 +145,7 @@ def run(action, args, job):
             else:
                 result = obj.verify_direct(factory_values=reference, accepted=bool(args.get('accepted')))
         elif mode == 'resume_factory':
-            from looktool.direct import ContentChanged
+            from looktool.direct import ContentChanged, JobOtherBuild
             from looktool.factoryrecover import FINISHED
             from looktool.usbidentity import BodyMismatch
             from .official import load
@@ -171,11 +171,9 @@ def run(action, args, job):
                 except ContentChanged as exc:
                     # Read-only verification found other bytes, e.g. features installed again after that
                     # restore, or the job was for another firmware build: re-plan, don't loop. Say which.
-                    from looktool.buildprofile import JOB_OTHER_BUILD, refusal
-                    found = refusal(str(exc))
-                    if found and found[0] == JOB_OTHER_BUILD:
+                    if isinstance(exc, JobOtherBuild):
                         print('上次恢复记录的固件版本是 %s，而相机现在是 %s。旧记录保留；按相机当前的固件版本和字节'
-                              '重新生成原厂恢复计划。' % found[1], flush=True)
+                              '重新生成原厂恢复计划。' % (exc.recorded, exc.camera), flush=True)
                     else:
                         print('相机内容已与上次恢复结果不同（%s），通常是之后又安装或修改过功能。旧记录保留；'
                               '按当前相机字节重新生成原厂恢复计划。' % exc, flush=True)

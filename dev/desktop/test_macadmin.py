@@ -8,7 +8,7 @@ import subprocess
 from types import SimpleNamespace
 from unittest.mock import Mock,patch
 import pytest
-from desktopapp import macadmin,worker
+from desktopapp import jobs,macadmin,worker
 from desktopapp.paths import write_json
 
 
@@ -46,7 +46,7 @@ def test_terminal_launcher_quoting_preserves_spaces_quotes_and_metacharacters(tm
     sudo=[line for line in lines if line.startswith('/usr/bin/sudo ')]
     assert len(sudo)==1 and shlex.split(sudo[0])==['/usr/bin/sudo','/bin/sh','-c',shell]
     assert '--privileged-worker' in shell and 'A7C2_DESKTOP_DATA=' in shell and 'HOME=' in shell
-    assert 'LIBUSB_DEBUG' not in shell  # off unless asked for: it writes about 10 MB/min of root-owned logs
+    assert 'LIBUSB_DEBUG' not in shell  # the shell passes on only what worker_environment chose
     trap=shlex.split([line for line in lines if line.endswith(' HUP')][0])
     exit_file=str(request.parent/'authorization.exit')
     assert trap==['trap','echo closed > '+shlex.quote(exit_file)+'; exit 129','HUP']
@@ -154,18 +154,31 @@ def terminal_script(tmp_path,monkeypatch,action):
     return (request.parent/'authorize-in-terminal.command').read_text(encoding='utf-8')
 
 
-@pytest.mark.parametrize('action',['direct_factory_reset','setup_all','connect','sound_install'])
-def test_libusb_debug_is_off_for_ordinary_camera_jobs(tmp_path,monkeypatch,action):
+# R58: a failed write on the body build is the case that needs a libusb trace, so every camera write job
+# runs with it (about 10 MB/min of root-owned log, during writes only); so does the stability check.
+TRACED=sorted(jobs.POWER_ACTIONS|{'usb_stability'})
+UNTRACED=sorted(jobs.CAMERA_ACTIONS-jobs.POWER_ACTIONS-{'usb_stability'})
+
+
+def test_the_traced_jobs_are_the_camera_writes_and_the_stability_check():
+    assert macadmin.LIBUSB_TRACED_ACTIONS==set(TRACED)
+    assert {'setup_all','direct_factory_reset','sound_install','restore','vertical_enable'}<=set(TRACED)
+    assert {'connect','usb_prepare','direct_verify','restore_verify','sound_verify'}<=set(UNTRACED)
+
+
+@pytest.mark.parametrize('action',TRACED)
+def test_libusb_debug_is_on_for_every_camera_write_job(tmp_path,monkeypatch,action):
+    monkeypatch.delenv('LIBUSB_DEBUG',raising=False)
+    assert 'LIBUSB_DEBUG=4' in terminal_script(tmp_path,monkeypatch,action)
+
+
+@pytest.mark.parametrize('action',UNTRACED)
+def test_libusb_debug_is_off_for_read_only_camera_jobs(tmp_path,monkeypatch,action):
     monkeypatch.delenv('LIBUSB_DEBUG',raising=False)
     assert 'LIBUSB_DEBUG' not in terminal_script(tmp_path,monkeypatch,action)
 
 
-def test_the_usb_stability_diagnostic_turns_libusb_debug_on(tmp_path,monkeypatch):
-    monkeypatch.delenv('LIBUSB_DEBUG',raising=False)
-    assert 'LIBUSB_DEBUG=4' in terminal_script(tmp_path,monkeypatch,'usb_stability')
-
-
-@pytest.mark.parametrize('action',['usb_stability','direct_factory_reset'])
+@pytest.mark.parametrize('action',['usb_stability','direct_factory_reset','connect'])
 def test_an_explicit_debug_level_passes_through_for_every_job(tmp_path,monkeypatch,action):
     monkeypatch.setenv('LIBUSB_DEBUG','1')
     script=terminal_script(tmp_path,monkeypatch,action)

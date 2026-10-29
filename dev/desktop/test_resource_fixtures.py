@@ -2,8 +2,8 @@
 are pulled from Sony's update file. Offline only; no camera access and no real BODYDATA.DAT.
 
 The fixture folders under A7C2_BUILD_FIXTURES are read-only, so a build's name files live either in
-its own resources/ folder (a camera capture made by camera_fingerprint.py) or in
-<A7C2_BUILD_FIXTURES>-resources/<build>/ beside it (extract_resources.py's output for the public build).
+its own resources/ folder or in <A7C2_BUILD_FIXTURES>-resources/<build>/ beside it (extract_resources.py's
+output for the public build, or a checked camera_fingerprint.py capture's, copied there).
 """
 from contextlib import contextmanager
 import hashlib
@@ -141,6 +141,33 @@ def test_save_never_replaces_other_bytes(tmp_path):
         extract_resources.save({NAMES[1]: b'two', NAMES[0]: b'changed'}, out)
     assert (out / NAMES[0]).read_bytes() == b'one'
     assert not (out / NAMES[1]).exists()
+
+
+@pytest.mark.parametrize('dangling', [False, True], ids=['to a file', 'dangling'])
+def test_save_never_writes_through_a_symbolic_link(tmp_path, dangling):
+    # camera_fingerprint.py saves through this as root: a link could send its bytes anywhere.
+    victim = tmp_path / 'victim'
+    if not dangling:
+        victim.write_bytes(b'one')  # even the same bytes: the link is refused, nothing made read-only
+    out = tmp_path / 'resources'
+    out.mkdir()
+    (out / NAMES[0]).symlink_to(victim)
+    with pytest.raises(ValueError, match='symbolic link'):
+        extract_resources.save({NAMES[1]: b'two', NAMES[0]: b'one'}, out)
+    assert not (out / NAMES[1]).exists()
+    if dangling:
+        assert not victim.exists()
+    else:
+        assert victim.read_bytes() == b'one' and victim.stat().st_mode & 0o222
+
+
+def test_save_refuses_a_linked_folder(tmp_path):
+    target = tmp_path / 'elsewhere'
+    target.mkdir()
+    (tmp_path / 'out').symlink_to(target)
+    with pytest.raises(ValueError, match='symbolic link'):
+        extract_resources.save({NAMES[0]: b'one'}, tmp_path / 'out')
+    assert list(target.iterdir()) == []
 
 
 def test_main_decodes_the_source_and_saves_every_listed_name_file(tmp_path, monkeypatch, capsys):

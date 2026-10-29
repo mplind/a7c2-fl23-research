@@ -263,10 +263,12 @@ def run(arguments, *, dispatch):
             print(state['message'], flush=True)
         return state
     except BaseException as exc:
+        # The error's class name goes with it: a refusal (looktool.buildprofile.Refusal) wrote nothing.
+        failure = dict(error=str(exc), error_type=type(exc).__name__)
         if state['phase']=='FINALIZING' and host_step:
-            save('FINALIZING',error=str(exc))
+            save('FINALIZING', **failure)
         elif state['phase'] not in ('DRIVERS', 'WAIT_RELOAD'):
-            save('NEEDS_REVIEW', error=str(exc))
+            save('NEEDS_REVIEW', **failure)
         else:
-            save(state['phase'], error=str(exc))
+            save(state['phase'], **failure)
         raise

@@ -40,15 +40,21 @@ def name_files(archive, names):
 
 def save(files, out):
     """Write each {name: bytes} into folder `out`, read-only (0444), as fixtures are. Refuses before
-    writing anything when a file there already holds other bytes; the same bytes again are left as
-    they are, made read-only."""
+    writing anything when a file there already holds other bytes, or when `out` or a name there is a
+    symbolic link (camera_fingerprint.py runs as root, which a link could send anywhere); the same bytes
+    again are left as they are, made read-only. A new file is created exclusively, never through a link."""
+    if out.is_symlink():
+        raise ValueError('%s is a symbolic link; nothing was written' % out)
     out.mkdir(parents=True, exist_ok=True)
     for name, data in files.items():
+        if (out / name).is_symlink():
+            raise ValueError('%s is a symbolic link; nothing was written' % (out / name))
         if (out / name).exists() and (out / name).read_bytes() != data:
             raise ValueError('%s already holds other bytes; nothing was written' % (out / name))
     for name, data in files.items():
         if not (out / name).exists():
-            (out / name).write_bytes(data)
+            with (out / name).open('xb') as stream:
+                stream.write(data)
         (out / name).chmod(0o444)
 
 

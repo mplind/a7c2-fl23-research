@@ -25,6 +25,15 @@ class ContentChanged(ValueError):
     """The camera bytes no longer match a finished transaction's target."""
 
 
+class JobOtherBuild(ContentChanged, buildprofile.OtherBuild):
+    """A finished job was planned for build `recorded`, but the camera is now build `camera`: nothing
+    was verified or written (buildprofile.JOB_OTHER_BUILD)."""
+
+    def __init__(self, template, recorded, camera):
+        super().__init__(template, recorded, camera)
+        self.recorded, self.camera = recorded, camera
+
+
 def recipe_defaults(ap, slots):
     result = {}
     def key(attribute):
@@ -64,8 +73,7 @@ def factory_reference(factory, build):
     recorded = chosen.get('firmware_build')
     if recorded is None:
         raise ValueError('The factory reference records no firmware build; nothing was planned or written')
-    if recorded != build.key:
-        raise buildprofile.OtherBuild(buildprofile.REFERENCE_OTHER_BUILD % (recorded, build.key))
+    buildprofile.same_build(recorded, build.key, buildprofile.REFERENCE_OTHER_BUILD)
     return chosen
 
 
@@ -372,7 +380,7 @@ class DirectJob(Rollback):
             print('已核对程序和名称均符合原安装计划，只续做设置与重新加载准备；没有重复刷写程序。',flush=True)
             return self.state
         except BaseException as exc:
-            self.save('NEEDS_REVIEW',error=str(exc));raise
+            self.stopped(exc);raise
 
     def prepare_factory_settings(self, camera, prepared):
         """Save ST recipes before removing code that their old bases require.
@@ -473,7 +481,7 @@ class DirectJob(Rollback):
             print('续接写入和读回已结束，恢复尚未完成：请拔 USB 和其他外部供电，等存取灯停止闪烁，再正常关机并等屏幕和灯完全熄灭；取下电池至少一分钟，再装回开机、接回 USB，点击“重启后核对并完成恢复”。', flush=True)
             return self.state
         except BaseException as exc:
-            self.save('NEEDS_REVIEW', error=str(exc))
+            self.stopped(exc)
             raise
 
     def run_direct(self, mode, *, version, power_confirmed, factory_values=None,
@@ -635,7 +643,7 @@ class DirectJob(Rollback):
             print('所有读写已结束。拔 USB 和其他外部供电，等存取灯停止闪烁，再正常关机并等屏幕和灯完全熄灭；取下电池至少一分钟，再装回开机、检查功能并核对。' if changed else '磁盘与设置已符合目标，本次没有重复写入；实际预览、照片和声音仍需在机身检查。', flush=True)
             return self.state
         except BaseException as exc:
-            self.save('NEEDS_REVIEW', error=str(exc))
+            self.stopped(exc)
             raise
 
     def prepare_names_reload(self,failed_workspace,*,power_confirmed):
@@ -674,7 +682,7 @@ class DirectJob(Rollback):
                   '所有读写已结束。名称已核对，程序未写入。请按弹窗断电重开后接回，继续剩余程序安装。',flush=True)
             return self.state
         except BaseException as exc:
-            self.save('NEEDS_REVIEW',error=str(exc));raise
+            self.stopped(exc);raise
 
     def verify_names_reload(self):
         from . import namespause
@@ -774,7 +782,7 @@ class DirectJob(Rollback):
             print('恢复完成，所有读写已结束。拔 USB 和其他外部供电，等存取灯停止闪烁，再正常关机并等屏幕和灯完全熄灭；取下电池至少一分钟，再装回开机、检查并核对。', flush=True)
             return self.state
         except BaseException as exc:
-            self.save('NEEDS_REVIEW', error=str(exc))
+            self.stopped(exc)
             raise
 
     @contextmanager
@@ -806,8 +814,8 @@ class DirectJob(Rollback):
             build = camera.require_build()
             # Verify against the build this job was planned for, with that build's reference. A job saved
             # before builds were recorded has none, and is verified against the camera's.
-            if recorded is not None and recorded != build.key:
-                raise ContentChanged(buildprofile.JOB_OTHER_BUILD % (recorded, build.key))
+            if recorded is not None:
+                buildprofile.same_build(recorded, build.key, buildprofile.JOB_OTHER_BUILD, JobOtherBuild)
             if self.state['mode'] == 'install_all':
                 from . import bundle
                 options, selected = bundle.documents(self.state['bundle_options'])

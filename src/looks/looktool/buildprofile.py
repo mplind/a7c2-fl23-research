@@ -16,7 +16,6 @@ from dataclasses import dataclass
 import hashlib
 import json
 from pathlib import Path
-import re
 import sys
 import zlib
 
@@ -27,41 +26,43 @@ SCHEMA = 'a7c2-factory-regions/1'
 PUBLIC_LOOK_TABLE = 0x4c7cf7c
 LOOK_TABLE_BYTES = 12
 # Refusals, each a Chinese source string with its English in desktopapp/en_engine.py, which the window
-# shows by format. refusal() matches the formatted ones back, so a stopped job can be recognised.
+# shows by format. A refusal is raised as a Refusal that carries what it names, and keeps its type into
+# the job's status (error_type), so the window tells a refusal from an unknown result by its type.
 UNSUPPORTED = '此相机的固件版本不受支持，未写入任何内容。（appFw.so %s…，cpapp-b.bin %s…）'
 SAVED_OTHER_BUILD = '所保存的内容来自固件版本 %s，而相机是 %s，未写入任何内容。'
 SAVED_UNIDENTIFIED = '无法确定所保存的内容来自哪个固件版本，未写入任何内容。'
 REFERENCE_OTHER_BUILD = '所选原厂文件是固件版本 %s，而相机是 %s，未写入任何内容。'
 REFERENCE_UNSUPPORTED = '所选原厂文件不是受支持的固件版本，未写入任何内容。'
 JOB_OTHER_BUILD = '此任务记录的固件版本是 %s，而相机现在是 %s，没有核对或写入任何内容。'
-_KEY = '[0-9a-z][0-9a-z.-]*'
-_REFUSALS = {template: re.compile(re.escape(template).replace('%s', '(%s)' % value)) for template, value in (
-    (UNSUPPORTED, '[0-9a-f]{16}'), (SAVED_OTHER_BUILD, _KEY), (REFERENCE_OTHER_BUILD, _KEY), (JOB_OTHER_BUILD, _KEY))}
 
 
-class UnsupportedFirmware(ValueError):
-    """The program files are not a supported build, so nothing may be written to this camera."""
+class Refusal(ValueError):
+    """The firmware-build gate refused before anything was written; the message says why."""
 
 
-class OtherBuild(ValueError):
+class UnsupportedFirmware(Refusal):
+    """The program files are not a supported build, so nothing may be written to this camera.
+    `digests` holds the two files' SHA-256 prefixes the message names, or None when the message names
+    none (the programs were not identified yet)."""
+
+    def __init__(self, message, digests=None):
+        super().__init__(message)
+        self.digests = digests
+
+
+class OtherBuild(Refusal):
     """Saved bytes or a factory reference belong to another build than the camera's, or to no
-    supported build, so nothing may be written from them."""
+    supported build, so nothing may be written from them. `builds` holds the build keys the message
+    names, in its order: the other build's, then the camera's; empty when it names none."""
+
+    def __init__(self, template, *builds):
+        super().__init__(template % builds if builds else template)
+        self.builds = builds
 
 
-def refusal(message):
-    """(template, values) when `message` is one of the formatted build refusals above, filled in, so
-    the window can show it translated; None for any other message."""
-    for template, pattern in _REFUSALS.items():
-        match = pattern.fullmatch(message)
-        if match:
-            return template, match.groups()
-    return None
-
-
-def unsupported_digests(message):
-    """The two digest prefixes an UNSUPPORTED refusal names; None for any other message."""
-    found = refusal(message)
-    return found[1] if found and found[0] == UNSUPPORTED else None
+# The class name (a status file's error_type) of every refusal, including looktool.direct.JobOtherBuild,
+# a refusal that is also a ContentChanged. test_refusal_types keeps it equal to Refusal's subclasses.
+REFUSAL_TYPES = frozenset({'UnsupportedFirmware', 'OtherBuild', 'JobOtherBuild'})
 
 
 @dataclass(frozen=True)
@@ -225,8 +226,8 @@ def identify(ap, cp):
         if (_normalised_sha256(cp, stock_regions['cpapp-b.bin']) == build.cp_sha256
                 and _normalised_sha256(ap, stock_regions['appFw.so']) == build.ap_sha256):
             return build
-    observed = hashlib.sha256(ap).hexdigest(), hashlib.sha256(cp).hexdigest()
-    raise UnsupportedFirmware(UNSUPPORTED % (observed[0][:16], observed[1][:16]))
+    digests = hashlib.sha256(ap).hexdigest()[:16], hashlib.sha256(cp).hexdigest()[:16]
+    raise UnsupportedFirmware(UNSUPPORTED % digests, digests)
 
 
 def saved_build(recorded, programs):
@@ -248,11 +249,12 @@ def saved_build(recorded, programs):
     return build
 
 
-def same_build(saved, camera, refused=SAVED_OTHER_BUILD):
-    """Refuse, with OtherBuild naming both keys in `refused`, unless build `saved` is the camera's
-    identified build `camera`. Called before a restore writes anything."""
-    if saved.key != camera.key:
-        raise OtherBuild(refused % (saved.key, camera.key))
+def same_build(saved, camera, refused=SAVED_OTHER_BUILD, kind=OtherBuild):
+    """Refuse with kind(refused, saved, camera) unless build key `saved` (the build saved bytes, a
+    reference or a job recorded) is `camera`, the camera's identified build's key. Called before
+    anything is written from what was saved."""
+    if saved != camera:
+        raise kind(refused, saved, camera)
 
 
 def stock(build, program, offset, size):

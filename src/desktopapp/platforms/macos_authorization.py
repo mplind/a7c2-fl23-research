@@ -15,7 +15,7 @@ import subprocess
 import sys
 import time
 import traceback
-from ..actions.catalog import DIAGNOSTIC_ACTIONS
+from ..actions.catalog import LIBUSB_TRACED_ACTIONS
 from ..i18n import translate
 from ..paths import data_root,write_json
 
@@ -32,9 +32,10 @@ def required(action):
 
 
 def worker_environment(action,environment):
-    """`environment` for the administrator worker of `action`. libusb's debug log stays off (it writes
-    about 10 MB/min of root-owned stderr) unless the action is a diagnostic or LIBUSB_DEBUG is set."""
-    if action in DIAGNOSTIC_ACTIONS and not environment.get('LIBUSB_DEBUG'):
+    """`environment` for the administrator worker of `action`. libusb's debug log (about 10 MB/min of
+    root-owned stderr) is on for a camera write and the USB stability check (LIBUSB_TRACED_ACTIONS), off
+    for the rest; an explicit LIBUSB_DEBUG passes through for any job."""
+    if action in LIBUSB_TRACED_ACTIONS and not environment.get('LIBUSB_DEBUG'):
         return {**environment,'LIBUSB_DEBUG':'4'}
     return environment
 

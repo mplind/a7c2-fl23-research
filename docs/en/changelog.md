@@ -14,7 +14,7 @@ A local Intel macOS build, `A7C2Tools-3.0.3-macOS-x86_64-r7-buildgate.dmg`, on t
 - FL2/FL3, custom looks, shutter sound, Vertical display and Factory restore take the three facts that differ between the builds from the identified build: the look table address, the converter instruction and the start-up sound log instruction. Factory restore uses only that build's built-in reference and refuses a full reference from another build. This is designed to prevent a repeat of the 27 Oct restore that wrote public-build bytes into a camera running the other compile.
 - Connection and drivers shows the camera's firmware build after Test. On an unsupported build every button that writes to the camera is disabled.
 - With English chosen, the Terminal password window, the log pane, error banners and status lines are in English, and the English text is shorter. The log pane wraps long lines.
-- libusb's debug log is off by default; it wrote about 10 MB/min of root-owned logs. Check connection stability still turns it on, and an explicit `LIBUSB_DEBUG` passes through.
+- libusb's debug log is on only for jobs that write to the camera, where a failure needs the trace, and for Check connection stability. It writes about 10 MB/min of root-owned logs, so read-only jobs no longer turn it on. An explicit `LIBUSB_DEBUG` passes through.
 - New app icon: one sunset through six film looks in a 35mm slide mount.
 - Evidence is offline only. The tests run against both builds' real program files, and the packaged self-test and startup check pass. Nothing in this build has run on a camera yet: FL2/FL3, looks, Vertical display and shutter sound on the second compile wait for a step-by-step camera check.
 

@@ -403,8 +403,12 @@ def test_the_factory_restore_confirmation_says_what_the_page_says(window):
     ui.nav.setCurrentRow(2)
     text = plain(confirmation(ui, 'direct_factory_reset', dict(firmware='2.01', workspace='w', factory='builtin')))
     page = plain(ui.page_detail.text())
-    removes = 'Removes everything this tool added to the camera (FL2 and FL3, looks, the shutter sound, vertical display) and resets Custom 1–6 to ST'
-    assert removes in page and removes in text
+    puts_back = ("Puts Sony's original program bytes and look names back wherever this tool changed them "
+                 '(FL2 and FL3, looks, the shutter sound, vertical display) and resets Custom 1–6 to ST')
+    assert puts_back in page and puts_back in text
+    # I-1: neither removes the saved custom sound's files (test_port_factory pins the plan's scope).
+    assert 'A saved custom shutter sound stays on the camera, unused.' in page
+    assert 'A saved custom shutter sound stays on the camera, unused.' in text
     assert "earlier Custom 1–6 settings aren't recovered" in page and "earlier Custom 1–6 settings aren't recovered" in text
 
 

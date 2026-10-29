@@ -57,6 +57,10 @@ class Rollback:
     def save(self,phase,**values):
         self.state.update(values,phase=phase);write_json(self.state_path,self.state)
         print('Rollback:',phase,flush=True)
+    def stopped(self,exc):
+        """Save NEEDS_REVIEW with the error and its class name, so a refusal (buildprofile.Refusal), which
+        wrote nothing, is told from an unknown result by its type, not its text."""
+        self.save('NEEDS_REVIEW',error=str(exc),error_type=type(exc).__name__)
     def record(self,event,**values):
         self.state.setdefault('journal',[]).append({'event':event,**values});write_json(self.state_path,self.state)
     def raw(self,name,raw):
@@ -173,7 +177,7 @@ class Rollback:
                 checkpoint.same_body(manifest['identity'],camera.identity)
                 current=self.capture(camera)
                 # Another build's programs must never be written back over this camera's.
-                buildprofile.same_build(saved,camera.require_build())
+                buildprofile.same_build(saved.key,camera.require_build().key)
                 checkpoint.write(self.root/'before.private.zip',current,camera.identity,build=camera.require_build(),
                     provenance={'type':'before-full-rollback'})
                 # Old FL23 backups carry their own body serial/programs/settings.
@@ -213,7 +217,7 @@ class Rollback:
             print('All I/O ended. Disconnect USB/power, shut down normally, wait for the access lamp, remove battery for ≥1 minute. Restart and check preview/photos/playback, then run: python recovery.py verify "'+str(self.root)+'" --accept-photos',flush=True)
             return self.state
         except BaseException as exc:
-            self.save('NEEDS_REVIEW',error=str(exc));raise
+            self.stopped(exc);raise
     def verify(self,accept_photos=False):
         self.state=json.loads(self.state_path.read_text(encoding='utf-8'))
         if self.state['phase'] not in ('RESTORED_AWAITING_RELOAD','LOADED','COMPLETE'):raise ValueError('Rollback did not finish; inspect evidence before further actions')

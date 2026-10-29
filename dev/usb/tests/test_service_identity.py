@@ -32,7 +32,13 @@ class SessionTests(unittest.TestCase):
                 owner.events.append(('auth',self.driver.device.pid))
                 if owner.failure==self.driver.device.pid:raise TimeoutError('unknown auth')
             def stop(self):owner.events.append(('stop',self.driver.device.pid))
-        patches=[patch.object(t,'get_device',side_effect=self.device),
+        # On a Mac the session unmounts the camera's disk and claims its interface first (macos_host): a
+        # stand-in records those steps, so no test reaches the real ioreg or diskutil.
+        host=SimpleNamespace(
+            unmount_camera=lambda:self.events.append(('unmount',)),
+            claim_camera_interface=lambda device,interface_class=None:self.events.append(('claim',device.pid)),
+            wait_normal_return=lambda find:self.events.append(('wait_normal',)))
+        patches=[patch.dict(sys.modules,{'macos_host':host}),patch.object(t,'get_device',side_effect=self.device),
             patch.object(t,'_sony_pids',side_effect=lambda:['0e8a'] if self.missing_service else ['0336']),
             patch.object(t,'_service_exit',None),
             patch.object(t.usb.util,'get_string',side_effect=lambda *args:self.product),
@@ -62,6 +68,11 @@ class SessionTests(unittest.TestCase):
         self.assertIn(('stop',0x0336),self.events)
         self.camera.readHasp.assert_not_called();self.camera.writeBackup.assert_not_called()
         self.camera.saveBackup.assert_not_called()
+    @unittest.skipUnless(sys.platform=='darwin','the Mac host steps run on macOS only')
+    def test_on_a_mac_the_host_steps_are_the_stand_ins(self):
+        with t.Session(self.expected()):pass
+        self.assertEqual(self.events[:2],[('unmount',),('device',0x0e8a)])
+        self.assertIn(('claim',0x0e8a),self.events);self.assertIn(('claim',0x0336),self.events)
     def test_prepare_without_existing_binding_uses_same_serial_format(self):
         with t.Session() as link:self.assertEqual(link.identity,self.expected())
     def test_wrong_body_stops_and_exits_service_before_any_settings_write(self):

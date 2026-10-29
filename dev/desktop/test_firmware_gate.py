@@ -513,13 +513,6 @@ def test_firmware_refusal_stays_verbatim_in_chinese(window, tmp_path):
     assert text == '操作停止：' + UNSUPPORTED_ERROR + '。请导出诊断包。'
 
 
-def test_refusal_digests_are_read_only_from_the_refusal_message():
-    assert buildprofile.unsupported_digests(UNSUPPORTED_ERROR) == ('2ea02f7ecbc5bb91', 'f5a477588698ef96')
-    for other in ('读取 appFw.so 失败：0x3528804', UNSUPPORTED_ERROR + ' extra', '此相机' + UNSUPPORTED_ERROR,
-                  buildprofile.UNSUPPORTED % ('XYZ', 'f5a477588698ef96')):
-        assert buildprofile.unsupported_digests(other) is None
-
-
 # R7: the legacy FL2/FL3 actions wrote through transport.Session directly; the desktop can no
 # longer dispatch them, and nothing in the desktop app loads the standalone writers.
 
@@ -561,61 +554,121 @@ def test_desktop_code_never_loads_the_standalone_writers():
     assert found == []
 
 
-# Raw service commands: only the transports and the session that gates them may issue these.
-RAW = {'jiritsu', 'ap_write', 'writeBackup', 'saveBackup', '_sendAdjustControlPacket', 'sendSenserPacket',
-       # SonySenserCamera's other persistent writers (vendor/pmca/usb/sony.py), reachable through link.call.
-       'writeFile', 'deleteFile', 'writeMemory', 'setBackupPresetData', 'setBackupId1', 'setTerminalEnable',
-       '_sendFileControlPacket', '_sendMemoryDumpPacket', '_sendProductInfoPacket',
-       # Writing libJit.so is the launch; only devicesession.invoke calls this.
-       '_launch'}
-# Writes a transport session offers; outside the session they are reachable only through a link.
-LINK_WRITES = {'cp_write', 'temp', 'write'}
+# The scan for camera writes around the gate (R59). Every method that writes to the camera through a
+# transport session (transport.Session, RecoverySession and the vendor camera behind them) is flagged
+# by name on any receiver, so a write can't pass because of what its variable is called.
+TRANSPORT_WRITES = {'cp_write', 'ap_write', 'temp', 'write', 'jiritsu', 'writeBackup', 'saveBackup',
+                    '_sendAdjustControlPacket', 'sendSenserPacket',
+                    # SonySenserCamera's other persistent writers (vendor/pmca/usb/sony.py), reachable through link.call.
+                    'writeFile', 'deleteFile', 'writeMemory', 'setBackupPresetData', 'setBackupId1', 'setTerminalEnable',
+                    '_sendFileControlPacket', '_sendMemoryDumpPacket', '_sendProductInfoPacket',
+                    # Writing libJit.so is the launch; only devicesession.invoke calls this.
+                    '_launch'}
+# Where those names may be used, each place named:
+# - the transport that implements them;
+TRANSPORTS = ('src/camera_runtime/transport.py',)
+# - the documented standalone tools outside the desktop app (R11: src/fl23 via FL23.cmd and launcher.py,
+#   and the camera_runtime CLI behind its own gui.py);
+STANDALONE_TOOLS = ('src/fl23/', 'src/camera_runtime/app.py')
+# - Camera's own methods in devicesession.py: the gated writes, the staging they share, and invoke's launch;
+GATED = {'src/looks/looktool/devicesession.py': {'_launch', '_jiritsu_write', '_jiritsu_remove', 'property_write',
+                                                 'cp_write', 'save_settings', 'invoke'}}
+# - and uses of those names on objects that are no camera transport, by file and receiver.
+NOT_TRANSPORT = {
+    ('src/looks/looktool/checkpointjob.py', 'camera.cp_write'): 'Camera.cp_write, the gated wrapper',
+    ('src/camera_runtime/ptpremote.py', 'self._out.write'): "PC Remote's PTP endpoint: settings, no firmware (R12)",
+    ('src/desktopapp/recipes.py', 'self.write'): 'one PC Remote setting of a recipe plan (R12)',
+    ('src/desktopapp/recipes.py', 'row.write'): "a finished recipe step's setting",
+    ('src/desktopapp/actions/recipe.py', 'row.write'): "a finished recipe step's setting",
+    ('src/desktopapp/jobs.py', 'archive.write'): 'the diagnostics ZIP',
+    ('src/desktopapp/official.py', 'decoded.write'): 'the decoded Sony update file',
+    ('src/desktopapp/platforms/macos_authorization.py', 'log.write'): 'worker.log',
+    ('src/desktopapp/window.py', 'stream.write'): 'process.log',
+    ('src/looks/looktool/backupstore.py', 'stream.write'): 'a backup file',
+    ('src/looks/looktool/checkpointjob.py', 'checkpoint.write'): 'a checkpoint archive on this computer',
+    ('src/looks/looktool/compilelook.py', 'lookfile.write'): 'an .a7look file',
+    ('src/looks/looktool/devicecli.py', 'args.write'): 'the --write option',
+    ('src/looks/looktool/devicejob.py', 'checkpoint.write'): 'a checkpoint archive on this computer',
+    ('src/looks/looktool/devicejob.py', 'stream.write'): 'a job file',
+    ('src/looks/looktool/factoryrecover.py', 'stream.write'): 'an evidence file',
+    ('src/looks/looktool/lookfile.py', 'stream.write'): 'an .a7look file',
+    ('src/looks/looktool/photolab.py', 'checkpoint.write'): 'a checkpoint archive on this computer',
+    ('src/looks/looktool/rawprofiles.py', 'stream.write'): 'a Lightroom profile sidecar',
+    ('src/looks/looktool/renderbridge.py', 'self.process.stdin.write'): "the renderer's input",
+    ('src/shutter_sound/inspect_native.py', 'handle.write'): 'a report file',
+    ('src/shutter_sound/verify_beeplist.py', 'f.write'): 'a report file',
+}
 # All that code outside the session may load from a camera's link: reads and bookkeeping. Anything
-# else (link.call, link.camera, an alias of the link itself) could reach a raw writer.
+# else (link.call, link.camera, an alias of the link itself) could reach a raw writer. The session that
+# owns the link, devicesession.Camera, uses it freely; its writes are still held to GATED.
 LINK_READS = {'read', 'cp_read', 'identity', 'healthy', '__enter__'}
-SESSION = ('src/looks/looktool/devicesession.py', 'src/camera_runtime/transport.py', 'src/fl23/transport.py')
-# The transports' own temp-file tables. They name libJit.so for transport.Session.temp, which only the
-# standalone writers call.
-TRANSPORT_TABLES = ('src/camera_runtime/core.py', 'src/fl23/core.py')
+LINK_OWNER = ('src/looks/looktool/devicesession.py', 'Camera')
+LINK_NAMES = ('link', 'session')
+# The only libJit.so literals: devicesession.LAUNCHER, through which every other module names it, and
+# the transport's own temp-file table, which only the standalone tools' transport.Session.temp reads.
+LAUNCHER_TABLES = {('src/looks/looktool/devicesession.py', 'LAUNCHER'), ('src/camera_runtime/core.py', 'NATIVE_PATHS')}
 
 
-def through_link(node):
-    receiver = node.value
-    return ((isinstance(receiver, ast.Attribute) and receiver.attr == 'link')
-            or (isinstance(receiver, ast.Name) and receiver.id in ('link', 'session')))
+def scanned(relative):
+    return not (relative in TRANSPORTS or relative.startswith(STANDALONE_TOOLS))
 
 
-def offences(tree):
-    """Every way the code in `tree` could write to the camera around the session's gate."""
+def offences(tree, relative='<test>'):
+    """Every way the code in `tree`, the source of file `relative`, could write to the camera around the
+    session's gate."""
     parents = {child: node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
+
+    def enclosing(node, kind):
+        while node in parents:
+            node = parents[node]
+            if isinstance(node, kind):
+                return node
+        return None
     found = []
     for node in ast.walk(tree):
         parent = parents.get(node)
         used = parent if isinstance(parent, ast.Attribute) and parent.value is node else None
-        if isinstance(node, ast.Attribute) and node.attr in RAW:
-            found.append((node.lineno, node.attr))
-        elif isinstance(node, ast.Attribute) and node.attr in LINK_WRITES and through_link(node):
-            found.append((node.lineno, node.attr))
+        if isinstance(node, ast.Attribute) and node.attr in TRANSPORT_WRITES:
+            function = enclosing(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            if function is not None and function.name in GATED.get(relative, ()):
+                continue
+            if (relative, ast.unparse(node)) not in NOT_TRANSPORT:
+                found.append((node.lineno, node.attr))
+        elif (relative, getattr(enclosing(node, ast.ClassDef), 'name', None)) == LINK_OWNER:
+            continue
         elif isinstance(node, ast.Attribute) and node.attr == 'link' and isinstance(node.ctx, ast.Load):
             # <x>.link: only a read or a bookkeeping store may follow it, never an alias of the link.
             if used is None or (isinstance(used.ctx, ast.Load) and used.attr not in LINK_READS):
                 found.append((node.lineno, 'link.' + (used.attr if used else '')))
-        elif (isinstance(node, ast.Name) and node.id == 'link' and used is not None
+        elif (isinstance(node, ast.Name) and node.id in LINK_NAMES and used is not None
               and isinstance(used.ctx, ast.Load) and used.attr in ('call', 'camera')):
-            found.append((node.lineno, 'link.' + used.attr))
+            found.append((node.lineno, node.id + '.' + used.attr))
         elif (isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == 'getattr'
               and len(node.args) > 1 and isinstance(node.args[1], ast.Constant) and node.args[1].value == 'link'):
             found.append((node.lineno, "getattr(…, 'link')"))
         elif isinstance(node, ast.Constant) and isinstance(node.value, str) and (
                 node.value == devicesession.LAUNCHER or node.value.endswith('/' + devicesession.LAUNCHER)):
-            found.append((node.lineno, node.value))
+            table = enclosing(node, ast.Assign)
+            named = {target.id for target in table.targets if isinstance(target, ast.Name)} if table else set()
+            if not any((relative, name) in LAUNCHER_TABLES for name in named):
+                found.append((node.lineno, node.value))
     return found
 
 
 def test_no_module_writes_around_the_session():
-    found = [(relative, *offence) for relative, tree in sources('src', exclude=SESSION + STANDALONE + TRANSPORT_TABLES)
-             for offence in offences(tree)]
+    found = [(relative, *offence) for relative, tree in sources('src') if scanned(relative)
+             for offence in offences(tree, relative)]
     assert found == []
+
+
+def test_every_named_exception_is_still_used():
+    # A stale entry would let a later write in its place pass unseen.
+    used = {(relative, ast.unparse(node)) for relative, tree in sources('src') if scanned(relative)
+            for node in ast.walk(tree) if isinstance(node, ast.Attribute) and node.attr in TRANSPORT_WRITES}
+    assert set(NOT_TRANSPORT) <= used
+    tree = ast.parse((ROOT / 'src/looks/looktool/devicesession.py').read_text(encoding='utf-8'))
+    functions = {node.name for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)}
+    assert GATED['src/looks/looktool/devicesession.py'] <= functions
 
 
 def test_only_invoke_launches_a_worker():
@@ -627,24 +680,41 @@ def test_only_invoke_launches_a_worker():
 
 
 @pytest.mark.parametrize('code,offence', [
-    ('camera.link.cp_write(key, value)', 'link.cp_write'),
+    # A transport write on any receiver, whatever it is called.
+    ('service.cp_write(key, value)', 'cp_write'),
+    ('self.session.cp_write(key, value)', 'cp_write'),
+    ('service.temp(devicesession.LAUNCHER, blob)', 'temp'),
+    ('with transport.Session(expected) as s:\n    s.cp_write(key, value)', 'cp_write'),
+    ('transport.Session(expected).temp(name, blob)', 'temp'),
+    ('conn.write(endpoint, packet)', 'write'),
+    ('write = service.ap_write\nwrite(key, value)', 'ap_write'),
+    ('camera.link.cp_write(key, value)', 'cp_write'),
     ('camera.link.call(camera.link.camera.saveBackup, 0x02cf)', 'saveBackup'),
     ('self.link.jiritsu(16, data)', 'jiritsu'),
     ('session.temp(name, blob)', 'temp'),
-    ('camera.link.call(camera.link.camera.setBackupPresetData, 1, data)', 'setBackupPresetData'),
+    # Anything that could reach a raw writer through the link.
     ('camera.link.call(reader, key)', 'link.call'),
     ('method = camera.link.camera.readBackup', 'link.camera'),
     ('link.call(link.camera.readBackup, key)', 'link.call'),
-    ('s = camera.link\ns.cp_write(key, value)', 'link.'),
+    ('session.call(session.camera.readBackup, key)', 'session.call'),
+    ('method = session.camera.readBackup', 'session.camera'),
+    ('s = camera.link\ns.read(path)', 'link.'),
     ('send(camera.link)', 'link.'),
     ("s = getattr(camera, 'link')", "getattr(…, 'link')"),
+    # The launcher.
     ("camera.temp_write('libJit.so', blob)", 'libJit.so'),
     ("camera.link.select('/tmp/jiritsu/libJit.so')", '/tmp/jiritsu/libJit.so'),
+    ("NATIVE_PATHS = {'libJit.so'}", 'libJit.so'),
     ('camera._launch(blob)', '_launch'),
-    ('camera.link.writeFile(path, data)', 'writeFile'),
 ])
 def test_the_session_scan_sees_each_way_around_the_session(code, offence):
     assert offence in [label for _, label in offences(ast.parse(code))]
+
+
+@pytest.mark.parametrize('name', sorted(TRANSPORT_WRITES))
+def test_the_session_scan_sees_every_transport_writer_on_any_receiver(name):
+    for code in ('service.%s(value)', 'self.session.%s(value)', 'x = conn.%s', 'link.call(link.camera.%s, value)'):
+        assert name in [label for _, label in offences(ast.parse(code % name))], code % name
 
 
 def test_the_session_scan_allows_reads_and_bookkeeping():
@@ -653,6 +723,24 @@ def test_the_session_scan_allows_reads_and_bookkeeping():
             'self.link = transport.Session(expected)\nlink.camera = transport.SonySenserCamera(link.channel)\n'
             'camera.temp_read(devicesession.LAUNCHER, True)\ncamera.property_write(key, value, keys)\n')
     assert offences(ast.parse(code)) == []
+
+
+def test_the_named_exceptions_hold_only_where_they_are_named():
+    gated = 'def cp_write(self, key, value):\n    self.require_build()\n    return self.link.cp_write(key, value)\n'
+    camera = 'class Camera:\n    ' + gated.replace('\n    ', '\n        ')
+    assert offences(ast.parse(camera), 'src/looks/looktool/devicesession.py') == []
+    assert offences(ast.parse(camera), 'src/looks/looktool/direct.py') == [(4, 'cp_write'), (4, 'link.cp_write')]
+    assert offences(ast.parse('class Camera:\n    def other(self):\n        self.link.cp_write(k, v)\n'),
+                    'src/looks/looktool/devicesession.py') == [(3, 'cp_write')]
+    assert offences(ast.parse('def helper(camera):\n    camera.link.call(camera.link.camera.readBackup, 1)\n'),
+                    'src/looks/looktool/devicesession.py') == [(2, 'link.call'), (2, 'link.camera')]
+    assert offences(ast.parse('write = (camera.cp_write)'), 'src/looks/looktool/checkpointjob.py') == []
+    assert offences(ast.parse('service.cp_write(k, v)'), 'src/looks/looktool/checkpointjob.py') == [(1, 'cp_write')]
+    assert offences(ast.parse("NATIVE_PATHS = {'libJit.so', 'a7c2.probe.result'}"), 'src/camera_runtime/core.py') == []
+    assert offences(ast.parse("OTHER = {'libJit.so'}"), 'src/camera_runtime/core.py') == [(1, 'libJit.so')]
+    assert [scanned(relative) for relative in ('src/fl23/core.py', 'src/camera_runtime/app.py',
+                                               'src/camera_runtime/transport.py', 'src/camera_runtime/core.py',
+                                               'src/looks/looktool/devicesession.py')] == [False, False, False, True, True]
 
 
 # The launcher: libJit.so is never staged, and a launch before model confirmation runs only runtime.so.

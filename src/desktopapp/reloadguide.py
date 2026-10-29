@@ -81,19 +81,27 @@ def text(*, setup=False, mode=None):
               tr('\n\n电子快门声已开启，断电重开后生效。') if mode == 'sound_on' else
               tr('\n\n电子快门声已关闭，断电重开后生效。') if mode == 'sound_off' else
               tr('\n\n已恢复原厂快门音效，断电重开后生效。') if mode == 'sound_restore_sound' else '')
-    follow = (tr('接回 USB，选择海量存储，再点首页“继续安装”。工具先核对加载，不重复刷写。')
-              if setup else tr('在相机中确认 FL2／FL3 能选择、拍摄及回放，即可使用。不必再接电脑点击核对；如需排查，可使用 FL23 页的可选诊断。')
-              if mode in ('fl23_enable', 'fl23_disable') else
-              tr('此次断电仅用于清除临时试听、恢复原声，不是保存声音的前置条件。开机确认原声、拍摄及回放正常，可点声音页“已断电恢复原声，记录恢复完成”。保存当前转换片段不需要先执行这一步。')
-              if mode == 'sound_confirm' else
-              tr('开机后用电子快门拍摄，检查声音、音量及拍摄／回放。保存自定义声音后，可在声音页核对加载状态。')
-              if mode and mode.startswith('sound_') else
-              tr('竖屏开关和线框引用已保存。重开后先横握检查 Fn 网格和右移选择，再分别左右竖握检查 Fn、创意外观等子菜单边框；最后检查拍摄和回放。已知问题：竖屏创意外观选择页的外框仍偏粗；刻度已横向显示，但橙色指针朝向尚未修正。')
-              if mode == 'vertical_enable' else
-              tr('竖屏已先关闭，原线框引用与资源索引已恢复，辅助别名已移除。如果当前运行仍引用追加图片，会暂时保留少量图片尾部数据，避免破坏当前显示；这不影响关闭效果，也不需要再点按钮。重开后确认横握／竖握显示及拍摄正常。')
-              if mode == 'vertical_disable' else
-              tr('在 ST 与修改的槽位间随机切换，确认实时预览立即更新，再拍照并回放。单独外观写入无需接电脑另点核对；若名称阶段提示尚未写程序，请接回并点“继续槽位更改”。')
-              if mode in ('install_all','look_import','slot_default') else
-              tr('确认能正常取景，检查菜单／外观预览，并拍照、回放。若本页显示待核对，请接回 USB 后点击该页明确列出的核对按钮。'))
-    check_note=tr('加载核对只读取状态，不会再刷一次。') if setup or (mode and mode.startswith('sound_')) else ''
+    follow = tr('接回 USB，选择海量存储，再点首页“继续安装”。工具先核对加载，不重复刷写。') if setup else tr(NEXT.get(mode, OTHERWISE))
+    check_note=tr('加载核对只读取状态，不会再刷一次。') if setup or mode in VERIFIED else ''
     return tr(STEPS) + reason + tr('\n\n下一步：') + follow + '\n\n' + check_note + tr('点“确定”只关闭说明，不会自动断电或代替你确认测试。')
+
+
+# The next step after the cold restart, by what the job did (the window passes the sound action, or the
+# job's mode). Each says what to check for that change: a feature turned off is checked as gone.
+NEXT = {
+    'fl23_enable': '在相机中确认 FL2／FL3 能选择、拍摄及回放，即可使用。不必再接电脑点击核对；如需排查，可使用 FL23 页的可选诊断。',
+    'fl23_disable': '在相机中确认创意外观列表里已没有 FL2／FL3，ST 和自定义外观照常可选，拍摄及回放正常。不必再接电脑点击核对。',
+    'sound_confirm': '此次断电仅用于清除临时试听、恢复原声，不是保存声音的前置条件。开机确认原声、拍摄及回放正常，可点声音页“已断电恢复原声，记录恢复完成”。保存当前转换片段不需要先执行这一步。',
+    'sound_on': '开机后用电子快门拍摄，检查声音、音量及拍摄／回放。保存自定义声音后，可在声音页核对加载状态。',
+    'sound_install': '开机后用电子快门拍摄，检查声音、音量及拍摄／回放。保存自定义声音后，可在声音页核对加载状态。',
+    'sound_off': '开机后用电子快门拍摄，确认电子快门已不再发声，拍摄及回放正常。',
+    'sound_restore_sound': '开机后用电子快门拍摄，确认听到的是相机原来的快门声，拍摄及回放正常。保存的自定义声音仍留在相机上，但不再使用。',
+    'vertical_enable': '竖屏开关和线框引用已保存。重开后先横握检查 Fn 网格和右移选择，再分别左右竖握检查 Fn、创意外观等子菜单边框；最后检查拍摄和回放。已知问题：竖屏创意外观选择页的外框仍偏粗；刻度已横向显示，但橙色指针朝向尚未修正。',
+    'vertical_disable': '竖屏已先关闭，原线框引用与资源索引已恢复，辅助别名已移除。如果当前运行仍引用追加图片，会暂时保留少量图片尾部数据，避免破坏当前显示；这不影响关闭效果，也不需要再点按钮。重开后确认横握／竖握显示及拍摄正常。',
+    **dict.fromkeys(('install_all', 'look_import', 'slot_default'),
+                    '在 ST 与修改的槽位间随机切换，确认实时预览立即更新，再拍照并回放。单独外观写入无需接电脑另点核对；若名称阶段提示尚未写程序，请接回并点“继续槽位更改”。'),
+}
+# Any other job (a backup restore, say): check the camera, and verify where the page asks for it.
+OTHERWISE = '确认能正常取景，检查菜单／外观预览，并拍照、回放。若本页显示待核对，请接回 USB 后点击该页明确列出的核对按钮。'
+# The jobs whose next step mentions the load check, which then says the check only reads.
+VERIFIED = ('sound_on', 'sound_install', 'sound_confirm')

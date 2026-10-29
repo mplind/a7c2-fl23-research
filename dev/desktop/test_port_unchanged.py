@@ -426,8 +426,8 @@ def test_name_resources_are_identical_or_parse_identically(build_resources):
     uncaptured = [name for name, files in build_resources.items() if files is None]
     if uncaptured:
         pytest.skip('R4: no name files yet for %s, in neither <build>/resources/ nor <A7C2_BUILD_FIXTURES>-resources/'
-                    '<build>/: camera_fingerprint.py saves the camera\'s, read-only, in Task 10 step 1, and '
-                    'extract_resources.py the public update\'s' % ', '.join(uncaptured))
+                    '<build>/: copy them there from a checked camera_fingerprint.py capture (Task 10 step 1), '
+                    'and run extract_resources.py for the public update\'s' % ', '.join(uncaptured))
     public, body = build_resources['public-2.01'], build_resources['body-2.01-20250923']
     for filename in nameworker.filenames():
         assert public[filename] == body[filename] or label_table(public[filename]) == label_table(body[filename]), filename

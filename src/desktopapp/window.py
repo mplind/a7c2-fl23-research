@@ -765,11 +765,16 @@ class Window(W.QMainWindow):
             tr('仍然继续'))
 
     def look_pending_state(self):
-        """(workspace, state) of the look job still to continue or review; None when there is none: it
-        finished, or a firmware refusal stopped it, so there is nothing to continue and
-        refresh_look_controls shows the refusal instead."""
+        """(workspace, state) of the look job still to continue or review; None when there is none."""
+        return self.look_job()[0]
+
+    def look_job(self):
+        """(pending, refusal): the look job still to continue or review as (workspace, state), and ''; or
+        None when it finished, or None and the refusal's text when a firmware refusal stopped it, which
+        leaves nothing to continue: refresh_look_controls shows the refusal instead."""
         found=self.look_unfinished_state()
-        return None if found and self.firmware_refusal(found[1]) else found
+        refusal=self.firmware_refusal(found[1]) if found else ''
+        return (None if refusal else found),refusal
 
     def look_unfinished_state(self):
         prior=self.settings.get('look_direct_work')
@@ -798,9 +803,7 @@ class Window(W.QMainWindow):
         if self._look_refreshing:return
         self._look_refreshing=True
         try:
-            unfinished=self.look_unfinished_state();busy=self.process is not None
-            refusal=self.firmware_refusal(unfinished[1]) if unfinished else ''
-            pending=None if refusal else unfinished
+            pending,refusal=self.look_job();busy=self.process is not None
             if pending:
                 prior,state=pending;phase=state.get('phase')
                 token=(prior,phase)
@@ -1508,16 +1511,16 @@ class Window(W.QMainWindow):
 
     @staticmethod
     def firmware_refusal(state):
-        """The plain text, in the interface language, of the UnsupportedFirmware refusal that stopped the
-        saved job `state` (NEEDS_REVIEW with the gate's message as its error); '' for any other state.
-        The gate refuses before it writes, so a job so stopped has nothing to continue."""
+        """The plain text, in the interface language, of the firmware-build refusal that stopped the saved
+        job `state`: NEEDS_REVIEW with a refusal's class name as its error_type (buildprofile.REFUSAL_TYPES);
+        '' for any other state. A refusal comes before anything is written, so a job so stopped has
+        nothing to continue."""
         error = state.get('error')
         if state.get('phase') != 'NEEDS_REVIEW' or not isinstance(error, str):
             return ''
         # looktool is imported only for a stopped job: a window with no saved job opens without it.
-        from looktool.buildprofile import unsupported_digests
-        from looktool.devicesession import UNIDENTIFIED
-        if error != UNIDENTIFIED and unsupported_digests(error) is None:
+        from looktool.buildprofile import REFUSAL_TYPES
+        if state.get('error_type') not in REFUSAL_TYPES:
             return ''
         return Window.error_text({'error': error})
 

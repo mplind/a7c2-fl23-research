@@ -4,8 +4,9 @@ from .i18n import tr
 
 def archive_error(state):
     error=state.pop('error',None)
+    error_type=state.pop('error_type',None)  # the error's class name goes with it
     if error:
-        state.setdefault('previous_errors',[]).append(dict(phase=state.get('phase'),error=error))
+        state.setdefault('previous_errors',[]).append(dict(phase=state.get('phase'),error=error,error_type=error_type))
         return True
     return False
 

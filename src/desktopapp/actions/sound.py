@@ -6,7 +6,7 @@ from ..paths import ROOT
 
 def run(action,args):
     sys.path.insert(0, str(ROOT / 'src/shutter_sound'))
-    from sound_cli import main
+    from sound_cli import build_refusal, main
     command = action.removeprefix('sound_').replace('_', '-')
     argv = [command]
     if command == 'import':
@@ -31,10 +31,17 @@ def run(action,args):
     elif command == 'verify' and args.get('accepted'):
         argv += ['--heard-correct']
     outcome, stopped = {}, []
-    code = main(argv, report=outcome.update, failure=stopped.append)
+    code = main(argv, report=outcome.update, failure=lambda exc, message: stopped.append((exc, message)))
     if code:
+        if not stopped:
+            raise RuntimeError('Sound operation stopped; see the complete backend log above.')
+        exc, message = stopped[-1]
+        # A firmware-build refusal keeps its own type (the job's error_type): the window marks the build
+        # unsupported and keeps the write buttons off, as for every other refusal.
+        if build_refusal(exc):
+            raise exc
         # Show the backend's own reason; the generic text hid e.g. a silent clip.
-        raise RuntimeError(stopped[-1] if stopped else 'Sound operation stopped; see the complete backend log above.')
+        raise RuntimeError(message)
     return dict(outcome, workspace=args['workspace'], command=command, exit_code=code)
 
 

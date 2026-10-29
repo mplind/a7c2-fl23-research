@@ -21,6 +21,7 @@ from unittest.mock import patch
 import pytest
 
 from desktopapp import official, worker
+from desktopapp.en import STRINGS
 from looktool import buildprofile, checkpoint, checkpointworker, direct, nameworker
 from looktool.buildprofile import BUILDS, UnsupportedFirmware, identity_regions, regions
 import buildfixtures
@@ -303,6 +304,31 @@ def test_builtin_factory_on_body_writes_only_body_stock(build_fixtures, tmp_path
     assert windows(wrote['appFw.so'], restored['appFw.so']) == PUT_BACK
     assert sum(len(old) // 2 for _, old, _ in PUT_BACK) == 14
     assert wrote['cpapp-b.bin'] == restored['cpapp-b.bin']
+
+
+# What the page and the write confirmation say Factory restore does (en.py); the Chinese says it too.
+FACTORY_PAGE = '已内置本项目修改区域的原厂 2.01 基准。移除已支持的项目修改，六个自订栏位设为 ST 默认，保留机身校准。无需旧备份或下载完整固件；旧配方不找回。'
+FACTORY_CONFIRMATION = '将移除项目程序修改、将六个自订栏位设为 ST 默认；旧配方不找回。请先在相机选择 ST。\n'
+SOUND_STAYS = 'A saved custom shutter sound stays on the camera, unused.'
+
+
+def test_factory_restore_leaves_a_saved_custom_sound_on_the_camera(build_fixtures, tmp_path, monkeypatch):
+    """I-1: Factory restore puts program bytes and look names back and writes settings; it never touches
+    the saved custom sound's files (boot_trial.PATHS), which stay on the camera, unused. The English
+    must say so, not that everything the tool added is removed."""
+    import boot_trial
+    sim = camera(every_region_changed(programs(build_fixtures.body), BODY))
+    saved_sound = {path: b'saved sound for ' + path.encode() for path in boot_trial.PATHS}
+    sim.files.update(saved_sound)
+    before = dict(sim.files)
+    assert through_the_worker('direct_factory_reset', sim, tmp_path, monkeypatch)['phase'] == 'AWAITING_RELOAD'
+    assert {path: sim.files[path] for path in saved_sound} == saved_sound
+    changed = {path for path in sim.files if sim.files[path] != before.get(path)}
+    assert set(checkpoint.PROGRAM_PATHS.values()) <= changed
+    assert changed <= set(checkpoint.PROGRAM_PATHS.values()) | {'/usr/share/app/' + name for name in nameworker.filenames()}
+    for source in (FACTORY_PAGE, FACTORY_CONFIRMATION):
+        assert SOUND_STAYS in STRINGS[source] and 'Removes everything' not in STRINGS[source]
+        assert STRINGS[source].startswith("Puts Sony’s original program bytes and look names back wherever this tool changed them")
 
 
 def test_body_restore_writes_every_changed_region_back_with_body_stock(build_fixtures, tmp_path, monkeypatch):

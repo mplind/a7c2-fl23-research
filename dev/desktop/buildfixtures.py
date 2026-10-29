@@ -4,9 +4,10 @@ The folder holds public-2.01/, body-2.01-20250923/ and hybrid-20261027/, each wi
 cpapp-b.bin. conftest.py serves them as the build_fixture_files and build_fixtures fixtures: they
 skip when the variable is unset and fail when a file isn't the one recorded here.
 
-A build's /usr/share/app name files are in its own resources/ folder when the build was captured from
-a camera (camera_fingerprint.py), or else beside the read-only fixture folders, in
-<A7C2_BUILD_FIXTURES>-resources/<build>/ (extract_resources.py writes the public build's there).
+A build's /usr/share/app name files are in its own resources/ folder, or else beside the read-only
+fixture folders, in <A7C2_BUILD_FIXTURES>-resources/<build>/: extract_resources.py writes the public
+build's there, and a camera's go there from a checked camera_fingerprint.py capture, which itself always
+writes to a new folder of its own, never into a fixture folder.
 Each must have the SHA-256 recorded here, as the programs must; a build's name files are refused
 until their digests are recorded. conftest.py serves them as build_resources. Offline only.
 """

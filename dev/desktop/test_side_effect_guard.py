@@ -23,6 +23,8 @@ def test_an_attempt_inside_a_qt_slot_is_recorded(blocked_side_effects):
     (['sudo', '-n', 'true'], 'sudo'),
     (['/usr/bin/pkill', '-9', '-x', 'ptpcamerad'], 'pkill'),
     (['/usr/bin/pgrep', '-x', 'Photos'], 'pgrep'),
+    (['/usr/sbin/diskutil', 'unmountDisk', '/dev/disk9'], 'diskutil'),
+    (['/usr/sbin/ioreg', '-p', 'IOService', '-a'], 'ioreg'),
 ])
 def test_commands_that_reach_the_admin_prompt_or_camera_services_are_refused(blocked_side_effects, argv, name):
     with pytest.raises(AssertionError):

@@ -5,6 +5,7 @@ the real engine leaves on disk when the gate refuses a camera of no supported bu
 """
 import json
 from pathlib import Path
+import re
 from unittest.mock import Mock, patch
 
 import pytest
@@ -18,7 +19,7 @@ from looktool import buildprofile, checkpointworker, devicesession
 from looktool.buildprofile import BUILDS, UnsupportedFirmware
 
 from guihelpers import HAN_OR_PUNCTUATION, stopped_banner  # noqa: E402
-from test_firmware_gate import AP, CP, UNKNOWN, GateCamera  # noqa: E402
+from test_firmware_gate import AP, CP, UNKNOWN, GateCamera, refusal  # noqa: E402
 
 PUBLIC, BODY = BUILDS
 PUBLIC_LABEL = 'Sony 2.01 (public update)'
@@ -247,9 +248,7 @@ def test_connect_on_an_unsupported_camera_returns_none_and_does_not_raise(tmp_pa
 
 def test_connect_logs_the_refusal_with_the_digests(tmp_path, capsys):
     run_connect(GateCamera(dict(UNKNOWN)), tmp_path)
-    printed = capsys.readouterr().out
-    assert buildprofile.unsupported_digests(
-        next(line for line in printed.splitlines() if line.startswith('此相机的固件版本不受支持'))) is not None
+    assert refusal(UNKNOWN) in capsys.readouterr().out.splitlines()
 
 
 def test_an_unsupported_camera_still_refuses_every_write_after_connect(tmp_path):
@@ -277,8 +276,9 @@ def refusal_message():
 
 
 def english(message):
+    """The English of UNSUPPORTED `message`, with the two digest prefixes it names."""
     return "This camera's firmware build isn't supported. Nothing was written. (appFw.so %s…, cpapp-b.bin %s…)" % \
-        buildprofile.unsupported_digests(message)
+        tuple(re.findall('[0-9a-f]{16}', message))
 
 
 def refused_one_click(folder):
@@ -296,6 +296,7 @@ def refused_one_click(folder):
         allinone.run(arguments, dispatch=dispatch)
     state = json.loads((folder / 'setup.private.json').read_text(encoding='utf-8'))
     assert state['phase'] == 'NEEDS_REVIEW' and state['error'] == message
+    assert state['error_type'] == 'UnsupportedFirmware'
     return folder
 
 
@@ -313,6 +314,7 @@ def refused_direct(folder, mode, **arguments):
         job.run_direct(mode, version='2.01', power_confirmed=True, **arguments)
     state = json.loads((folder / 'direct.private.json').read_text(encoding='utf-8'))
     assert state['phase'] == 'NEEDS_REVIEW' and state['error'] == str(error.value)
+    assert state['error_type'] == 'UnsupportedFirmware'
     assert camera.saves == [] and camera.native_calls == []
     return folder
 
@@ -440,14 +442,17 @@ def test_the_refusal_is_plain_chinese_in_the_chinese_interface(window, refused):
     assert offered(ui) == []
 
 
-@pytest.mark.parametrize('error', ['USB unavailable before reads', buildprofile.JOB_OTHER_BUILD % ('public-2.01', 'body-2.01-20250923'),
-                                   buildprofile.UNSUPPORTED % ('XYZ', 'f5a477588698ef96')],
-                         ids=['another error', 'another build, not an unsupported one', 'a message that only looks like it'])
-def test_a_job_stopped_for_any_other_reason_still_offers_to_continue(window, refused, error):
+@pytest.mark.parametrize('error, error_type', [
+    ('USB unavailable before reads', 'ValueError'),
+    (buildprofile.UNSUPPORTED % ('2ea02f7ecbc5bb91', 'f5a477588698ef96'), 'ValueError'),
+    (buildprofile.UNSUPPORTED % ('2ea02f7ecbc5bb91', 'f5a477588698ef96'), None)],
+    ids=['another error', 'a refusal message of another type', 'a refusal message with no type'])
+def test_a_job_stopped_for_any_other_reason_still_offers_to_continue(window, refused, error, error_type):
+    # The window goes by the error's type, never by its text.
     for folder, name in ((refused['setup'], 'setup.private.json'), (refused['factory'], 'direct.private.json'),
                          (refused['look'], 'direct.private.json')):
         state = json.loads((folder / name).read_text(encoding='utf-8'))
-        write_json(folder / name, dict(state, error=error))
+        write_json(folder / name, dict(state, error=error, error_type=error_type))
     ui = reopened(window, refused)
     assert offered(ui) == sorted([i18n.tr('继续安装'), i18n.tr('继续恢复／核对未完成事务'),
                                   i18n.tr('重试本次更改（上次未写入）')])
