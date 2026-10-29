@@ -45,8 +45,7 @@ def program_spans(programs, legacy_fixtures=None):
     # Derive every reader/path/call edit from the actual sound implementation. This reference is
     # the public build's; build_body_reference.py derives the body build's from it.
     import boot_sound
-    from looktool import buildprofile
-    public = next(build for build in buildprofile.BUILDS if build.key == 'public-2.01')
+    public = buildprofile.by_key('public-2.01')
     regions['appFw.so'].extend((at, len(old)) for at, old, new in boot_sound.windows(programs['appFw.so'], build=public))
     sys.path.insert(0,str(ROOT/'src/vertical'))
     from verticaltool import portraitlayout

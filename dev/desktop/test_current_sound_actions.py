@@ -110,8 +110,14 @@ def test_optional_confirmation_does_not_require_a_previous_task(tmp_path,command
 
 def test_the_sound_jobs_cold_restart_line_follows_the_guides_order():
     # Task 8c, engine F3: unplug first, wait for the lamp, switch off, then the battery, as reloadguide.STEPS.
+    # R57 M-8: the line is Chinese source text with its English in the engine catalogue, like every other.
     import sound_cli
-    line = sound_cli.RELOAD
+    from desktopapp.en_engine import ENGINE
+    from desktopapp.engine_text import CJK, translate_text
+    line = ENGINE[sound_cli.RELOAD]
+    assert CJK.search(sound_cli.RELOAD) and translate_text(sound_cli.RELOAD) == line
     order = [line.index(step) for step in ('Reading and writing have ended', 'Unplug USB', 'access lamp',
                                            'switch the camera off', 'battery out for at least 1 minute')]
     assert order == sorted(order)
+    chinese = [sound_cli.RELOAD.index(step) for step in ('所有读写已结束', '拔 USB', '存取灯', '关机', '取下电池至少一分钟')]
+    assert chinese == sorted(chinese)

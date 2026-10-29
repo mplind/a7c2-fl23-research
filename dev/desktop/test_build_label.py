@@ -6,7 +6,7 @@ the real engine leaves on disk when the gate refuses a camera of no supported bu
 import json
 from pathlib import Path
 import re
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 import pytest
 from PySide6 import QtWidgets as W
@@ -18,13 +18,14 @@ from desktopapp.paths import data_root, write_json
 from looktool import buildprofile, checkpointworker, devicesession
 from looktool.buildprofile import BUILDS, UnsupportedFirmware
 
-from guihelpers import HAN_OR_PUNCTUATION, stopped_banner  # noqa: E402
+from guihelpers import HAN_OR_PUNCTUATION, finish_job as finish, stopped_banner  # noqa: E402
 from test_firmware_gate import AP, CP, UNKNOWN, GateCamera, refusal  # noqa: E402
 
 PUBLIC, BODY = BUILDS
 PUBLIC_LABEL = 'Sony 2.01 (public update)'
 BODY_LABEL = 'Sony 2.01 (camera build, 23 Sep 2025)'
-UNSUPPORTED_LABEL = 'Unsupported firmware build. Buttons that write to the camera are off; nothing was written.'
+UNSUPPORTED_LABEL = ('Unsupported firmware build. Buttons that change the camera’s firmware are off, and the app refuses '
+                     'any such change; nothing was written.')
 NOT_CHECKED = 'Not checked yet. Click Test above.'
 
 
@@ -34,23 +35,20 @@ def connect_result(key):
     return dict(model='ILCE-7CM2', service_connected=True, firmware_programs_written=False, firmware_build=key)
 
 
-def finish(window, action, result=None, error=None, error_type=None):
-    """Let window.finished() handle a worker job that succeeded with `result`, or failed with `error`
-    (the status file the worker writes: its error_type is the exception's class name)."""
-    window.current_job = jobs.new_job(action, {})
-    status = (dict(phase='SUCCEEDED', action=action, result=result) if error is None else
-              dict(phase='FAILED', action=action, error=error, error_type=error_type))
-    write_json(window.current_job / 'status.private.json', status)
-    window.process = Mock()
-    window.finished(0 if error is None else 2, None)
+# Every button that changes the camera's firmware (programs, name files or their settings) through the
+# service session, by object name. Kept by hand: the window's own list (write_buttons) and the job
+# catalogue (jobs.POWER_ACTIONS) are what is under test.
+WRITE_BUTTONS = ('one_click_restore', 'action_setup_all', 'action_direct_factory_reset', 'action_restore',
+                 'action_direct_fl23_enable', 'action_direct_fl23_disable', 'action_direct_looks_import',
+                 'action_vertical_enable', 'action_vertical_disable', 'action_sound_on', 'action_sound_off',
+                 'action_sound_audition', 'action_sound_install', 'action_sound_restore_sound')
+# R12: a film recipe sets camera settings over PC Remote, with no firmware involved: it stays on.
+NOT_GATED = ('action_recipe_plan',)
 
 
 def write_buttons(ui):
-    """Every button that starts a camera write, found by the action it launches (the window's own list
-    of them is what is under test)."""
-    return [button for button in ui.findChildren(W.QPushButton)
-            if button.objectName() == 'one_click_restore'
-            or (button.objectName().startswith('action_') and button.objectName()[len('action_'):] in jobs.POWER_ACTIONS)]
+    """Every button WRITE_BUTTONS names."""
+    return [button for button in ui.findChildren(W.QPushButton) if button.objectName() in WRITE_BUTTONS]
 
 
 def enabled(buttons):
@@ -71,7 +69,8 @@ def test_every_supported_build_has_its_english_label():
 
 
 @pytest.mark.parametrize('key, chinese', [
-    (PUBLIC.key, PUBLIC.label_zh), (BODY.key, BODY.label_zh), (None, '固件版本不受支持：已禁用更改')])
+    (PUBLIC.key, PUBLIC.label_zh), (BODY.key, BODY.label_zh),
+    (None, '固件编译版本不受支持：已停用会更改相机固件的按钮，本工具也会拒绝此类更改；未写入任何内容。')])
 def test_chinese_interface_shows_the_chinese_source(window, key, chinese):
     ui = window()
     finish(ui, 'connect', connect_result(key))
@@ -120,6 +119,14 @@ def test_a_failed_connection_leaves_the_line_alone(window):
     finish(ui, 'connect', connect_result(BODY.key))
     finish(ui, 'connect', error='No normal USB identity', error_type='ValueError')
     assert ui.build_label.text() == BODY_LABEL
+
+
+def test_the_window_gates_exactly_the_firmware_write_buttons(window):
+    ui = window('en')
+    assert sorted({button.objectName() for button in ui.write_buttons}) == sorted(WRITE_BUTTONS)
+    finish(ui, 'connect', connect_result(None))
+    recipe = ui.findChild(W.QPushButton, NOT_GATED[0])
+    assert recipe is not None and recipe.isEnabled() and recipe not in ui.write_buttons
 
 
 def test_unknown_build_disables_write_buttons(window):
@@ -210,7 +217,7 @@ def test_connection_test_help_says_it_reads_the_build(window):
     help_text = ('Switches the camera to its service connection, reads its program files to identify the firmware build, '
                  'then switches back. Nothing is written. Takes a minute or two.')
     assert help_text in {label.text() for label in ui.findChildren(W.QLabel)}  # R45: it reads, and it takes a while
-    assert STRINGS['连接后读取固件版本，然后断开，不写入任何内容。'] == help_text
+    assert STRINGS['切换到服务连接，读取相机程序文件以识别固件编译版本，然后切回，不写入任何内容。约需一到两分钟。'] == help_text
 
 
 # The connect worker ----------------------------------------------------------------------------

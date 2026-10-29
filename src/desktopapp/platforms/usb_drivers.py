@@ -198,7 +198,8 @@ def install(arguments, job, *, report=None):
         for row in before['devices']:
             match=re.search(r'VID_054C&PID_[0-9A-F]{4}(?:&MI_[0-9A-F]{2})?',row['id'],re.I)
             detected.append((match.group(0) if match else 'Sony USB')+' '+str(row.get('description') or row.get('name') or ''))
-        details='；'.join(detected) or '未发现 Sony USB 设备'
+        # Joined with ASCII marks: the rows are data, shown as they are in either language.
+        details='; '.join(detected) or '未发现 Sony USB 设备'
         raise RuntimeError(('未找到相机的海量存储身份 054C:0E8A，请在相机选择“海量存储”后重新连接。' if pid=='0e8a' else
                             '未找到服务身份 054C:0336，请先使用“两阶段驱动与连接”入口。')+
                            '当前检测：'+details+'。完整设备／接口信息已保存，不会为未知 PID 自动更换驱动。')

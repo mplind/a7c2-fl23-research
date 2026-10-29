@@ -17,7 +17,7 @@ import compat
 def test_published_v2_native_fields_upgrade_and_reapply_without_touching_other_bytes(offset,lut,build):
     layout,*_,buildprofile=compat.modules()
     # Stand-in programs can't be identified, so the planner is told which build they play.
-    build=next(b for b in buildprofile.BUILDS if b.key==build)
+    build=buildprofile.by_key(build)
     native=layout.fl23_native_windows()
     path=Path(compat.core.BASE)/'assets/fl23-native-history.json'
     history=json.loads(path.read_text(encoding='utf-8'))

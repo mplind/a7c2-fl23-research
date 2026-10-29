@@ -46,6 +46,9 @@ class Fixture:
             def __exit__(self, *args):
                 pass
 
+            def read_programs(self):
+                return {'appFw.so': self.read('/usr/lib/appFw.so'), 'cpapp-b.bin': self.read('/cp/cpapp-b.bin')}
+
             def pin_programs(self, ap, cp):
                 assert self.byte_checks and ap == b'AP' and cp == b'CP'
 

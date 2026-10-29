@@ -22,7 +22,7 @@ class MixedBatchIdentityTests(unittest.TestCase):
                 selected=[dict(slot=2,name='My look',document=dict(raw_profile={'fixture':'dcp'}))]
                 with patch.object(Camera,'__call__',lambda obj,expected=None:obj if expected is None else original(obj,expected)),\
                      patch('looktool.bundle.documents',return_value=(job.state['bundle_options'],selected)),\
-                     patch('looktool.bundle.plan',side_effect=lambda current,*args:(dict(current),[{},{}],None)),\
+                     patch('looktool.bundle.plan',side_effect=lambda current,*args,**kwargs:(dict(current),[{},{}],None)),\
                      patch('looktool.rawidentity.after_verified') as publish:
                     result=job.verify_direct(accepted=accepted)
                 self.assertEqual(result['phase'],'COMPLETE' if accepted else 'LOADED')

@@ -174,13 +174,13 @@ def run(arguments, *, dispatch):
             save('FINALIZING')
         if state['phase'] == 'READY':
             save('DRIVERS')
-            result = call('usb_prepare', {}, 'drivers')
-            state['driver_result'] = result
+            call('usb_prepare', {}, 'drivers')
             state['completed_steps'].append('drivers')
             save('PREPARED')
         if state['phase'] == 'DRIVERS':
             print('上次停在连接准备；本次只测试连接，不重复更换驱动。', flush=True)
-            state['driver_result'] = call('connect', {}, 'driver-recheck')
+            # Only that the service connection opens: the install that follows reads and identifies the programs.
+            call('connect', {'identify': False}, 'driver-recheck')
             state['completed_steps'].append('drivers')
             save('PREPARED')
         if state['phase'] == 'PREPARED':

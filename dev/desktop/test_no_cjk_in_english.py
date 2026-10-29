@@ -21,13 +21,12 @@ from desktopapp.engine_text import CJK, SPECIFIER, specifiers
 from guihelpers import finish_job, shown_texts
 from looksamples import look_file
 
-SAMPLE = {'d': '7', 'i': '7', 'u': '7', 'x': '1f', 'X': '1F', 'o': '17', 'f': '2.5', 'F': '2.5', 'e': '2.5',
-          'E': '2.5', 'g': '2.5', 'G': '2.5', 'c': 'c', '%': '%'}
+SAMPLE = {'d': '7', 'f': '2.5'}  # what the engine fills a numeric specifier with; text gets `value`
 
 
 def sample(template, value='disk4'):
     """`template` filled as the engine would fill it: numbers for numeric specifiers, `value` for text."""
-    return SPECIFIER.sub(lambda m: SAMPLE.get(m.group(2), value), template)
+    return SPECIFIER.sub(lambda m: SAMPLE.get(m.group(1), value), template)
 
 
 def chinese(texts):
@@ -82,9 +81,17 @@ def test_the_one_click_review_line_reads_as_english_with_its_original_error():
         assert ENGINE[error] in shown
 
 
+# Interface formats with fewer than two Chinese characters, which display() never matches (a line with
+# nothing translated is shown as printed, full-width marks and all): the settings dialog's version line and a
+# Film recipes summary line. Neither is ever printed into the log.
+INTERFACE_ONLY = ['%s（%s）', 'DRO：%s']
+
+
 def test_every_interface_entry_also_reads_as_english_in_the_log():
     # A few interface texts reach the log too (the restart steps one-click setup prints).
-    assert [key for key in STRINGS if CJK.search(engine_text.translate_text(sample(key)))] == []
+    unread = [key for key in STRINGS if key not in engine_text.NOT_DISPLAYED
+              and CJK.search(engine_text.translate_text(sample(key)))]
+    assert unread == INTERFACE_ONLY
 
 
 @pytest.mark.parametrize('mode', [None, 'resource_reload'])
@@ -219,9 +226,9 @@ def test_display_translates_only_in_english():
 ENGINE_LINES = [
     '正在卸载相机磁盘（不拔线）：disk4',
     '服务模式已退出，等待普通 USB 连接（最多 60 秒）。若相机屏幕询问 USB 连接方式，请选择第 2 项「影像传输（MSC）」。',
-    '读取相机程序文件以识别固件版本（只读）。',
+    '读取相机程序文件以识别固件编译版本（只读）。',
     '正在写入程序窗口批次 3/12',
-    '认证后相机未进入服务模式（期间出现的 Sony USB 身份：0e8a、0336）。',
+    '认证后相机未进入服务模式（期间出现的 Sony USB 身份：0e8a, 0336）。',
     '{',
     '  "note": "通过只说明这段时间内连续只读传输稳定；不保证刷写期间一定不掉线，也不代表线材认证。",',
     '  "message": "所选安装已完成；请在机身检查预览、名称、拍摄和回放。竖屏已保存开启，并已核对重开后的实际运行状态。"',
@@ -244,6 +251,17 @@ def test_the_log_pane_shows_worker_output_in_english_and_keeps_the_log_verbatim(
     assert sample(ENGINE['正在卸载相机磁盘（不拔线）：%s']) in shown
     assert "    raise RuntimeError('…'+MSC_PROMPT+'…')" in shown  # the code stays; its partial literals don't
     assert log.read_text(encoding='utf-8') == '\n'.join(ENGINE_LINES) + '\n'
+
+
+@pytest.mark.parametrize('line', ENGINE_LINES)
+def test_each_log_line_read_on_its_own_is_english(window, line):
+    # One 250 ms read of worker.log can hold a single line: a line must read in English alone as well as
+    # inside a longer chunk (the Sony USB identities line once kept its '、' this way).
+    ui = window('en')
+    ui.current_job = jobs.new_job('connect', {})
+    (ui.current_job / 'worker.log').write_text(line + '\n', encoding='utf-8')
+    ui.tail_log()
+    assert chinese([ui.log.toPlainText()]) == []
 
 
 def test_the_log_pane_wraps_long_lines_at_its_width(window):

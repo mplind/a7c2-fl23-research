@@ -14,6 +14,7 @@ setup_runtime()
 from looktool import direct, photoformat, photobasis, photoio, lookfile, device_layout, nameworker
 from test_checkpoint import stock_names
 from looktool.devicesession import modules
+from looktool.buildprofile import UnsupportedFirmware
 
 
 @unittest.skipUnless(os.environ.get('A7C2_ORIGINAL_REFERENCE') and os.environ.get('A7C2_RESEARCH_FIXTURES'),
@@ -95,14 +96,18 @@ class ReferencePlanningTests(unittest.TestCase):
         self.assertEqual(restored['appFw.so'], self.stock['appFw.so'])
         self.assertEqual(restored['cpapp-b.bin'], self.stock['cpapp-b.bin'])
 
-    def test_builtin_reference_preserves_unrelated_program_regions(self):
+    def test_a_program_changed_outside_every_tool_region_is_refused(self):
+        # The build check puts back only the regions a tool may change, so a byte changed anywhere else
+        # (here 0x70000 of each program) makes the programs no supported build: Factory restore refuses
+        # them before it plans anything, rather than restoring around an unknown change.
         for name in ('appFw.so', 'cpapp-b.bin'):
             changed = bytearray(self.current[name])
             changed[0x70000] ^= 1
             self.current[name] = bytes(changed)
-        restored, _ = self.apply('factory_reset', factory=official.load('builtin'))
-        for name in ('appFw.so', 'cpapp-b.bin'):
-            self.assertEqual(restored[name][0x70000], self.stock[name][0x70000] ^ 1)
+        before = copy.deepcopy((self.current, self.props))
+        with self.assertRaises(UnsupportedFirmware):
+            self.apply('factory_reset', factory=official.load('builtin'))
+        self.assertEqual((self.current, self.props), before)
 
     @unittest.skipUnless(importlib.util.find_spec('keystone'), 'Optional sound assembler')
     def test_builtin_reference_reverses_the_real_sound_hook_and_reader_changes(self):

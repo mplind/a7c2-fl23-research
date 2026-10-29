@@ -32,8 +32,14 @@ def documents(options, destination=None):
     return options, selected
 
 
-def plan(current, records, options, selected):
+def plan(current, records, options, selected, *, build=None):
+    """The one write plan of every option chosen, for `build`: a job passes the build Camera.read_programs
+    identified, and nothing is identified again; a standalone or offline caller may leave it None, and the
+    programs are identified once, when a chosen option's plan depends on the build (buildprofile.build_of)."""
+    from . import buildprofile
     from .direct import plan as single
+    if options.get('fl23', True) or options.get('reset_slots') or selected:
+        build = buildprofile.build_of(current['appFw.so'], current['cpapp-b.bin'], build)
     target, working = dict(current), copy.deepcopy(records)
     wanted, names, labels = [{}, {}], {}, None
 
@@ -46,7 +52,7 @@ def plan(current, records, options, selected):
                 working[chip][key] = working[chip][key]._replace(data=value)
 
     if options.get('fl23', True):
-        a, b, _ = single(target, working, 'fl23_enable')
+        a, b, _ = single(target, working, 'fl23_enable', build=build)
         merge(a, b)
     def titles(rename):
         nonlocal labels
@@ -56,11 +62,11 @@ def plan(current, records, options, selected):
         labels=rename[1];names.update(rename[0])
 
     for slot in options.get('reset_slots',[]):
-        a,b,rename=single(target,working,'slot_default',slot=slot)
+        a,b,rename=single(target,working,'slot_default',slot=slot,build=build)
         merge(a,b);titles(rename)
     for row in selected:
         a, b, rename = single(target, working, 'look_import', slot=row['slot'],
-                              look=row['document'], name=row['name'])
+                              look=row['document'], name=row['name'], build=build)
         merge(a, b)
         titles(rename)
     # Append selected titles once, irrespective of how many slots are chosen.

@@ -253,15 +253,19 @@ def tool_spans(public):
     return [(program, at, size) for program in PROGRAMS for at, size in spans[program]]
 
 
+# The imm12 field of an add/ldr (bits 10-21): the only bits a shifted target may change in an instruction.
+IMMEDIATE = 0xfff << 10
+
+
 def context_check(public, body, sites, *, text, shifts, moved, facts):
     """R30 over the CONTEXT bytes either side of each (program, offset, size) site, public and
     body being {program: bytes} and `moved` the body offset of a public appFw.so offset. Returns
     (pairs, failures): pairs maps the use offset of each accepted pair to (adrp offset, public target,
     body target); failures lists (program, public offset, reason) for every other differing byte. The
     `facts` offsets of appFw.so are exempt. A differing instruction is accepted only when it lies
-    outside every written span, is part of the same adrp + add/ldr pair in both builds, the body's
-    target is the public one less shift_at(shifts, it), and both targets hold the same TARGET_BYTES,
-    not all one value."""
+    outside every written span, is part of the same adrp + add/ldr pair in both builds, differs only in
+    its immediate (IMMEDIATE: same opcode and registers), the body's target is the public one less
+    shift_at(shifts, it), and both targets hold the same TARGET_BYTES, not all one value."""
     differing = {}
     for program, at, size in sites:
         there = moved(at) if program == 'appFw.so' else at
@@ -286,6 +290,8 @@ def context_check(public, body, sites, *, text, shifts, moved, facts):
             reason = 'inside a tool-written span'
         elif not found or [row[:2] for row in found] != [row[:2] for row in pairs_with(bp, at, text)]:
             reason = 'not the same adrp + add/ldr pair in both builds'
+        elif (struct.unpack_from('<I', ap, at)[0] ^ struct.unpack_from('<I', bp, at)[0]) & ~IMMEDIATE:
+            reason = 'the instructions differ outside the immediate'
         else:
             reason = None
             for (adrp, use, target), (_, _, body_target) in zip(found, pairs_with(bp, at, text)):
@@ -538,11 +544,10 @@ def test_rodata_shift_boundaries_come_from_the_fixtures(build_fixtures, shifts):
     its first load segment is 16 bytes shorter and the second starts at the same address, so
     .data.rel.ro (verticalpersist's descriptor at 0x57bbb90 included) is not shifted."""
     public, body = build_fixtures.public.ap, build_fixtures.body.ap
+    # derive_shifts lines the spans up itself; what follows checks what it doesn't name.
     assert shifts == SHIFTS
     assert public[0x4ba1744:0x4ba1748] == (0x00020000).to_bytes(4, 'little')
-    assert public[0x4ba1748:0x4ba179c] == body[0x4ba1744:0x4ba1798]       # 4 lower until the padding
-    assert public[0x4ba179c:0x4ba17a0] == bytes(4) != body[0x4ba1798:0x4ba179c]
-    assert public[0x4ba17a0:0x4ba1900] == body[0x4ba1798:0x4ba18f8]       # 8 lower after it
+    assert public[0x4ba179c:0x4ba17a0] == bytes(4)
     p, b = np.frombuffer(public, np.uint8), np.frombuffer(body, np.uint8)
     table = 0x4ba17a0 + np.flatnonzero(p[0x4ba17a0:0x4c102e8] != b[0x4ba1798:0x4c102e0])
     assert len(table) == CHANGED and 0x4bf9b12 <= table[0] and table[-1] < 0x4bf9d8d   # the one changed ID table
@@ -582,14 +587,20 @@ def add_word(register, offset):
     return 0x91000000 | offset << 10 | register << 5 | register   # add xN, xN, #offset
 
 
-def synthetic(public_add, body_add, *, at=0x1180, data=(b'same data object', b'same data object'), other=None):
+def ldr_word(register, offset):
+    return 0xf9400000 | (offset // 8) << 10 | register << 5 | register   # ldr xN, [xN, #offset]
+
+
+def synthetic(public_add, body_add, *, at=0x1180, data=(b'same data object', b'same data object'), other=None,
+              body_use=None):
     """Two 64 KiB programs with one write site at 0x1100+8 and, at `at`, adrp x1 to page 0x8000 then
-    add x1 with `public_add` / `body_add`. The public target holds data[0], the body's data[1]. Shifts
-    are 16 from 0x4000. Returns R30's (pairs, failures)."""
+    add x1 with `public_add` / `body_add` (in the body, the instruction word `body_use` when given). The
+    public target holds data[0], the body's data[1]. Shifts are 16 from 0x4000. Returns R30's (pairs,
+    failures)."""
     files = []
-    for add, object_bytes in zip((public_add, body_add), data):
+    for add, object_bytes, use in zip((public_add, body_add), data, (None, body_use)):
         ap = bytearray(0x10000)
-        ap[at:at + 8] = struct.pack('<2I', adrp_word(at, 0x8000, 1), add_word(1, add))
+        ap[at:at + 8] = struct.pack('<2I', adrp_word(at, 0x8000, 1), add_word(1, add) if use is None else use)
         ap[0x8000 + add:0x8000 + add + 16] = object_bytes
         files.append({'appFw.so': bytes(ap), 'cpapp-b.bin': bytes(0x2000)})
     if other:
@@ -607,7 +618,11 @@ def test_a_pair_to_the_same_shifted_object_is_accepted():
     (dict(public_add=0x120, body_add=0x110, data=(bytes(16), bytes(16))), 'hold different data'),
     (dict(public_add=0x120, body_add=0x118, data=(b'same data object', b'same data object')), 'not one address shifted'),
     (dict(public_add=0x120, body_add=0x110, at=0x1100), 'inside a tool-written span'),
-], ids=['different bytes', 'all zero', 'wrong shift', 'written'])
+    # L166: the same target through another instruction is no shifted copy of the same pair.
+    (dict(public_add=0x120, body_add=0x110, body_use=0x91000000 | 0x110 << 10 | 1 << 5 | 2),
+     'differ outside the immediate'),
+    (dict(public_add=0x120, body_add=0x110, body_use=ldr_word(1, 0x110)), 'differ outside the immediate'),
+], ids=['different bytes', 'all zero', 'wrong shift', 'written', 'another destination register', 'add became ldr'])
 def test_a_pair_breaking_a_rule_fails(case, expected):
     pairs, failures = synthetic(**case)
     assert pairs == {} and failures and all(expected in reason for _, _, reason in failures)

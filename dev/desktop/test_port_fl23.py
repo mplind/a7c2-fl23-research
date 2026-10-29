@@ -264,9 +264,17 @@ def test_runtime_spans_are_the_same_on_both_builds(build):
     assert core.runtime_spans(build) == core.RUNTIME_SPANS
 
 
+def test_a_runtime_span_in_the_shifted_rodata_is_refused_on_every_build(monkeypatch):
+    # Its body address isn't known (translate refuses it), so no build checks it at the wrong bytes.
+    monkeypatch.setattr(core, 'RUNTIME_SPANS', core.RUNTIME_SPANS + ((0x4c7cf70, 16),))
+    for build in (PUBLIC, BODY):
+        with pytest.raises(ValueError, match='0x4c7cf70'):
+            core.runtime_spans(build)
+
+
 def test_a_build_that_moves_a_runtime_span_is_refused(monkeypatch):
     """runtime.so reads its compiled offsets on every camera, so it can't follow a moved span."""
-    monkeypatch.setattr(core, 'RUNTIME_SPANS', core.RUNTIME_SPANS + ((0x4c7cf70, 16),))
+    monkeypatch.setattr(core, 'RUNTIME_SPANS', core.RUNTIME_SPANS + ((0x4c7cf7c, 12),))
     assert core.runtime_spans(PUBLIC) == core.RUNTIME_SPANS
     with pytest.raises(ValueError, match='body-2.01-20250923'):
         core.runtime_spans(BODY)

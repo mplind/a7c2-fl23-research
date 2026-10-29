@@ -126,7 +126,7 @@ def test_settings_continuation_cannot_invoke_program_or_name_writers(tmp_path,ch
             return super().native(camera,kind,mode,build)
     job=Job(tmp_path/'continue',factory=lambda expected=None:camera)
     before=deepcopy(camera.files)
-    def plan(current,records,options,rows):
+    def plan(current,records,options,rows,**kwargs):
         target=dict(current)
         if changed=='program':target['appFw.so']=b'X'+current['appFw.so'][1:]
         if changed=='name':

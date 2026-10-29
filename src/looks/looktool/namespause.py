@@ -5,7 +5,7 @@ The program installer retains its read-only mount prerequisite.
 """
 import json,re,struct
 from pathlib import Path
-from . import bundle,checkpoint,nameworker,resources,lookfile
+from . import bundle,nameworker,resources,lookfile
 from .devicesession import LAUNCHER
 
 WAIT='AWAITING_RESOURCE_RELOAD'
@@ -49,8 +49,7 @@ def source(folder):
 
 def verify_files(camera,root,state):
     print('正在读取原程序，核对尚未写入的程序窗口。',flush=True)
-    images={n:camera.read(p) for n,p in checkpoint.PROGRAM_PATHS.items()}
-    camera.identify_programs(images['appFw.so'],images['cpapp-b.bin'])
+    images=camera.read_programs()
     anchor=Path(state.get('program_source_workspace') or root).resolve()
     for build in state['program_builds']:
         path=Path(build['path'])

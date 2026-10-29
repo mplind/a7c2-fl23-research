@@ -352,7 +352,7 @@ class Session:
                 raise RuntimeError('服务身份 0336 已出现，但接口无法打开；请保留驱动与 USB 日志，不重新认证。')
             # No service identity ever appeared, so no service session exists
             # and nothing was sent to the camera after authentication.
-            print('认证后相机未进入服务模式（期间出现的 Sony USB 身份：%s）。'%('、'.join(seen) or '无'),flush=True)
+            print('认证后相机未进入服务模式（期间出现的 Sony USB 身份：%s）。'%(', '.join(seen) or '无'),flush=True)
             if attempt==SERVICE_ATTEMPTS:
                 raise RuntimeError('服務身份未出現；若是第一次，請依文件安裝0336驅動（已嘗試 %d 次）'%attempt)
             if _wait_for(0x0e8a,60,seen) is None:

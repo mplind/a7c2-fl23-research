@@ -142,11 +142,14 @@ def settings(camera):
     return selected
 
 
-def prepare_camera(camera, journal):
+def prepare_camera(camera, journal, programs=None):
+    """Pin the camera's programs for byte-checked native work, with `programs` when the job already
+    read them (Camera.read_programs) and else reading them; before model confirmation, run the read-only
+    model probe."""
     camera.byte_checks = True
-    ap = camera.read('/usr/lib/appFw.so')
-    cp = camera.read('/cp/cpapp-b.bin')
-    camera.pin_programs(ap, cp)
+    if programs is None:
+        programs = camera.read_programs()
+    camera.pin_programs(programs['appFw.so'], programs['cpapp-b.bin'])
     if camera.identity_pending:
         # Existing shared read-only native model probe for initial busy/no-media sessions.
         from looktool.devicesession import invoke

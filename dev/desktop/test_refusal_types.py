@@ -17,9 +17,9 @@ from PySide6 import QtWidgets as W
 from desktopapp import i18n, jobs, worker
 from desktopapp.engine_text import display
 from desktopapp.paths import data_root, write_json
-from looktool import buildprofile, checkpointworker, direct
+from looktool import buildprofile, checkpointworker, devicesession, direct
 
-from guihelpers import HAN_OR_PUNCTUATION, stopped_banner  # noqa: E402
+from guihelpers import HAN_OR_PUNCTUATION, finish_failed_job, stopped_banner  # noqa: E402
 from test_build_label import UNSUPPORTED_LABEL, enabled, english, write_buttons  # noqa: E402
 from test_firmware_gate import AP, CP, UNKNOWN, SoundGateCamera, refusal  # noqa: E402
 
@@ -187,3 +187,78 @@ def test_the_factory_page_after_a_reference_of_the_other_build(window, tmp_path,
     assert not [button.text() for button in ui.findChildren(W.QPushButton) if button.text().startswith('Continue')]
     # The camera's build is a supported one: only the reference was of another build.
     assert not ui.build_unsupported
+
+
+# A worker that quit without a status ---------------------------------------------------------------
+
+@pytest.mark.parametrize('language, unknown, repeat', [
+    ('zh_CN', '结果未知', '查看日志前不要重复此操作'),
+    ('en', 'its result is unknown', 'Don’t repeat it until you’ve read the log')])
+def test_a_crashed_worker_banner_says_the_result_is_unknown_in_both_languages(window, language, unknown, repeat):
+    # CV5: the Chinese banner states the safety fact the English states.
+    ui = window(language)
+    ui.current_job = jobs.new_job('direct_fl23_enable', {})
+    ui.process = Mock()
+    ui.finished(-1, None)  # no status file: the worker quit before writing one
+    assert unknown in ui.status.text() and repeat in ui.status.text()
+
+
+# Every refusal in the banner ---------------------------------------------------------------------
+
+PUBLIC_LABEL, BODY_LABEL = 'Sony 2.01 (public update)', 'Sony 2.01 (camera build, 23 Sep 2025)'
+PUBLIC_KEY, BODY_KEY = (build.key for build in buildprofile.BUILDS)
+REFUSALS = [
+    (buildprofile.UNSUPPORTED % ('2ea02f7ecbc5bb91', 'f5a477588698ef96'), 'UnsupportedFirmware',
+     "This camera's firmware build isn't supported. Nothing was written. (appFw.so 2ea02f7ecbc5bb91…, "
+     "cpapp-b.bin f5a477588698ef96…)"),
+    (devicesession.UNIDENTIFIED, 'UnsupportedFirmware',
+     "This camera's firmware build hasn't been identified, so nothing was written."),
+    (buildprofile.SAVED_OTHER_BUILD % (PUBLIC_KEY, BODY_KEY), 'OtherBuild',
+     'The saved bytes come from %s, but the camera runs %s. Nothing was written.' % (PUBLIC_LABEL, BODY_LABEL)),
+    (buildprofile.SAVED_UNIDENTIFIED, 'OtherBuild',
+     "The firmware build of the saved bytes can't be identified, so nothing was written."),
+    (buildprofile.REFERENCE_OTHER_BUILD % (PUBLIC_KEY, BODY_KEY), 'OtherBuild',
+     'The chosen Sony firmware file is for %s, but the camera runs %s. Nothing was written.' % (PUBLIC_LABEL, BODY_LABEL)),
+    (buildprofile.REFERENCE_UNSUPPORTED, 'OtherBuild',
+     "The chosen Sony firmware file isn't a supported build, so nothing was written."),
+    (buildprofile.JOB_OTHER_BUILD % (BODY_KEY, PUBLIC_KEY), 'JobOtherBuild',
+     'This job was planned for %s, but the camera now runs %s. Nothing was verified or written.' % (BODY_LABEL, PUBLIC_LABEL)),
+]
+
+
+@pytest.mark.parametrize('error, error_type, english', REFUSALS, ids=[row[1] + '-' + str(i) for i, row in enumerate(REFUSALS)])
+def test_every_refusal_reads_in_english_with_build_labels(window, error, error_type, english):
+    # M6: the English names builds by their labels, as the Connection page does, never by raw keys.
+    text = finish_failed_job(window(language='en'), error, error_type=error_type)
+    assert text == stopped_banner(english)
+    assert not HAN_OR_PUNCTUATION.search(text) and PUBLIC_KEY not in text and BODY_KEY not in text
+
+
+@pytest.mark.parametrize('error, error_type, english', REFUSALS, ids=[row[1] + '-' + str(i) for i, row in enumerate(REFUSALS)])
+def test_every_refusal_stays_verbatim_in_chinese(window, error, error_type, english):
+    stop = '' if error.endswith('。') else '。'  # a refusal that ends its sentence gets no second full stop
+    assert finish_failed_job(window(), error, error_type=error_type) == '操作停止：' + error + stop + '请导出诊断包。'
+
+
+def test_the_chinese_sources_name_the_build_as_a_build():
+    # M6: 固件编译版本 (the firmware's compiled build) where the build is meant, not 固件版本 (its version).
+    sources = [buildprofile.UNSUPPORTED, buildprofile.SAVED_OTHER_BUILD, buildprofile.SAVED_UNIDENTIFIED,
+               buildprofile.REFERENCE_OTHER_BUILD, buildprofile.REFERENCE_UNSUPPORTED, buildprofile.JOB_OTHER_BUILD,
+               devicesession.UNIDENTIFIED, boot_trial.RETIRED_UNKNOWN_BUILD]
+    assert all('固件编译版本' in text and '固件版本' not in text for text in sources)
+    from desktopapp.en import STRINGS
+    assert STRINGS['相机固件编译版本'] == 'Camera firmware build'
+
+
+def test_capturing_the_camera_never_overwrites_the_build_a_job_recorded(tmp_path):
+    # L209: verify reads the job's recorded build first; capture keeps it and fills it in only when absent.
+    from test_checkpoint import Camera, values
+    from test_direct import SimDirect
+    camera = Camera(values())    # plays the public build
+    job = SimDirect(tmp_path / 'job', factory=camera)
+    job.state = {'firmware_build': 'body-2.01-20250923'}
+    job.capture(camera)
+    assert job.state['firmware_build'] == 'body-2.01-20250923'
+    job.state = {}
+    job.capture(camera)
+    assert job.state['firmware_build'] == buildprofile.BUILDS[0].key

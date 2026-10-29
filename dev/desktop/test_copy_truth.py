@@ -281,7 +281,7 @@ def test_the_saved_summary_button_and_its_lines_say_it_reads_a_file(window, tmp_
     import json
     from desktopapp import completion
     ui = window('en')
-    assert ui.setup_result_button.text() == 'Show saved summary'
+    assert ui.setup_result_button.text() == 'Show saved summary (doesn’t use the camera)'
     folder = tmp_path / 'setup'
     folder.mkdir()
     (folder / 'setup.private.json').write_text(json.dumps(dict(phase='COMPLETE', options={})), encoding='utf-8')
@@ -448,3 +448,11 @@ def test_no_row_title_repeats_another_on_its_page_or_the_page_title(window):
         repeated = sorted({title for title in titles if titles.count(title) > 1})
         assert repeated == [], (ui.page_meta[index][0], repeated)
         assert ui.page_meta[index][0] not in titles, ui.page_meta[index][0]
+
+
+def test_no_english_label_drops_a_safety_fact_the_chinese_states():
+    # L258: the Chinese says the summary doesn't connect to the camera and FL2/FL3 is read back in full.
+    assert STRINGS['查看上次安装结果（不连接相机）'] == 'Show saved summary (doesn’t use the camera)'
+    for source in ('FL2／FL3 已启用：写入并完整读回。重开相机后生效，无需再点核对。',
+                   'FL2／FL3 已从列表移除：写入并完整读回。重开相机后生效，无需再点核对。'):
+        assert 'written and read back in full' in STRINGS[source]

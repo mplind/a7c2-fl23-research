@@ -76,7 +76,7 @@ class PersistentVerticalTests(unittest.TestCase):
 
     def test_combined_write_saves_on_before_reload_without_session_enable(self):
         job=SimDirect(self.root/'install',factory=self.camera)
-        with patch.object(bundle,'plan',side_effect=lambda c,r,*a:self.plan(c,r,True)):
+        with patch.object(bundle,'plan',side_effect=lambda c,r,*a,**kw:self.plan(c,r,True)):
             result=job.run_direct('install_all',version='2.01',power_confirmed=True,
                 bundle_options=dict(looks=[],fl23=False,sound=False,vertical_persistent=True))
             self.assertEqual(result['phase'],'AWAITING_RELOAD')
@@ -96,7 +96,7 @@ class PersistentVerticalTests(unittest.TestCase):
     def test_alias_failure_prevents_saved_enable_and_program_writes(self):
         self.fail_aliases=True
         job=SimDirect(self.root/'failed',factory=self.camera)
-        with patch.object(bundle,'plan',side_effect=lambda c,r,*a:self.plan(c,r,True)),self.assertRaises(OSError):
+        with patch.object(bundle,'plan',side_effect=lambda c,r,*a,**kw:self.plan(c,r,True)),self.assertRaises(OSError):
             job.run_direct('install_all',version='2.01',power_confirmed=True,
                 bundle_options=dict(looks=[],fl23=False,sound=False,vertical_persistent=True))
         self.assertEqual(self.camera.saved[0][verticalpersist.SETTING].data,b'\1')
@@ -118,7 +118,7 @@ class PersistentVerticalTests(unittest.TestCase):
         key=0x02cf9999
         self.camera.ram[0][key]=Prop(b'new',64);self.camera.saved[0][key]=Prop(b'old',64)
         job=SimDirect(self.root/'unsaved',factory=self.camera)
-        with patch.object(bundle,'plan',side_effect=lambda c,r,*a:self.plan(c,r,True)),self.assertRaisesRegex(ValueError,'Unselected unsaved'):
+        with patch.object(bundle,'plan',side_effect=lambda c,r,*a,**kw:self.plan(c,r,True)),self.assertRaisesRegex(ValueError,'Unselected unsaved'):
             job.run_direct('install_all',version='2.01',power_confirmed=True,
                 bundle_options=dict(looks=[],fl23=False,sound=False,vertical_persistent=True))
         self.assertFalse(self.events);self.assertFalse(self.camera.saves)
@@ -127,7 +127,7 @@ class PersistentVerticalTests(unittest.TestCase):
         for mask,bad in ((3,False),(7,True)):
             self.camera.alias_mask=mask;self.bad_alias=bad
             job=SimDirect(self.root/str(mask),factory=self.camera)
-            with patch.object(bundle,'plan',side_effect=lambda c,r,*a:self.plan(c,r,True)),self.assertRaises(ValueError):
+            with patch.object(bundle,'plan',side_effect=lambda c,r,*a,**kw:self.plan(c,r,True)),self.assertRaises(ValueError):
                 job.run_direct('install_all',version='2.01',power_confirmed=True,
                     bundle_options=dict(looks=[],fl23=False,sound=False,vertical_persistent=True))
             self.assertFalse(self.camera.saves)

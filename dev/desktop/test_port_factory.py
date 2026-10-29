@@ -28,8 +28,6 @@ import buildfixtures
 from test_checkpoint import Camera, fake_compile, stock_names
 from test_device_job import Prop
 from test_direct import SimDirect
-from test_language import finish_failed_job
-from guihelpers import HAN_OR_PUNCTUATION, stopped_banner
 
 PUBLIC, BODY = BUILDS
 PROGRAMS = ('appFw.so', 'cpapp-b.bin')
@@ -174,7 +172,7 @@ def full_reference(folder, fixture):
 def put_back_reference(values):
     """The 28 Oct put-back's reference (camera-check/putback.py build_reference): the public regions
     file's regions, each holding the body's own bytes at the same offset, recorded as the body build."""
-    document = json.loads((buildprofile.ASSETS / PUBLIC.regions_file).read_text(encoding='utf-8'))
+    document = buildprofile.regions_document(PUBLIC)
     for name in PROGRAMS:
         for region in document['programs'][name]['regions']:
             at, size = region['offset'], region['bytes']
@@ -396,6 +394,21 @@ def test_full_reference_of_another_build_is_refused(build_fixtures, tmp_path, mo
         assert_nothing_written(sim, before)
 
 
+@pytest.mark.parametrize('name, build', [('public', PUBLIC), ('body', BODY)])
+def test_a_full_reference_carrying_tool_changes_is_refused_when_loaded(build_fixtures, tmp_path, name, build):
+    """M5: a full reference is written whole, so it must be its build's stock files exactly. Programs
+    with tool changes still identify (the changes sit in tool regions) but are refused."""
+    fixture = getattr(build_fixtures, name)
+    folder = full_reference(tmp_path / 'reference', fixture)
+    changed = every_region_changed(programs(fixture), build)['appFw.so']
+    assert buildprofile.identify(changed, fixture.cp) is build
+    (folder / 'appFw.so').unlink()
+    (folder / 'appFw.so').write_bytes(changed)
+    with pytest.raises(buildprofile.OtherBuild) as error:
+        official.load(folder)
+    assert str(error.value) == buildprofile.REFERENCE_UNSUPPORTED and type(error.value) is buildprofile.OtherBuild
+
+
 def test_a_full_reference_of_no_supported_build_is_refused_when_loaded(build_fixtures, tmp_path):
     with pytest.raises(buildprofile.OtherBuild) as error:
         official.load(full_reference(tmp_path / 'hybrid-reference', build_fixtures.hybrid))
@@ -490,18 +503,3 @@ def test_public_factory_restore_is_unchanged_by_the_port(build_fixtures):
                    dict(public, **{'appFw.so': portraitlayout.references(public['appFw.so'], True)[0]}))}
     assert results == PUBLIC_BEFORE_THE_PORT
 
-
-# The refusals, in English ----------------------------------------------------------------------
-
-@pytest.mark.parametrize('template, values, english', [
-    ('REFERENCE_OTHER_BUILD', ('public-2.01', 'body-2.01-20250923'),
-     'The chosen Sony firmware file is build public-2.01, but the camera is body-2.01-20250923. Nothing was written.'),
-    ('REFERENCE_UNSUPPORTED', (), "The chosen Sony firmware file isn't a supported build, so nothing was written."),
-    ('JOB_OTHER_BUILD', ('body-2.01-20250923', 'public-2.01'),
-     'This job recorded firmware build body-2.01-20250923, but the camera is now public-2.01. Nothing was verified or written.'),
-])
-def test_factory_refusals_are_shown_in_english(window, tmp_path, template, values, english):
-    error = getattr(buildprofile, template) % values if values else getattr(buildprofile, template)
-    text = finish_failed_job(window(language='en'), tmp_path, error)
-    assert text == stopped_banner(english)
-    assert not HAN_OR_PUNCTUATION.search(text)

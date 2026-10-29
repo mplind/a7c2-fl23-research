@@ -11,7 +11,7 @@ import importlib,struct,sys,time
 from pathlib import Path
 from . import buildprofile, firmware
 from .buildprofile import UnsupportedFirmware
-from .nativebuild import ROOT
+from .nativebuild import ROOT, STAGING_LIMIT
 
 # Writing this /tmp/jiritsu file starts a native worker. Other modules name it through this constant.
 LAUNCHER='libJit.so'
@@ -24,7 +24,7 @@ TEMP_NAMES={LAUNCHER,'lut-program-staged.so','lut-names-staged.so','lut-runtime-
 # model/boot/span probe; ('probe', 0) is a read-only probe (the sound registry and vertical-display
 # probes). Neither stages a request file. Every other (kind, mode) can change the camera.
 READ_ONLY_NATIVE=frozenset({('runtime',0),('probe',0)})
-UNIDENTIFIED='尚未识别此相机的固件版本，未写入任何内容。'
+UNIDENTIFIED='尚未识别此相机的固件编译版本，未写入任何内容。'
 
 
 def read_only_launch(kind,mode,request):
@@ -42,7 +42,7 @@ class Camera:
     def __init__(self,expected=None,*,allow_service_resume=False):
         self.expected=expected;self.healthy=True;self.identity_pending=False;self.programs_pinned=False
         self.allow_service_resume=allow_service_resume
-        self.firmware_build=None
+        self.firmware_build=None;self.identified=None
     def __enter__(self):
         from .devicelock import DeviceLock
         self.lock=DeviceLock();self.lock.__enter__()
@@ -112,17 +112,28 @@ class Camera:
     def identify_programs(self,ap,cp):
         """Identify the build of appFw.so and cpapp-b.bin just read from this camera. Writes stay
         refused until this succeeds; a refusal also withdraws any earlier identification."""
-        self.firmware_build=None
+        self.firmware_build=None;self.identified=None
         self.firmware_build=buildprofile.identify(ap,cp)
+        self.identified=(ap,cp)
         return self.firmware_build
+    def read_programs(self):
+        """Read appFw.so and cpapp-b.bin, identify their build (identify_programs) and return them as
+        {'appFw.so': …, 'cpapp-b.bin': …}: the one way a job gets the camera's program bytes. The jobs'
+        planners take that build (require_build) and never identify again."""
+        from .checkpoint import PROGRAM_PATHS
+        programs={name:self.read(path) for name,path in PROGRAM_PATHS.items()}
+        self.identify_programs(programs['appFw.so'],programs['cpapp-b.bin'])
+        return programs
     def require_build(self):
         """The identified build. Every write primitive calls this first."""
         if self.firmware_build is None:raise UnsupportedFirmware(UNIDENTIFIED)
         return self.firmware_build
     def pin_programs(self,ap,cp):
-        self.identify_programs(ap,cp)
+        """Pin appFw.so `ap` and cpapp-b.bin `cp` for native work: identified, unless they are the programs
+        this session identified last (read_programs), and recognised as a custom-look layout of that build."""
+        build=self.firmware_build if self.firmware_build is not None and self.identified==(ap,cp) else self.identify_programs(ap,cp)
         from .device_layout import identify,structural
-        self.program_identity=(structural if getattr(self,'byte_checks',False) else identify)(ap,cp);self.programs_pinned=True
+        self.program_identity=(structural if getattr(self,'byte_checks',False) else identify)(ap,cp,build=build);self.programs_pinned=True
         return self.program_identity
     def confirm_identity(self,runtime):
         if not self.programs_pinned or runtime.get('model_index')!=16:raise ValueError('Pinned programs and actual native model proof are required')
@@ -144,25 +155,28 @@ class Camera:
     def temp_write(self,name,data):
         """Stage a file in camera RAM. Never libJit.so: writing that launches a worker (see _launch)."""
         if name==LAUNCHER:raise ValueError(NOT_STAGING)
-        if self.service_only:raise ValueError('Service-only recovery is read-only; reconnect normal USB identity before new execution')
-        if not self.programs_pinned:raise ValueError('Verify complete source programs before native execution')
-        if self.identity_pending and (name!='lut-runtime-staged.so' or not self._pinned_runtime(data)):
-            raise ValueError('Only the pinned read-only model/runtime probe is allowed before model confirmation')
-        if name not in TEMP_NAMES or not data or len(data)>65536:raise ValueError('Invalid job temporary data')
+        self._ready_for_native(data,runtime_allowed=name=='lut-runtime-staged.so')
+        if name not in TEMP_NAMES or not data or len(data)>STAGING_LIMIT:raise ValueError('Invalid job temporary data')
         self._jiritsu_write(name,data)
     def temp_remove(self,name):
         if name not in TEMP_NAMES:raise ValueError('Unowned temporary name')
         self._jiritsu_remove(name)
     def _pinned_runtime(self,data):
         return firmware.sha(data)==self.core.assets()['files']['runtime.so']
+    def _ready_for_native(self,data,*,runtime_allowed=True):
+        """Refuse staging or launching native code `data` on a service-only session, before the programs
+        are pinned, or before model confirmation unless `runtime_allowed` and `data` is the pinned read-only
+        runtime.so. Shared by temp_write and _launch, which SoundCamera and CheckpointCamera reach through
+        their own staging names: _launch keeps its own call, the only check those subclasses can't skip."""
+        if self.service_only:raise ValueError('Service-only recovery is read-only; reconnect normal USB identity before new execution')
+        if not self.programs_pinned:raise ValueError('Verify complete source programs before native execution')
+        if self.identity_pending and not (runtime_allowed and self._pinned_runtime(data)):
+            raise ValueError('Only the pinned read-only model/runtime probe is allowed before model confirmation')
     def _launch(self,blob):
         """Write libJit.so, which the camera runs at once. Only devicesession.invoke calls this, after
         its firmware gate; before model confirmation only the pinned read-only runtime.so may run."""
-        if self.service_only:raise ValueError('Service-only recovery is read-only; reconnect normal USB identity before new execution')
-        if not self.programs_pinned:raise ValueError('Verify complete source programs before native execution')
-        if self.identity_pending and not self._pinned_runtime(blob):
-            raise ValueError('Only the pinned read-only model/runtime probe is allowed before model confirmation')
-        if not blob or len(blob)>65536:raise ValueError('Invalid native worker')
+        self._ready_for_native(blob)
+        if not blob or len(blob)>STAGING_LIMIT:raise ValueError('Invalid native worker')
         self.link.select('/tmp/jiritsu/'+LAUNCHER);return self.link.jiritsu(16,b'\0\xff\0'+blob)
     # The raw /tmp/jiritsu file commands. Each session class checks its own namespace first.
     def _jiritsu_write(self,name,data):
@@ -173,22 +187,23 @@ class Camera:
     def snapshot(self,memory):return self.link.call(self.link.camera.getBackupPresetData,memory)
     def records(self,raw):return self.core.backup_records(raw)
     def property_read(self,key):return self.link.call(self.link.camera.readBackup,key)
-    def property_write(self,key,value,allowlist):
+    def _before_write(self,what):
+        """The preconditions of every settings or CP write and of saving settings, `what` naming it in the
+        refusal: an identified build, a session that isn't service-only, a confirmed model and pinned
+        programs."""
         self.require_build()
-        if self.service_only:raise ValueError('Service-only recovery cannot write settings')
-        if self.identity_pending or not self.programs_pinned:raise ValueError('Verified model and complete programs required for settings writes')
+        if self.service_only:raise ValueError('Service-only recovery cannot '+what)
+        if self.identity_pending or not self.programs_pinned:raise ValueError('Verified model and complete programs required to '+what)
+    def property_write(self,key,value,allowlist):
+        self._before_write('write settings')
         if key not in allowlist or key>>16!=0x02cf or not value or len(value)>4:raise ValueError('Setting outside selected AP descriptor plan')
         return self.link.call(self.link.camera.writeBackup,key,value)
     def cp_write(self,key,value):
-        self.require_build()
-        if self.service_only:raise ValueError('Service-only recovery cannot write settings')
-        if self.identity_pending or not self.programs_pinned:raise ValueError('Verified model and complete programs required for settings writes')
+        self._before_write('write settings')
         return self.link.cp_write(key,value)
     def save_settings(self,group=0x02cf):
         """Save the AP look group (0x02cf) or the CP colour group (0x02a4) to flash."""
-        self.require_build()
-        if self.service_only:raise ValueError('Service-only recovery cannot save settings')
-        if self.identity_pending or not self.programs_pinned:raise ValueError('Verified model and complete programs required before saving settings')
+        self._before_write('save settings')
         if group not in (0x02cf,0x02a4):raise ValueError('Settings group outside the project scope')
         return self.link.call(self.link.camera.saveBackup,group)
     def mark_unknown(self):self.link.healthy=False;self.healthy=False

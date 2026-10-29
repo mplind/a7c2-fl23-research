@@ -27,15 +27,14 @@ class PortraitJob(DirectJob):
         _,_,portraitstage=vertical_modules()
         try:
             with self.factory() as camera:
-                ap=camera.read('/usr/lib/appFw.so')
-                camera.identify_programs(ap,camera.read('/cp/cpapp-b.bin'))
+                programs=camera.read_programs();ap=programs['appFw.so']
                 # This action edits only the AP reference data and two image
                 # banks. Its native worker checks the actual C2 model index;
                 # the planner checks each edited layout/record byte below.
                 camera.byte_checks=True;camera.programs_pinned=True
                 if camera.identity_pending:
                     from verticaltool.device import prepare_camera
-                    prepare_camera(camera,self)
+                    prepare_camera(camera,self,programs)
                 self.state['identity']=camera.identity
                 # Start a new, current-byte plan. Archive former inert workers;
                 # never replay their request or infer their write outcome.

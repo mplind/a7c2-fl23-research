@@ -30,7 +30,7 @@ class LifecycleTests(unittest.TestCase):
                 target=dict(current);ap=bytearray(current['appFw.so']);ap[3]=marker
                 target['appFw.so']=bytes(ap)
                 return target,[{KEYS[0]:bytes([marker])},{}],None
-            def looks(current,records,*args):return plan(current,records,'look_import')
+            def looks(current,records,*args,**kw):return plan(current,records,'look_import')
             def job(folder,*args,**kw):return SimDirect(folder,factory=camera)
             def run(action,folder,**args):
                 return worker.run(action,dict(workspace=str(work/folder),firmware='2.01',power_confirmed=True,**args),root)

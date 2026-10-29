@@ -1,5 +1,6 @@
 """Prepare a model/version-checked Sony reference locally. Never opens USB."""
 from contextlib import contextmanager
+import hashlib
 import json
 from pathlib import Path
 import shutil
@@ -9,12 +10,12 @@ import tarfile
 import tempfile
 import time
 import uuid
+from looktool.buildprofile import BUILTIN
 from .paths import ROOT, data_root, write_json
 
 MODEL = 0x20030014
 FILES = ('appFw.so', 'cpapp-b.bin', 'CX89700_ALLLANG.bin')
 VENDOR = ROOT / 'src/desktopapp/vendor'
-BUILTIN = 'builtin'
 
 
 def load(folder=None):
@@ -39,9 +40,15 @@ def load(folder=None):
     if values['appFw.so'][:4] != b'\x7fELF' or values['appFw.so'][18:20] != b'\xb7\x00':
         raise ValueError('Original application must be AArch64 ELF')
     try:
-        values['firmware_build'] = buildprofile.identify(values['appFw.so'], values['cpapp-b.bin']).key
+        build = buildprofile.identify(values['appFw.so'], values['cpapp-b.bin'])
     except buildprofile.UnsupportedFirmware:
         raise buildprofile.OtherBuild(buildprofile.REFERENCE_UNSUPPORTED) from None
+    # A full reference is written whole, so it must be the build's stock files exactly: identify alone
+    # admits programs that carry tool changes inside the tool regions.
+    digests = tuple(hashlib.sha256(values[name]).hexdigest() for name in buildprofile.PROGRAMS)
+    if digests != (build.ap_sha256, build.cp_sha256):
+        raise buildprofile.OtherBuild(buildprofile.REFERENCE_UNSUPPORTED)
+    values['firmware_build'] = build.key
     return values
 
 
@@ -127,17 +134,23 @@ def prepare(source, cache=None):
     generation = 'sony-2.01-' + uuid.uuid4().hex[:12]
     folder = cache / generation
     folder.mkdir()
-    with firmware(source) as (cipher, archive):
-        for path, contents in files(archive, FILES):
-            with (folder / path.rsplit('/', 1)[-1]).open('wb') as out:
-                shutil.copyfileobj(contents, out)
-            if all((folder / name).is_file() for name in FILES):
-                break
-    if not all((folder / name).is_file() for name in FILES):
-        raise ValueError('Sony archive lacks required original programs/settings')
-    report = {'model_code': MODEL, 'version': '2.01', 'decoder': cipher,
-              'sizes': {name: (folder / name).stat().st_size for name in FILES}}
-    write_json(folder / 'reference.json', report)
-    load(folder)
+    try:
+        with firmware(source) as (cipher, archive):
+            for path, contents in files(archive, FILES):
+                with (folder / path.rsplit('/', 1)[-1]).open('wb') as out:
+                    shutil.copyfileobj(contents, out)
+                if all((folder / name).is_file() for name in FILES):
+                    break
+        if not all((folder / name).is_file() for name in FILES):
+            raise ValueError('Sony archive lacks required original programs/settings')
+        report = {'model_code': MODEL, 'version': '2.01', 'decoder': cipher,
+                  'sizes': {name: (folder / name).stat().st_size for name in FILES}}
+        write_json(folder / 'reference.json', report)
+        load(folder)
+    except BaseException:
+        # This generation never becomes the reference (current.json still names the earlier one, if
+        # any), so its copies, about 120 MB, go too.
+        shutil.rmtree(folder, ignore_errors=True)
+        raise
     write_json(cache / 'current.json', {'generation': generation})
     return {'cache': str(cache), 'model': 'ILCE-7CM2', 'firmware': '2.01', 'camera_io': False}

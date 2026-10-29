@@ -19,6 +19,10 @@ CONVERTER,CONVERTER_END=0x35287f0,0x3528874
 TABLE_ADD=0x3528828  # every template's `add x0,x0,#table` (template offset 0x38)
 PUBLIC_TABLE_ADD=bytes.fromhex('00f03d91')
 
+def _candidates(build):
+    """The builds an appFw.so-only check may match: `build`, or every supported build when None."""
+    return (build,) if build is not None else buildprofile.BUILDS
+
 def runtime():
     """runtime-v1.json as bundled: written for the public build. Use runtime_for(build) for another."""
     data=json.loads((Path(__file__).resolve().parents[1]/'assets/runtime-v1.json').read_text(encoding='utf-8'))
@@ -75,7 +79,7 @@ def identify_ap(ap,*,build=None):
     build when None."""
     digest=firmware.sha(ap)
     if digest==six.AP_SHA:return {'kind':'legacy-six','mask':63,'label_ids':list(__import__(__package__+'.resources',fromlist=['LABEL_IDS']).LABEL_IDS)}
-    for candidate in ((build,) if build is not None else buildprofile.BUILDS):
+    for candidate in _candidates(build):
         asset=runtime_for(candidate)
         for spec in asset['ap_sources']:
             if len(ap)!=spec['bytes']:continue
@@ -138,7 +142,7 @@ def fl23_previous_values(offset):
 def structural_ap(ap,*,build=None):
     """Recognize actual converter bytes/slot mask, without a file digest, on `build` or on any supported
     build when None."""
-    template=ap[CONVERTER:CONVERTER_END].hex();assets=[runtime_for(b) for b in ((build,) if build is not None else buildprofile.BUILDS)]
+    template=ap[CONVERTER:CONVERTER_END].hex();assets=[runtime_for(b) for b in _candidates(build)]
     base='fl23' if ap[0x4b2ed19:0x4b2ed1b]==b'\x01\x01' else 'stock'
     labels=list(range(0x0200ab2c,0x0200ab32))
     for asset in assets:
@@ -157,7 +161,7 @@ def structural_ap(ap,*,build=None):
     raise ValueError('Custom-slot converter bytes conflict; no writes')
 
 def structural(ap,cp,*,build=None):
-    if build is None:build=buildprofile.identify(ap,cp)
+    build=buildprofile.build_of(ap,cp,build)
     identity=structural_ap(ap,build=build)
     from . import photoio
     photo=photoio.inspect(cp)
@@ -205,7 +209,7 @@ def same_selected_programs(expected,actual,slot):
 
 def identify(ap,cp,*,build=None):
     from . import photoio
-    if build is None:build=buildprofile.identify(ap,cp)
+    build=buildprofile.build_of(ap,cp,build)
     if photoio.present(cp):return structural(ap,cp,build=build)
     a=identify_ap(ap,build=build);c=firmware.sha(cp);asset=runtime_for(build)
     if a['kind']=='legacy-six':
@@ -226,7 +230,7 @@ def identify(ap,cp,*,build=None):
         physical_first_install_tested=False if a['kind']!='legacy-six' else None)
 
 def replace(ap,cp,replacements,*,hash_checks=True,native_photo=None,native_bank=None,transitions=True,build=None):
-    if build is None:build=buildprofile.identify(ap,cp)
+    build=buildprofile.build_of(ap,cp,build)
     identify_current=identify if hash_checks else structural
     identity=identify_current(ap,cp,build=build)
     if not replacements or any(type(s) is not int or s not in range(1,7) for s in replacements):raise ValueError('Select custom slots 1..6')
@@ -292,7 +296,7 @@ def deactivate(ap,cp,slot,raw,*,hash_checks=True,native_bank=None,transitions=Tr
     Mask zero leaves the shared CP runtime dormant. The independent recovery
     tool removes shared programs when the owner wants a full rollback.
     """
-    if build is None:build=buildprofile.identify(ap,cp)
+    build=buildprofile.build_of(ap,cp,build)
     identify_current=identify if hash_checks else structural
     identity=identify_current(ap,cp,build=build)
     if identity['kind']=='legacy-six':raise ValueError('First-activation undo requires the standalone slot layout')

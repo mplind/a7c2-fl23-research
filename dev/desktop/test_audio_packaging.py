@@ -1,6 +1,5 @@
 """Real generated-audio conversion and frozen-build dependency regressions."""
 import ast
-import importlib.util
 from pathlib import Path
 import sys
 import unittest
@@ -9,10 +8,8 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'dev/shutter_sound'))
-spec = importlib.util.spec_from_file_location('desktop_offline_smoke',
-                                            ROOT / 'dev/desktop/offline_smoke.py')
-smoke = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(smoke)
+from guihelpers import offline_smoke  # noqa: E402
+smoke = offline_smoke('desktop_offline_smoke')
 
 
 class AudioPackagingTests(unittest.TestCase):

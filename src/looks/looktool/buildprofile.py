@@ -23,17 +23,22 @@ ASSETS = Path(__file__).resolve().parents[1] / 'assets'
 VERTICAL = Path(__file__).resolve().parents[2] / 'vertical'
 PROGRAMS = ('appFw.so', 'cpapp-b.bin')
 SCHEMA = 'a7c2-factory-regions/1'
+# The name of the built-in factory references (desktopapp.official.load, Factory restore's default):
+# every build's regions file, of which a factory reset takes the camera's own build's.
+BUILTIN = 'builtin'
 PUBLIC_LOOK_TABLE = 0x4c7cf7c
 LOOK_TABLE_BYTES = 12
+# appFw.so .rodata that the body build holds 4 to 16 bytes lower than the public build (translate).
+SHIFTED_RODATA = (0x4ba1744, 0x51a09e4)
 # Refusals, each a Chinese source string with its English in desktopapp/en_engine.py, which the window
 # shows by format. A refusal is raised as a Refusal that carries what it names, and keeps its type into
 # the job's status (error_type), so the window tells a refusal from an unknown result by its type.
-UNSUPPORTED = '此相机的固件版本不受支持，未写入任何内容。（appFw.so %s…，cpapp-b.bin %s…）'
-SAVED_OTHER_BUILD = '所保存的内容来自固件版本 %s，而相机是 %s，未写入任何内容。'
-SAVED_UNIDENTIFIED = '无法确定所保存的内容来自哪个固件版本，未写入任何内容。'
-REFERENCE_OTHER_BUILD = '所选原厂文件是固件版本 %s，而相机是 %s，未写入任何内容。'
-REFERENCE_UNSUPPORTED = '所选原厂文件不是受支持的固件版本，未写入任何内容。'
-JOB_OTHER_BUILD = '此任务记录的固件版本是 %s，而相机现在是 %s，没有核对或写入任何内容。'
+UNSUPPORTED = '此相机的固件编译版本不受支持，未写入任何内容。（appFw.so %s…，cpapp-b.bin %s…）'
+SAVED_OTHER_BUILD = '所保存的内容来自固件编译版本 %s，而相机是 %s，未写入任何内容。'
+SAVED_UNIDENTIFIED = '无法确定所保存的内容来自哪个固件编译版本，未写入任何内容。'
+REFERENCE_OTHER_BUILD = '所选原厂文件是固件编译版本 %s，而相机是 %s，未写入任何内容。'
+REFERENCE_UNSUPPORTED = '所选原厂文件不是受支持的固件编译版本，未写入任何内容。'
+JOB_OTHER_BUILD = '此任务记录的固件编译版本是 %s，而相机现在是 %s，没有核对或写入任何内容。'
 
 
 class Refusal(ValueError):
@@ -230,6 +235,13 @@ def identify(ap, cp):
     raise UnsupportedFirmware(UNSUPPORTED % digests, digests)
 
 
+def build_of(ap, cp, build=None):
+    """`build` when the caller gives one: a job's planners take the build Camera.read_programs identified,
+    and never identify again. A standalone or offline caller gives none, and gets the build appFw.so `ap`
+    and cpapp-b.bin `cp` are (identify, which refuses programs of no supported build)."""
+    return build if build is not None else identify(ap, cp)
+
+
 def saved_build(recorded, programs):
     """The build that saved bytes (a backup, a job's saved windows) were read from. `recorded` is the
     build key stored with them when they were saved. Bytes saved before keys were stored have None, and
@@ -271,9 +283,16 @@ def stock(build, program, offset, size):
 
 
 def translate(offset, build):
-    """Where a public-build appFw.so offset lies in `build`. Only the look table moves: its 12 bytes
-    and its end bound (0x4c7cf7c..0x4c7cf88 inclusive) follow `build.look_table`, so a slice of the
-    table translates whole. Every other address is the same in both builds."""
+    """Where a public-build appFw.so offset lies in `build`. In the body build, .rodata from 0x4ba1744 to
+    the public build's .rodata end sits 4 to 16 bytes lower (SHIFTED_RODATA; test_port_unchanged derives
+    the shifts). The look table there is the one tool address that moves: its 12 bytes and its end bound
+    (0x4c7cf7c..0x4c7cf88 inclusive) follow `build.look_table`, so a slice of the table translates whole.
+    Any other offset in SHIFTED_RODATA raises ValueError, on every build, rather than give a public address
+    for the body: a new tool address there needs its own translation. Every address outside is the same
+    in both builds."""
     if PUBLIC_LOOK_TABLE <= offset <= PUBLIC_LOOK_TABLE + LOOK_TABLE_BYTES:
         return offset - PUBLIC_LOOK_TABLE + build.look_table
+    if SHIFTED_RODATA[0] <= offset < SHIFTED_RODATA[1]:
+        raise ValueError('appFw.so %#x lies in the .rodata the 2.01 builds hold at different addresses; '
+                         'no tool address there except the look table has a translation' % offset)
     return offset

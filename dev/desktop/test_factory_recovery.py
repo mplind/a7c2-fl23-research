@@ -283,9 +283,9 @@ class FactoryRecoveryTests(unittest.TestCase):
         other_build = JOB_OTHER_BUILD % ('public-2.01', 'body-2.01-20250923')
         for error, said, unsaid in (
                 (direct.JobOtherBuild(JOB_OTHER_BUILD, 'public-2.01', 'body-2.01-20250923'),
-                 '上次恢复记录的固件版本是 public-2.01，而相机现在是 body-2.01-20250923。', '通常是之后又安装'),
-                (direct.ContentChanged('Full program readback differs: appFw.so'), '通常是之后又安装', '上次恢复记录的固件版本'),
-                (direct.ContentChanged(other_build), '通常是之后又安装', '上次恢复记录的固件版本')):
+                 '上次恢复记录的固件编译版本是 public-2.01，而相机现在是 body-2.01-20250923。', '通常是之后又安装'),
+                (direct.ContentChanged('Full program readback differs: appFw.so'), '通常是之后又安装', '上次恢复记录的固件编译版本'),
+                (direct.ContentChanged(other_build), '通常是之后又安装', '上次恢复记录的固件编译版本')):
             def refused(root, job, error=error):
                 job.verify_direct.side_effect = error
             printed = io.StringIO()

@@ -32,8 +32,9 @@ class RecoveryTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        # Recovery stores resolved paths; macOS's temp folder is /var/..., a link to /private/var/....
-        self.root = Path(self.temp.name).resolve()
+        # Unresolved on purpose: on macOS the temp folder is /var/..., a link to /private/var/..., and
+        # recovery must cope with that; it stores resolved paths, which the assertions compare.
+        self.root = Path(self.temp.name)
         self.env = patch.dict(os.environ, {'A7C2_DESKTOP_DATA': str(self.root / 'app')})
         self.env.start()
         self.addCleanup(self.env.stop)
@@ -86,7 +87,7 @@ class RecoveryTests(unittest.TestCase):
             def run(self, path, battery, version):
                 with self.factory(BODY) as shared:
                     assert shared is camera
-                    assert Path(path) == original
+                    assert Path(path) == original.resolve()
                     events.append(('restore', battery, version))
                 return {'phase': 'RESTORED_AWAITING_RELOAD'}
 
@@ -96,7 +97,7 @@ class RecoveryTests(unittest.TestCase):
                                        job, factory=connect, rollback_type=Rollback)
         self.assertEqual(events, ['open', ('restore', 100, '2.01'), 'close'])
         self.assertEqual(result['phase'], 'RESTORED_AWAITING_RELOAD')
-        self.assertEqual(json.loads((job / 'recovery-selection.private.json').read_text())['path'], str(original))
+        self.assertEqual(json.loads((job / 'recovery-selection.private.json').read_text())['path'], str(original.resolve()))
 
     def test_no_backup_or_wrong_body_never_restores(self):
         with patch('looktool.checkpointjob.CheckpointCamera') as camera:

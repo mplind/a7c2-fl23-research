@@ -12,13 +12,11 @@ import posixpath
 from pathlib import Path
 import sys
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 import pytest
-from PySide6 import QtWidgets as W
 
 from desktopapp import jobs, worker
-from desktopapp.paths import write_json
 from looktool import (buildprofile, checkpointjob, checkpointworker, devicejob, devicesession, direct,
                       namespause, nameworker, portraitjob, runtimebindings)
 from looktool.buildprofile import UnsupportedFirmware
@@ -31,7 +29,6 @@ import candidate  # noqa: E402
 import trial  # noqa: E402
 from verticaltool import device as vertical, portraitstage  # noqa: E402
 
-from guihelpers import HAN_OR_PUNCTUATION, stopped_banner  # noqa: E402
 from simbuild import PUBLIC, identified as identified_as  # noqa: E402
 
 AP, CP = '/usr/lib/appFw.so', '/cp/cpapp-b.bin'
@@ -430,7 +427,7 @@ def test_direct_fl23_on_an_unknown_build_writes_nothing(tmp_path):
 
 # Read-only actions stay available on any build.
 
-def test_connect_needs_no_identification(tmp_path):
+def test_connect_only_reads_on_a_camera_of_no_supported_build(tmp_path):
     camera = unidentified(GateCamera)
     with patch.object(devicesession, 'Camera', lambda *args, **kwargs: camera):
         result = worker.run('connect', {}, tmp_path)
@@ -480,37 +477,6 @@ def test_read_only_launches_need_no_identification(launch, tmp_path):
     assert {call[0] for call in camera.link.writes()} <= {'jiritsu16', 'jiritsu18'}
     assert all(path.startswith('/tmp/jiritsu/') for _, path in camera.link.writes())
     assert not [path for path in camera.link.files if path.startswith('/tmp/jiritsu/')]
-
-
-# The refusal reads as plain text in the English interface.
-
-def finish_failed_job(window, folder, error):
-    job = folder / 'runs' / 'failed-job'
-    job.mkdir(parents=True)
-    write_json(job / 'status.private.json', dict(phase='FAILED', action='direct_fl23_enable', error=error))
-    window.current_job, window.process = job, Mock()
-    with patch.object(W.QMessageBox, 'information'), patch.object(W.QMessageBox, 'warning'):
-        window.finished(2, None)
-    return window.status.text()
-
-
-UNSUPPORTED_ERROR = buildprofile.UNSUPPORTED % ('2ea02f7ecbc5bb91', 'f5a477588698ef96')
-
-
-@pytest.mark.parametrize('refused,english', [
-    ('unsupported', "This camera's firmware build isn't supported. Nothing was written. "
-                    "(appFw.so 2ea02f7ecbc5bb91…, cpapp-b.bin f5a477588698ef96…)"),
-    ('unidentified', "This camera's firmware build hasn't been identified, so nothing was written.")])
-def test_firmware_refusals_are_shown_in_english(window, tmp_path, refused, english):
-    error = UNSUPPORTED_ERROR if refused == 'unsupported' else devicesession.UNIDENTIFIED
-    text = finish_failed_job(window(language='en'), tmp_path, error)
-    assert text == stopped_banner(english)
-    assert not HAN_OR_PUNCTUATION.search(text)
-
-
-def test_firmware_refusal_stays_verbatim_in_chinese(window, tmp_path):
-    text = finish_failed_job(window(), tmp_path, UNSUPPORTED_ERROR)
-    assert text == '操作停止：' + UNSUPPORTED_ERROR + '。请导出诊断包。'
 
 
 # R7: the legacy FL2/FL3 actions wrote through transport.Session directly; the desktop can no
@@ -769,3 +735,69 @@ def test_launch_before_model_confirmation_runs_only_the_pinned_runtime_probe():
     assert camera.link.writes() == []
     camera._launch(runtime)
     assert camera.link.writes() == [('jiritsu16', '/tmp/jiritsu/' + devicesession.LAUNCHER)]
+
+
+# One copy of each precondition (M10) -------------------------------------------------------------
+
+def devicesession_methods():
+    tree = ast.parse((ROOT / 'src/looks/looktool/devicesession.py').read_text(encoding='utf-8'))
+    camera = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == 'Camera')
+    return {node.name: node for node in camera.body if isinstance(node, ast.FunctionDef)}
+
+
+def calls(function, name):
+    return [node for node in ast.walk(function) if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute) and node.func.attr == name]
+
+
+def test_every_settings_write_and_save_checks_one_set_of_preconditions():
+    methods = devicesession_methods()
+    for name in ('property_write', 'cp_write', 'save_settings'):
+        assert len(calls(methods[name], '_before_write')) == 1, name
+        assert not calls(methods[name], 'require_build'), name  # inside _before_write
+    for name in ('temp_write', '_launch'):
+        assert len(calls(methods[name], '_ready_for_native')) == 1, name
+
+
+@pytest.mark.parametrize('state, refused', [
+    (dict(service_only=True), 'Service-only recovery'),
+    (dict(programs_pinned=False), 'Verified model and complete programs'),
+    (dict(identity_pending=True), 'Verified model and complete programs'),
+])
+def test_settings_writes_and_saves_refuse_alike(state, refused):
+    for write in (lambda camera: camera.property_write(0x02cf0001, b'\0', {0x02cf0001}),
+                  lambda camera: camera.cp_write(0x02a40001, b'\0'), lambda camera: camera.save_settings()):
+        camera = identified(GateCamera)
+        for attribute, value in state.items():
+            setattr(camera, attribute, value)
+        with pytest.raises(ValueError, match=refused):
+            write(camera)
+        assert camera.link.writes() == []
+
+
+@pytest.mark.parametrize('state, refused', [
+    (dict(service_only=True), 'Service-only recovery is read-only'),
+    (dict(programs_pinned=False), 'Verify complete source programs'),
+    (dict(identity_pending=True), 'Only the pinned read-only model/runtime probe'),
+])
+def test_staging_and_the_launch_refuse_alike(state, refused):
+    for start in (lambda camera: camera.temp_write('lut-program-staged.so', b'\x7fELF worker'),
+                  lambda camera: camera._launch(b'\x7fELF worker')):
+        camera = identified(GateCamera)
+        camera.core.assets = lambda: {'files': {'runtime.so': '0' * 64}}
+        for attribute, value in state.items():
+            setattr(camera, attribute, value)
+        with pytest.raises(ValueError, match=refused):
+            start(camera)
+        assert camera.link.writes() == []
+
+
+def test_the_staging_limit_is_one_constant():
+    assert devicesession.STAGING_LIMIT == 65536
+    for relative in ('src/looks/looktool/devicesession.py', 'src/looks/looktool/checkpointjob.py',
+                     'src/shutter_sound/trial.py', 'src/looks/looktool/nativebuild.py'):
+        literals = [node.lineno for node in ast.walk(ast.parse((ROOT / relative).read_text(encoding='utf-8')))
+                    if isinstance(node, ast.Constant) and node.value == 65536]
+        assert literals == ([] if relative != 'src/looks/looktool/nativebuild.py' else literals[:1]), relative
+    nativebuild = (ROOT / 'src/looks/looktool/nativebuild.py').read_text(encoding='utf-8')
+    assert 'STAGING_LIMIT=65536' in nativebuild.replace(' ', '')

@@ -52,7 +52,7 @@ WRITE_TARGETS = {'vertical_enable': '竖屏显示＋Fn／子菜单线框修正',
 # regions this tool manages back to stock before it compares (buildprofile.identify), so another tool's
 # change inside them goes unseen, as compat.WARNING says too.
 WRITE_CHECKS = ('\n请确认电量至少 50%。本工具无法读取电量；点击“写入相机”即表示已确认。\n'
-                '写入前，本工具会核对相机是 ILCE-7CM2，且本工具管理区域以外的程序与受支持的 2.01 固件版本一致，不符合时停止。\n'
+                '写入前，本工具会核对相机是 ILCE-7CM2，且本工具管理区域以外的程序与受支持的 2.01 固件编译版本一致，不符合时停止。\n'
                 '其他工具在本工具管理区域内所做的修改无法检测，可能与本工具冲突。\n'
                 '在完整读回结束前，保持相机开机并连接 USB，不要关机或拔线。')
 # Sidebar: (section title shown above the first page of a section, page label, icon).
@@ -566,11 +566,11 @@ class Window(W.QMainWindow):
         if mac:
             self.act(group, tr('推出选中的相机存储卷'), tr('在建立服务连接前推出上方选择的存储卷。'), tr('推出'), 'mac_unmount',
                      lambda: {'volume': self.text('mac_volume')})
-        self.act(group, tr('测试服务连接（不写固件）'), tr('连接后读取固件版本，然后断开，不写入任何内容。'), tr('测试'), 'connect')
+        self.act(group, tr('测试服务连接（不写固件）'), tr('切换到服务连接，读取相机程序文件以识别固件编译版本，然后切回，不写入任何内容。约需一到两分钟。'), tr('测试'), 'connect')
         # What the last connection test found; show_firmware_build keeps it up to date.
         self.build_label = shell.text_label(tr('尚未检测'))
         self.build_label.setObjectName('firmware_build')
-        group.add(shell.ActionRow(tr('相机固件版本'), self.build_label))
+        group.add(shell.ActionRow(tr('相机固件编译版本'), self.build_label))
         self.act(group, tr('检测 USB 连接稳定性（只读）'), tr('反复读取相同文件以检测线缆和接口，只读。'), tr('检查'), 'usb_stability')
         if sys.platform == 'win32':
             self.act(group, tr('卸载相机驱动，恢复 Windows 默认连接'), tr('备份并移除第三方驱动，让 Windows 重新识别相机。'), tr('卸载…'),
@@ -579,11 +579,12 @@ class Window(W.QMainWindow):
         layout.addStretch()
 
     def recovery_page(self):
+        from looktool.buildprofile import BUILTIN
         layout = self.page(tr('恢复原厂功能'), tr('已内置本项目修改区域的原厂 2.01 基准。移除已支持的项目修改，六个自订栏位设为 ST 默认，保留机身校准。无需旧备份或下载完整固件；旧配方不找回。'))
         group = shell.section(layout, tr('原厂 2.01 功能'))
         self.factory_status=shell.text_label(tr('恢复写入后必须按弹窗重启，再接回核对；核对通过前不会标记恢复完成。'), 'callout')
         self.factory_button=self.action_button(tr('恢复／继续恢复原厂 2.01 功能（无需旧备份）'), 'direct_factory_reset',
-                    lambda: self.direct_args('factory', mode='factory_reset', factory='builtin'), primary=True)
+                    lambda: self.direct_args('factory', mode='factory_reset', factory=BUILTIN), primary=True)
         self.factory_start_text=self.factory_button.text()
         group.add(shell.ActionRow(tr('移除本工具的修改，六个自订栏位恢复为 ST'), self.factory_status, [self.factory_button]))
         self.factory_accept = self.reload_controls(group, tr('取景、拍照和回放正常'))
@@ -1476,7 +1477,7 @@ class Window(W.QMainWindow):
         English interface, the error gives its own next step already (en_engine.NEXT_STEP), such as a click or
         a cold restart. NEXT_STEP holds English next steps, so Chinese keeps the suffix on every error. A
         worker that quit without a status has an unknown result, so it always gets the suffix."""
-        stopped = tr('操作停止：') + (self.error_text(status) if 'error' in status else tr('进程异常退出，退出码 ') + str(code))
+        stopped = tr('操作停止：') + (self.error_text(status) if 'error' in status else tr('进程异常退出，结果未知；查看日志前不要重复此操作。退出码 ') + str(code))
         if i18n.language() == 'en' and 'error' in status and catalogue_entry(status['error']) in NEXT_STEP:
             return joined(stopped, tr('。'))
         return joined(stopped, tr('。请导出诊断包。'))
@@ -1487,7 +1488,7 @@ class Window(W.QMainWindow):
         every button that writes to the camera, until a later test finds a supported one."""
         from looktool.buildprofile import by_key
         build = by_key(key) if key else None
-        self.set_build_line(tr(build.label_zh) if build else tr('固件版本不受支持：已禁用更改'), unsupported=build is None)
+        self.set_build_line(tr(build.label_zh) if build else tr('固件编译版本不受支持：已停用会更改相机固件的按钮，本工具也会拒绝此类更改；未写入任何内容。'), unsupported=build is None)
 
     def show_firmware_unchecked(self):
         """The Connection page's line as at launch: no build checked yet. As before any test, the write

@@ -25,13 +25,12 @@ from looktool import buildprofile, checkpoint, checkpointworker
 from looktool.buildprofile import BUILDS
 import test_checkpoint as simulated
 from test_checkpoint import Camera, KEYS, SimRollback, fake_compile, values
-from test_language import finish_failed_job
-from guihelpers import HAN_OR_PUNCTUATION, stopped_banner
-from simbuild import CarriesBuild, saved_as
+from guihelpers import HAN_OR_PUNCTUATION
+from simbuild import saved_as
+from soundbench import STOCK, SoundBench
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'src/shutter_sound'))
 import boot_trial  # noqa: E402
-import trial  # noqa: E402
 
 PUBLIC, BODY = BUILDS
 PROGRAMS = ('appFw.so', 'cpapp-b.bin')
@@ -226,100 +225,15 @@ def test_a_recorded_build_is_taken_as_recorded():
 
 # Shutter-sound Save jobs -----------------------------------------------------------------------
 
-IDENTITY = {'model': 'ILCE-7CM2', 'serial_sha256': 'synthetic'}
-STOCK = {'/usr/lib/appFw.so': b'original-unrelated', '/cp/cpapp-b.bin': b'unchanged CP'}
 SAVED_PROGRAMS = {'appFw.so': STOCK['/usr/lib/appFw.so'], 'cpapp-b.bin': STOCK['/cp/cpapp-b.bin']}
 
 
-class SoundCamera(CarriesBuild):
-    core = None
-
-    def __init__(self, files, build):
-        self.files, self.carries = files, build
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *args):
-        pass
-
-    def read(self, path, missing=False):
-        return self.files.get(path) if missing else self.files[path]
-
-    def snapshot(self, memory):
-        return b'unchanged settings'
-
-    def records(self, raw):
-        return raw
-
-
 @pytest.fixture
-def bench(tmp_path):
-    """boot_trial's install and restore with every native step simulated (as test_boot_trial.py does):
-    yields (files, events, connect), where connect(build) opens a camera playing `build`."""
-    files, events = dict(STOCK), []
-
-    def connect(build):
-        def factory(expected):
-            assert expected == IDENTITY
-            events.append('connect')
-            return SoundCamera(files, build)
-        return factory
-
-    def prepare(ap, cp, value, output, zig, *, build):
-        root = Path(output)
-        root.mkdir()
-        (root / 'audio').write_bytes(value)
-        (root / 'csv').write_bytes(b'private CSV')
-        return {'appFw.so': b'modified' + ap[8:], 'cpapp-b.bin': cp}, {
-            'windows': [{'offset': 0, 'before_hex': b'original'.hex(), 'after_hex': b'modified'.hex()}],
-            'program': {'path': 'forward', 'windows': 1, 'sizes': [len(ap), len(cp)]},
-            'files': 'fileworker', 'probe': 'probe', 'wbi': 'wbi',
-            'audio': str(root / 'audio'), 'csv': str(root / 'csv')}
-
-    def invoke_files(camera, root, state, worker_path, mode):
-        events.append(('files', mode))
-        if mode == 1:
-            for path, name in zip(boot_trial.PATHS, ('audio', 'csv')):
-                files[path] = Path(state['components'][name]).read_bytes()
-        elif mode == 2:
-            for path in boot_trial.PATHS:
-                del files[path]
-        return {'native_success': True}
-
-    def run_native(camera, root, state, blob, kind, mode=0, plan=None):
-        events.append((kind, mode, str(blob)))
-        if kind == 'program' and mode == 1:
-            prefix = b'original' if str(blob) == 'reverse' else b'modified'
-            files['/usr/lib/appFw.so'] = prefix + files['/usr/lib/appFw.so'][8:]
-        return {}
-
-    def probe(camera, root, state, components):
-        events.append('probe')
-        return {'image_mode': '0'}
-
-    def reverse_worker(ap, cp, edits, output, zig):
-        return {'path': 'reverse', 'windows': 1, 'sizes': [len(ap), len(cp)]}
-
-    with patch.object(boot_trial, 'prepare', prepare), patch.object(boot_trial, 'invoke_files', invoke_files), \
-         patch.object(boot_trial, 'probe', probe), patch.object(boot_trial, 'program_worker', reverse_worker), \
-         patch.object(boot_trial, 'require_dependencies'), patch.object(trial, 'run_native', run_native), \
-         patch('looktool.devicesettings.compare'):
-        yield files, events, connect
-
-
-def install(folder, connect, build):
-    """A completed shutter-sound Save on a camera playing `build`; the job folder."""
-    native, audio, job = folder / 'native', folder / 'audio', folder / 'job'
-    folder.mkdir(parents=True, exist_ok=True)
-    payload = bytes(64)
-    for path, value in ((native, {'identity': IDENTITY}),
-                        (audio, {'identity': IDENTITY, 'wire_format': 0, 'owner_audio_correct': True})):
-        path.mkdir()
-        (path / 'job.private.json').write_text(json.dumps(value))
-    (audio / 'payload.private.bin').write_bytes(payload)
-    boot_trial.install(job, folder / 'backup2', native, audio, payload, 100, camera_factory=connect(build))
-    return job
+def bench():
+    """boot_trial's Save and Restore with every native step simulated (soundbench, shared with
+    dev/shutter_sound/tests/test_boot_trial.py)."""
+    with SoundBench() as sound:
+        yield sound
 
 
 def job_state(job):
@@ -335,64 +249,92 @@ def forget_build(job):
 
 @pytest.mark.parametrize('build', BUILDS, ids=[build.key for build in BUILDS])
 def test_sound_jobs_record_their_build(tmp_path, bench, build):
-    _, _, connect = bench
-    job = install(tmp_path, connect, build)
+    job = bench.install(tmp_path, build)
     assert job_state(job)['firmware_build'] == build.key
     with zipfile.ZipFile(job / 'before.private.zip') as saved:
         assert {name: saved.read(name) for name in PROGRAMS} == SAVED_PROGRAMS
 
 
 def test_a_public_sound_job_is_refused_on_a_body_camera_before_any_write(tmp_path, bench):
-    files, events, connect = bench
-    job = install(tmp_path, connect, PUBLIC)
-    events.clear()
-    before = dict(files)
+    job = bench.install(tmp_path, PUBLIC)
+    bench.events.clear()
+    before = dict(bench.files)
     with pytest.raises(buildprofile.OtherBuild) as error:
-        boot_trial.restore(job, camera_factory=connect(BODY))
+        boot_trial.restore(job, camera_factory=bench.connect(BODY))
     assert str(error.value) == buildprofile.SAVED_OTHER_BUILD % (PUBLIC.key, BODY.key)
-    assert events == ['connect'] and files == before
+    assert bench.events == ['connect'] and bench.files == before
 
 
 @pytest.mark.parametrize('build', BUILDS, ids=[build.key for build in BUILDS])
 def test_a_same_build_sound_job_restores(tmp_path, bench, build):
-    files, events, connect = bench
-    job = install(tmp_path, connect, build)
-    assert boot_trial.restore(job, camera_factory=connect(build))['phase'] == 'restored_cold_test_pending'
-    assert files == STOCK
+    job = bench.install(tmp_path, build)
+    assert boot_trial.restore(job, camera_factory=bench.connect(build))['phase'] == 'restored_cold_test_pending'
+    assert bench.files == STOCK
 
 
 def test_an_old_sound_job_is_identified_from_its_saved_programs(tmp_path, bench):
-    files, events, connect = bench
-    job = install(tmp_path / 'body', connect, BODY)
+    job = bench.install(tmp_path / 'body', BODY)
     forget_build(job)
     with saved_as(BODY, SAVED_PROGRAMS) as identify:
-        assert boot_trial.restore(job, camera_factory=connect(BODY))['phase'] == 'restored_cold_test_pending'
+        assert boot_trial.restore(job, camera_factory=bench.connect(BODY))['phase'] == 'restored_cold_test_pending'
     identify.assert_called_once_with(*SAVED_PROGRAMS.values())
-    assert files == STOCK
-    job = install(tmp_path / 'public', connect, BODY)
+    assert bench.files == STOCK
+    job = bench.install(tmp_path / 'public', BODY)
     forget_build(job)
-    events.clear()
-    before = dict(files)
+    bench.events.clear()
+    before = dict(bench.files)
     with saved_as(BODY, SAVED_PROGRAMS), pytest.raises(buildprofile.OtherBuild) as error:
-        boot_trial.restore(job, camera_factory=connect(PUBLIC))
+        boot_trial.restore(job, camera_factory=bench.connect(PUBLIC))
     assert str(error.value) == buildprofile.SAVED_OTHER_BUILD % (BODY.key, PUBLIC.key)
-    assert events == ['connect'] and files == before
+    assert bench.events == ['connect'] and bench.files == before
+
+
+def legacy_job(tmp_path, bench):
+    """A Save job from before jobs recorded their build, whose saved copy holds no programs (a
+    sound-resource replacement): no build can be named for it."""
+    job = bench.install(tmp_path, BODY)
+    forget_build(job)
+    with zipfile.ZipFile(job / 'before.private.zip', 'w') as saved:
+        saved.writestr('custom.txt', b'previous CSV')
+    bench.events.clear()
+    return job
 
 
 def test_an_old_sound_job_of_no_identifiable_build_is_refused_unopened(tmp_path, bench):
-    files, events, connect = bench
-    job = install(tmp_path, connect, BODY)
+    job = bench.install(tmp_path, BODY)
     forget_build(job)
-    events.clear()
-    phase = job_state(job)['phase']
+    bench.events.clear()
     with pytest.raises(buildprofile.OtherBuild, match=buildprofile.SAVED_UNIDENTIFIED):
-        boot_trial.restore(job, camera_factory=connect(BODY))    # stand-ins identify as no build
-    # A job whose saved copy holds no programs (a sound-resource replacement) can't be identified either.
-    with zipfile.ZipFile(job / 'before.private.zip', 'w') as saved:
-        saved.writestr('custom.txt', b'previous CSV')
+        boot_trial.restore(job, camera_factory=bench.connect(BODY))    # stand-ins identify as no build
+    assert bench.events == []
+    job = legacy_job(tmp_path / 'resources-only', bench)
     with saved_as(BODY, SAVED_PROGRAMS), pytest.raises(buildprofile.OtherBuild, match=buildprofile.SAVED_UNIDENTIFIED):
-        boot_trial.restore(job, camera_factory=connect(BODY))
-    assert events == [] and job_state(job)['phase'] == phase
+        boot_trial.restore(job, camera_factory=bench.connect(BODY))
+    assert bench.events == []
+
+
+def test_an_old_sound_job_of_no_identifiable_build_is_retired_with_a_next_step(tmp_path, bench, capsys):
+    # B1 (RESTORE-SOUND-LEGACY): such a job can never restore, so restore-sound must not pick it again
+    # and again; it is retired, and the user is told what to do instead.
+    import sound_cli
+    job = legacy_job(tmp_path, bench)
+    phase = job_state(job)['phase']
+    assert sound_cli.restorable_install(tmp_path, {'boot_job': str(job)}) == job
+    with pytest.raises(buildprofile.OtherBuild, match=buildprofile.SAVED_UNIDENTIFIED):
+        boot_trial.restore(job, camera_factory=bench.connect(BODY))
+    state = job_state(job)
+    assert (state['phase'], state['retired_from']) == ('retired_build_unknown', phase)
+    assert sound_cli.restorable_install(tmp_path, {'boot_job': str(job)}) is None
+    assert boot_trial.RETIRED_UNKNOWN_BUILD in capsys.readouterr().out
+    assert bench.events == []
+    with pytest.raises(ValueError, match='Inspect the original job'):  # never tried again
+        boot_trial.restore(job, camera_factory=bench.connect(BODY))
+
+
+def test_the_retired_job_next_step_reads_in_english():
+    from desktopapp.engine_text import translate_text
+    shown = translate_text(boot_trial.RETIRED_UNKNOWN_BUILD)
+    assert not HAN_OR_PUNCTUATION.search(shown) and 'Restore' in shown
 
 
 def test_an_old_sound_job_holding_real_programs_identifies_their_build(build_fixtures, tmp_path):
@@ -410,22 +352,3 @@ def test_an_old_sound_job_holding_real_programs_identifies_their_build(build_fix
         else:
             assert boot_trial.saved_build(root, {'phase': 'installed_cold_test_pending'}) is build
 
-
-# The refusals, in English ----------------------------------------------------------------------
-
-@pytest.mark.parametrize('template, values, english', [
-    ('SAVED_OTHER_BUILD', ('public-2.01', 'body-2.01-20250923'),
-     'The saved bytes come from firmware build public-2.01, but the camera is body-2.01-20250923. Nothing was written.'),
-    ('SAVED_UNIDENTIFIED', (), "The firmware build of the saved bytes can't be identified, so nothing was written."),
-])
-def test_saved_bytes_refusals_are_shown_in_english(window, tmp_path, template, values, english):
-    error = getattr(buildprofile, template) % values if values else getattr(buildprofile, template)
-    text = finish_failed_job(window(language='en'), tmp_path, error)
-    assert text == stopped_banner(english)
-    assert not HAN_OR_PUNCTUATION.search(text)
-
-
-def test_the_refusals_stay_verbatim_in_chinese(window, tmp_path):
-    # The refusal ends its sentence, so the banner adds no second full stop.
-    error = buildprofile.SAVED_OTHER_BUILD % (PUBLIC.key, BODY.key)
-    assert finish_failed_job(window(), tmp_path, error) == '操作停止：' + error + '请导出诊断包。'

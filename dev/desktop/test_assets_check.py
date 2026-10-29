@@ -6,6 +6,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'dev/desktop'))
 import assets_check
+from guihelpers import offline_smoke
 
 
 def tree(tmp_path, *, presets=True, film=True, sounds=True):
@@ -46,9 +47,7 @@ def test_the_spec_uses_the_check():
 
 
 def test_the_packaged_self_test_imports_every_new_module_and_loads_the_film_library(monkeypatch, tmp_path):
-    import importlib.util
-    spec = importlib.util.spec_from_file_location('offline_smoke_under_test', ROOT / 'dev/desktop/offline_smoke.py')
-    smoke = importlib.util.module_from_spec(spec); spec.loader.exec_module(smoke)
+    smoke = offline_smoke()
     library = ROOT / 'desktop-assets/film-looks-v1'
     if library.is_dir():
         assert smoke.check_feature_modules()['film_looks'] >= 1
@@ -65,9 +64,8 @@ def test_the_packaged_self_test_imports_every_new_module_and_loads_the_film_libr
 
 
 def test_the_packaged_self_test_imports_the_window_and_its_chrome(monkeypatch):
-    import importlib, importlib.util
-    spec = importlib.util.spec_from_file_location('offline_smoke_imports', ROOT / 'dev/desktop/offline_smoke.py')
-    smoke = importlib.util.module_from_spec(spec); spec.loader.exec_module(smoke)
+    import importlib
+    smoke = offline_smoke('offline_smoke_imports')
     imported = []
     real = importlib.import_module
     monkeypatch.setattr(smoke.importlib, 'import_module', lambda name, *a: imported.append(name) or real(name, *a))
@@ -77,13 +75,6 @@ def test_the_packaged_self_test_imports_the_window_and_its_chrome(monkeypatch):
         pass  # a checkout without the bundled libraries still imports everything first
     for name in ('desktopapp.theme', 'desktopapp.shell', 'desktopapp.window'):
         assert name in imported
-
-
-def offline_smoke():
-    import importlib.util
-    spec = importlib.util.spec_from_file_location('offline_smoke_regions', ROOT / 'dev/desktop/offline_smoke.py')
-    smoke = importlib.util.module_from_spec(spec); spec.loader.exec_module(smoke)
-    return smoke
 
 
 def test_the_packaged_self_test_loads_every_builds_identity_regions():

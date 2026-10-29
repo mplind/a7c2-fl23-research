@@ -73,9 +73,10 @@ def patch_program(original,chip,reverse=False):
 
 
 def runtime_spans(build):
-    """RUNTIME_SPANS in `build`'s own appFw.so addresses. runtime.so reads its compiled offsets on
-    every camera, so a build that moves any byte of a span is refused rather than checked at the
-    wrong bytes."""
+    """RUNTIME_SPANS, which must be the same addresses in `build`. runtime.so reads its compiled offsets
+    on every camera, so a span translate() moves (the look table) is refused rather than checked at the
+    wrong bytes, and one in the .rodata the builds hold at different addresses makes translate() raise.
+    Spans outside what translate() models are not checked here."""
     from looktool.buildprofile import translate
     for at,n in RUNTIME_SPANS:
         moved=[offset for offset in range(at,at+n) if translate(offset,build)!=offset]

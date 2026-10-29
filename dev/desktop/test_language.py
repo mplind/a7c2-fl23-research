@@ -8,7 +8,7 @@ import json
 import os
 from pathlib import Path
 import re
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 import pytest
@@ -18,7 +18,7 @@ from desktopapp.en import STRINGS
 from desktopapp.paths import write_json
 from desktopapp.window import Window
 
-from guihelpers import HAN_OR_PUNCTUATION  # noqa: E402
+from guihelpers import HAN_OR_PUNCTUATION, finish_failed_job  # noqa: E402
 
 
 @pytest.fixture
@@ -166,15 +166,6 @@ def test_safety_guides_and_completion_are_english_without_translating_user_names
     assert '至少等待 1 分钟' in reloadguide.text()
 
 
-def finish_failed_job(window, root, error):
-    job = root / 'runs' / 'failed-job'; job.mkdir(parents=True)
-    write_json(job / 'status.private.json', dict(phase='FAILED', action='direct_verify', error=error))
-    window.current_job, window.process = job, Mock()
-    with patch.object(W.QMessageBox, 'information'), patch.object(W.QMessageBox, 'warning'):
-        window.finished(2, None)
-    return window.status.text()
-
-
 @pytest.mark.parametrize('error,english', [
     ('管理员进程意外结束，相机操作结果未知。请导出诊断包，不要重复刚才的操作。', 'result is unknown'),
     ('终端授权未完成（窗口已关闭或密码不正确）；本次相机操作尚未开始，可重新点击原按钮。', 'never started'),
@@ -182,14 +173,14 @@ def finish_failed_job(window, root, error):
 ])
 def test_safety_critical_worker_errors_are_shown_in_english(ui, error, english):
     create, _, root = ui
-    text = finish_failed_job(create(), root, error)
+    text = finish_failed_job(create(), error, 'direct_verify')
     assert text.startswith('Stopped: ') and english in text
     assert not HAN_OR_PUNCTUATION.search(text)
 
 
 def test_other_worker_errors_are_shown_verbatim_inside_the_english_frame(ui):
     create, _, root = ui
-    text = finish_failed_job(create(), root, '读取 appFw.so 失败：0x3528804')
+    text = finish_failed_job(create(), '读取 appFw.so 失败：0x3528804', 'direct_verify')
     assert text == 'Stopped: 读取 appFw.so 失败：0x3528804. Export diagnostics to report it.'
 
 
@@ -268,8 +259,10 @@ def test_every_label_the_english_copy_quotes_is_on_screen(window):
                                         '重启后核对并完成恢复')}
     # The verbs of the write confirmations (shell.ask): window.py's write and the recipe review.
     labels |= {i18n.tr('写入相机'), i18n.tr('写入配方')}
-    # Prose names a button without the ellipsis its label ends with ("Continue installation").
+    # Prose names a button without the ellipsis its label ends with ("Continue installation"), or without
+    # the note in brackets that ends it ("Show saved summary").
     labels |= {label.removesuffix('…') for label in labels}
+    labels |= {re.sub(r' \([^)]*\)$', '', label) for label in labels}
     from desktopapp.en_engine import ENGINE  # the log and the banner quote labels too
     quoted = {text for english in list(STRINGS.values()) + list(ENGINE.values())
               for text in re.findall(r'"([^"]+)"', english)}

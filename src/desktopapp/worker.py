@@ -34,15 +34,14 @@ def connection_build(camera):
     build. Only reads: the two program files are read and identified, nothing is staged or written. An
     unsupported camera is a result, not an error: the connection test still succeeds, and every write
     primitive refuses that camera."""
-    from looktool import checkpoint
     from looktool.buildprofile import UnsupportedFirmware
-    print('读取相机程序文件以识别固件版本（只读）。', flush=True)
-    programs = {name: camera.read(path) for name, path in checkpoint.PROGRAM_PATHS.items()}
+    print('读取相机程序文件以识别固件编译版本（只读）。', flush=True)
     try:
-        return camera.identify_programs(programs['appFw.so'], programs['cpapp-b.bin']).key
+        camera.read_programs()
     except UnsupportedFirmware as refusal:
         print(refusal, flush=True)
         return None
+    return camera.require_build().key
 
 
 def run(action, args, job):
@@ -106,10 +105,11 @@ def run(action, args, job):
         if not args.get('workspace'):
             raise ValueError('先完成一次本页操作，再核对重新加载状态。')
         obj = DirectJob(Path(args['workspace']))
-        # official.load('builtin') holds every build's built-in regions; the planner takes the camera's
+        # official.load(BUILTIN) holds every build's built-in regions; the planner takes the camera's
         # own after its programs are identified. A full Sony reference records its own build, and is
         # refused on a camera of another. A factory job records its build, and verify reloads it.
-        reference, reference_path = None, args.get('factory') or 'builtin'
+        from looktool.buildprofile import BUILTIN
+        reference, reference_path = None, args.get('factory') or BUILTIN
         if mode == 'factory_reset':
             from looktool.factoryrecover import pending
             found = pending(data_root() / 'work', args.get('failed_workspace'))
@@ -172,7 +172,7 @@ def run(action, args, job):
                     # Read-only verification found other bytes, e.g. features installed again after that
                     # restore, or the job was for another firmware build: re-plan, don't loop. Say which.
                     if isinstance(exc, JobOtherBuild):
-                        print('上次恢复记录的固件版本是 %s，而相机现在是 %s。旧记录保留；按相机当前的固件版本和字节'
+                        print('上次恢复记录的固件编译版本是 %s，而相机现在是 %s。旧记录保留；按相机当前的固件编译版本和字节'
                               '重新生成原厂恢复计划。' % (exc.recorded, exc.camera), flush=True)
                     else:
                         print('相机内容已与上次恢复结果不同（%s），通常是之后又安装或修改过功能。旧记录保留；'
@@ -242,10 +242,14 @@ def run(action, args, job):
             return drivers.prepare(job)
         return drivers.unmount_camera_volume(args['volume'])
     if action == 'connect':
+        # The Test button identifies the build (about a minute of reading); a recheck that only needs the
+        # connection (the one-click DRIVERS step) passes identify=False and reads nothing.
         from looktool.devicesession import Camera
         with Camera() as camera:
-            return {'model': camera.identity['model'], 'service_connected': True,
-                    'firmware_programs_written': False, 'firmware_build': connection_build(camera)}
+            result = {'model': camera.identity['model'], 'service_connected': True, 'firmware_programs_written': False}
+            if args.get('identify', True):
+                result['firmware_build'] = connection_build(camera)
+            return result
     if action=='usb_stability':
         from .usbcheck import run as check_usb
         return check_usb(job)

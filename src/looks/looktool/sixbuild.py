@@ -55,6 +55,12 @@ def helper(asm):
  blob[0xc8:0xc8+len(availability)]=availability
  return bytes(blob)
 
+def spans():
+    """{program: [(offset, size), …]}: every span build() writes, its transition regions."""
+    return {'appFw.so':[(0x3528804,112)]+[(0x4b4a564+i*8,4) for i in range(10,16)]+[(0x59896f0+i*0xb8,4) for i in range(6)],
+        'cpapp-b.bin':[(TABLE_FILE,3661),(TABLE_FILE+3661,3661),(0xb27490,256),(CHECKER-0x108000,160),(0x148e5e,4),(0x149e14,4),
+                      (0x1354d2,2),(0x1354e2,2),(0x1358c8,4),(0x13553a,4)]}
+
 def build(ap,cp,tables,native_cp_original):
     if sha(ap)!=AP_SHA or sha(cp)!=CP_SHA:raise ValueError('Exact historical three-look preview-v2 AP/CP required')
     if sha(native_cp_original)!='60a9de1a0636c7f6b5b98607a4d25eeb48634e25294f632743a6d256e583b370':raise ValueError('Exact original FL2/FL3 CP required')
@@ -91,9 +97,7 @@ def build(ap,cp,tables,native_cp_original):
         if at!=0x13553a and any(c[at:at+len(data)]):raise ValueError('Retry storage occupied')
         c[at:at+len(data)]=data
     before={'appFw.so':ap,'cpapp-b.bin':cp};after={'appFw.so':bytes(a),'cpapp-b.bin':bytes(c)}
-    regions={'appFw.so':[(0x3528804,112)]+[(0x4b4a564+i*8,4) for i in range(10,16)]+[(0x59896f0+i*0xb8,4) for i in range(6)],
-        'cpapp-b.bin':[(TABLE_FILE,3661),(TABLE_FILE+3661,3661),(0xb27490,256),(CHECKER-0x108000,160),(0x148e5e,4),(0x149e14,4),
-                      (0x1354d2,2),(0x1354e2,2),(0x1358c8,4),(0x13553a,4)]}
+    regions=spans()
     if c[0x20124:0x20154]!=cp[0x20124:0x20154]:raise ValueError('Segment headers changed')
     _,length,start=struct.unpack_from('<3I',cp,0x20124)
     for at,n in [(HELPER,256),(CHECKER,160)]:

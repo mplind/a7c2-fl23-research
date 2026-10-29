@@ -82,9 +82,7 @@ def save(source, output, **options):
 
 def restore_windows_inverse(ap, parts):
     """boot_trial.restore's appFw.so inverse: the saved restore windows put back, last first."""
-    reverse = [(w['offset'], bytes.fromhex(w['after_hex']), bytes.fromhex(w['before_hex']))
-               for w in reversed(parts['restore_windows'])]
-    return boot_sound.patch(ap, reverse)
+    return boot_sound.patch(ap, boot_trial.restore_edits(parts))
 
 
 def sound_restore(source):

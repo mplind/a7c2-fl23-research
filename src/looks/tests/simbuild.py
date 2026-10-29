@@ -17,6 +17,7 @@ class CarriesBuild:
     carries = PUBLIC
     firmware_build = None
     require_build = devicesession.Camera.require_build
+    read_programs = devicesession.Camera.read_programs
 
     def identify_programs(self, ap, cp):
         self.firmware_build = None

@@ -495,6 +495,16 @@ def test_public_runtime_is_the_bundled_runtime():
         assert stock(PUBLIC, 'appFw.so', window['offset'], len(raw)) == raw, hex(window['offset'])
 
 
+def fl23_window(build, at, size):
+    """`build`'s stock appFw.so bytes at at..at+size with every FL2/FL3 AP write of patches.json applied."""
+    window = bytearray(stock(build, 'appFw.so', at, size))
+    for write in compat.core.read_json(compat.core.BASE / 'assets/patches.json')[0]['writes']:
+        start, data = translate(int(write['file_offset'], 16), build), bytes.fromhex(write['after_hex'])
+        for offset in range(max(start, at), min(start + len(data), at + size)):
+            window[offset - at] = data[offset - start]
+    return bytes(window)
+
+
 def test_body_runtime_moves_only_the_build_facts():
     asset, body = device_layout.runtime(), device_layout.runtime_for(BODY)
     assert {key: value for key, value in body.items() if key not in ('ap_templates', 'ap_sources', 'cp_code_sha256')} == \
@@ -511,8 +521,10 @@ def test_body_runtime_moves_only_the_build_facts():
             differing = {before['offset'] + i for i, (a, b) in enumerate(zip(old, new)) if a != b}
             # Only the stock converter's table add differs; FL2/FL3's converter is the same in both.
             assert differing == ({0x3528811} if public['kind'] == 'stock' and before['offset'] == CONVERTER else set())
-            if public['kind'] == 'stock':
-                assert new == stock(BODY, 'appFw.so', after['offset'], len(new))
+            # Each window is the build's stock bytes, with FL2/FL3's own patch (patches.json, in the build's
+            # addresses) over them for the 'fl23' kind: an oracle independent of runtime_for's copy (L122).
+            assert new == fl23_window(BODY, after['offset'], len(new)) if public['kind'] == 'fl23' else \
+                new == stock(BODY, 'appFw.so', after['offset'], len(new))
 
 
 def test_runtime_pins_the_body_digests():

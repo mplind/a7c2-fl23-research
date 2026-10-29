@@ -17,9 +17,9 @@ def verify(args,job):
         write_json(root/'inspection.private.json',state)
     with CurrentRequest(root,state,'verify'):
         with trial.factory() as camera:
-            ap=camera.read('/usr/lib/appFw.so');cp=camera.read('/cp/cpapp-b.bin')
             # The probe guards the build's own sound bytes: refuse programs of no supported build.
-            build=camera.identify_programs(ap,cp)
+            programs=camera.read_programs();ap,cp=programs['appFw.so'],programs['cpapp-b.bin']
+            build=camera.require_build()
             enabled=candidate.is_enabled(cp);candidate.guard(ap,cp,installed=enabled)
             custom=boot_sound.installed(ap,build=build)
             probe=boot_trial.current_probe(ap,root/'probe',build=build)

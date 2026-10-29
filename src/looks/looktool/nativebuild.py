@@ -6,6 +6,9 @@ from .worker import NAMES
 
 ROOT=Path(__file__).resolve().parents[3]
 
+# The largest file one /tmp/jiritsu write stages on the camera, a native worker included.
+STAGING_LIMIT=65536
+
 def zig_command(explicit=None):
     if explicit:return [str(Path(explicit).resolve())]
     found=shutil.which('zig')
@@ -41,7 +44,7 @@ def compile_worker(source,header,destination,zig=None,*,fingerprints=True):
         creationflags=0x08000000 if os.name=='nt' else 0)
     if result.returncode:raise ValueError('Native compilation failed: '+result.stderr[-4000:])
     blob=destination.read_bytes()
-    if len(blob)>65536:raise ValueError('Native worker exceeds current staging limit')
+    if len(blob)>STAGING_LIMIT:raise ValueError('Native worker exceeds current staging limit')
     from elftools.elf.elffile import ELFFile
     with destination.open('rb') as stream:
         elf=ELFFile(stream)

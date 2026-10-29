@@ -18,7 +18,7 @@ STRINGS = {
     '保存开启竖屏拍摄信息显示（重开后自动生效）': 'Vertical display',
     '安装 Lightroom 自动识别插件（需要 Lightroom）': 'Lightroom auto-profile plugin',
     '安装尚未结束，请点击“继续安装”，按弹窗完成下一步；需要断电时，接回 USB 后仍点击此按钮。': 'Installation isn’t finished. Click Continue installation and follow the dialog. After a cold restart, reconnect USB and click it again.',
-    '查看上次安装结果（不连接相机）': 'Show saved summary',
+    '查看上次安装结果（不连接相机）': 'Show saved summary (doesn’t use the camera)',
     '改用自己的 A7Look 文件（先取消勾选内置六款）': 'Use your own A7Look files (untick Six built-in looks first)',
     '选择 A7Look 文件': 'A7Look files',
     '从 DCP／LUT 生成 A7Look…': 'Make an A7Look…',
@@ -228,8 +228,8 @@ STRINGS = {
     '自订 %s → %s': 'Custom %s → %s',
     '竖屏显示＋Fn／子菜单线框修正': 'Vertical display on, with the Fn and submenu fixes',
     '将移除项目程序修改、将六个自订栏位设为 ST 默认；旧配方不找回。请先在相机选择 ST。\n': 'Puts Sony’s original program bytes and look names back wherever this tool changed them (FL2 and FL3, looks, the shutter sound, vertical display) and resets Custom 1–6 to ST; earlier Custom 1–6 settings aren’t recovered. A saved custom shutter sound stays on the camera, unused. The camera’s calibration stays. Select ST on the camera first.\n',
-    'FL2／FL3 已启用：写入并完整读回。重开相机后生效，无需再点核对。': 'FL2/FL3 enabled: written and read back. Do the cold restart in the dialog; no need to verify.',
-    'FL2／FL3 已从列表移除：写入并完整读回。重开相机后生效，无需再点核对。': 'FL2/FL3 removed from the list: written and read back. Do the cold restart in the dialog; no need to verify.',
+    'FL2／FL3 已启用：写入并完整读回。重开相机后生效，无需再点核对。': 'FL2/FL3 enabled: written and read back in full. Do the cold restart in the dialog; no need to verify.',
+    'FL2／FL3 已从列表移除：写入并完整读回。重开相机后生效，无需再点核对。': 'FL2/FL3 removed from the list: written and read back in full. Do the cold restart in the dialog; no need to verify.',
     '。请导出诊断包。': '. Export diagnostics to report it.',
     '未完成': 'not finished',
     '后台任务尚未确认结束，请等待原结果或查看日志，不重复写入。': 'The background task hasn’t confirmed it ended. Wait for its result or check the log; nothing is written again.',
@@ -245,7 +245,7 @@ STRINGS = {
     '将所选自订栏位设为 ST 默认，保留其他栏位。\n': 'Resets the selected Custom slots to ST and keeps the others.\n',
     '写入 ': 'Write ',
     'FL2／FL3：启用': 'FL2/FL3: enable',
-    '进程异常退出，退出码 ': 'The task quit unexpectedly, so its result is unknown. Don’t repeat it until you’ve read the log. Exit code ',
+    '进程异常退出，结果未知；查看日志前不要重复此操作。退出码 ': 'The task quit unexpectedly, so its result is unknown. Don’t repeat it until you’ve read the log. Exit code ',
     'FL2／FL3：从列表移除': 'FL2/FL3: remove from list',
     '自订 %s：%s': 'Custom %s: %s',
     'ST 默认': 'reset to ST',
@@ -487,7 +487,7 @@ STRINGS = {
     '检查': 'Check',
     '在建立服务连接前推出上方选择的存储卷。': 'Optional. Camera tasks eject the camera volume themselves; this ejects it now.',
     '推出': 'Eject',
-    '连接后读取固件版本，然后断开，不写入任何内容。': 'Switches the camera to its service connection, reads its program files to identify the firmware build, then switches back. Nothing is written. Takes a minute or two.',
+    '切换到服务连接，读取相机程序文件以识别固件编译版本，然后切回，不写入任何内容。约需一到两分钟。': 'Switches the camera to its service connection, reads its program files to identify the firmware build, then switches back. Nothing is written. Takes a minute or two.',
     '测试': 'Test',
     '反复读取相同文件以检测线缆和接口，只读。': 'Reads the camera’s program files over and over for at least 2 minutes and checks every read matches. Read-only. Use it to test a cable or port before a long write.',
     '安装两个连接身份所需的驱动，然后测试连接。自动安装失败时，许多电脑改用 Zadig 手动安装即可成功。': 'Installs the drivers for both connection modes, then tests the connection. If this fails, many computers succeed with a manual Zadig install.',
@@ -549,11 +549,11 @@ STRINGS = {
     '卸载驱动': 'Remove drivers',
     # Apple-style interface (shell.py, window.py layout rewrite)
     # The camera's firmware build on the Connection page (window.show_firmware_build); the two build names are buildprofile's label_zh.
-    '相机固件版本': 'Camera firmware build',
+    '相机固件编译版本': 'Camera firmware build',
     '尚未检测': 'Not checked yet. Click Test above.',
     'Sony 2.01（公开更新）': 'Sony 2.01 (public update)',
     'Sony 2.01（机身版本，2025 年 9 月 23 日）': 'Sony 2.01 (camera build, 23 Sep 2025)',
-    '固件版本不受支持：已禁用更改': 'Unsupported firmware build. Buttons that write to the camera are off; nothing was written.',
+    '固件编译版本不受支持：已停用会更改相机固件的按钮，本工具也会拒绝此类更改；未写入任何内容。': 'Unsupported firmware build. Buttons that change the camera’s firmware are off, and the app refuses any such change; nothing was written.',
     # The macOS Terminal window a camera job opens (platforms.macos_authorization), in the job's language.
     'A7C II Tools：本次相机操作需要以管理员权限接管 USB。': 'A7C II Tools needs administrator rights to take over USB for this camera operation.',
     '请在下方输入 Mac 登录密码（输入时不显示）。密码只交给系统 sudo，程序不读取或保存。': 'Enter your Mac login password below. It stays hidden as you type. Only macOS sudo receives it; A7C II Tools never reads or stores it.',
@@ -566,7 +566,7 @@ STRINGS = {
         'How to cold restart',
     '一键安装…':
         'Install…',
-    '\n请确认电量至少 50%。本工具无法读取电量；点击“写入相机”即表示已确认。\n写入前，本工具会核对相机是 ILCE-7CM2，且本工具管理区域以外的程序与受支持的 2.01 固件版本一致，不符合时停止。\n其他工具在本工具管理区域内所做的修改无法检测，可能与本工具冲突。\n在完整读回结束前，保持相机开机并连接 USB，不要关机或拔线。':
+    '\n请确认电量至少 50%。本工具无法读取电量；点击“写入相机”即表示已确认。\n写入前，本工具会核对相机是 ILCE-7CM2，且本工具管理区域以外的程序与受支持的 2.01 固件编译版本一致，不符合时停止。\n其他工具在本工具管理区域内所做的修改无法检测，可能与本工具冲突。\n在完整读回结束前，保持相机开机并连接 USB，不要关机或拔线。':
         '\nCheck the battery is charged to at least 50%. The app can’t read the level; clicking Write to camera confirms it.\nBefore writing, the app checks the camera is an ILCE-7CM2 and that its programs, outside the regions this tool manages, match a supported 2.01 firmware build; it stops if not.\nChanges other tools made inside the regions this tool manages aren’t detected and may conflict with this tool.\nKeep the camera on and connected until the read-back finishes. Don’t switch it off or unplug it.',
     '正在操作相机。完成前不要关机或拔线。':
         'Working with the camera. Don’t switch it off or unplug it until this finishes.',

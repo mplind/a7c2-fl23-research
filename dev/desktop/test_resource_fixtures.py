@@ -6,6 +6,7 @@ its own resources/ folder or in <A7C2_BUILD_FIXTURES>-resources/<build>/ beside 
 output for the public build, or a checked camera_fingerprint.py capture's, copied there).
 """
 from contextlib import contextmanager
+import dataclasses
 import hashlib
 import io
 import json
@@ -216,8 +217,11 @@ def sony_file(tmp_path, monkeypatch):
 
 
 def test_prepare_writes_the_three_reference_files_and_stops_reading(tmp_path, sony_file):
-    # The stand-in programs play Sony's public 2.01, the build a prepared reference records.
-    with saved_as(PUBLIC, {'appFw.so': PROGRAM, 'cpapp-b.bin': b'cp'}):
+    # The stand-in programs play Sony's public 2.01 as its stock files, the build a prepared reference
+    # records (a full reference must be its build's stock files exactly).
+    stock = dataclasses.replace(PUBLIC, ap_sha256=hashlib.sha256(PROGRAM).hexdigest(),
+                                cp_sha256=hashlib.sha256(b'cp').hexdigest())
+    with saved_as(stock, {'appFw.so': PROGRAM, 'cpapp-b.bin': b'cp'}):
         result = official.prepare(sony_file, tmp_path / 'cache')
         loaded = official.load(tmp_path / 'cache')
     assert result == {'cache': str(tmp_path / 'cache'), 'model': 'ILCE-7CM2', 'firmware': '2.01', 'camera_io': False}
@@ -233,6 +237,7 @@ def test_a_prepared_file_of_no_supported_build_never_becomes_the_reference(tmp_p
     with pytest.raises(buildprofile.OtherBuild, match=buildprofile.REFERENCE_UNSUPPORTED):
         official.prepare(sony_file, tmp_path / 'cache')    # the stand-in programs are no supported build
     assert not (tmp_path / 'cache/current.json').exists()
+    assert list((tmp_path / 'cache').iterdir()) == []  # L213: no orphaned copy of the refused file
 
 
 def test_files_reads_members_and_partition_images(monkeypatch):

@@ -64,8 +64,8 @@ def factory_reference(factory, build):
     desktopapp.official.load gave: the built-in set, from which the camera's own build's regions are
     taken, or one reference recorded as the build it is ('firmware_build'), which must be the camera's.
     Another build's reference is refused (OtherBuild) before anything is planned."""
-    if 'builtin' in factory:
-        chosen = factory['builtin'].get(build.key)
+    if buildprofile.BUILTIN in factory:
+        chosen = factory[buildprofile.BUILTIN].get(build.key)
         if chosen is None:
             raise ValueError('No built-in factory reference for %s; nothing was planned or written' % build.key)
     else:
@@ -77,20 +77,25 @@ def factory_reference(factory, build):
     return chosen
 
 
+# The modes whose plan depends on the build: every other mode's bytes are the same in both builds.
+BUILD_MODES = ('factory_reset', 'sound_restore', 'fl23_enable', 'slot_default', 'look_import')
+
+
 def plan(current, records, mode, *, factory=None, slot=None, look=None, name=None, build=None):
-    """Pure planning: preserve every field outside the declared project scope. A factory reset writes
-    from `factory`'s reference for `build`, the camera's identified build (identified from `current`
-    when None), and from no other build's."""
+    """Pure planning: preserve every field outside the declared project scope, in `build`'s own bytes and
+    addresses. A job passes the build Camera.read_programs identified, and nothing is identified again; a
+    standalone or offline caller may leave it None (buildprofile.build_of). A factory reset writes from
+    `factory`'s reference for that build, and from no other build's."""
     _, core = modules()
     ap, cp = current['appFw.so'], current['cpapp-b.bin']
     target = dict(current)
     wanted = [{}, {}]
     rename = None
+    if mode in BUILD_MODES:
+        build = buildprofile.build_of(ap, cp, build)
     if mode == 'factory_reset':
         if factory is None:
             raise ValueError('Prepare the original Sony 2.01 reference first')
-        if build is None:
-            build = buildprofile.identify(ap, cp)
         factory = factory_reference(factory, build)
     if mode in ('factory_reset', 'fl23_enable'):
         for key, start, count in ((0x02a40001, 0x1200, 80), (0x02a4000d, 0x196, 74)):
@@ -149,7 +154,7 @@ def plan(current, records, mode, *, factory=None, slot=None, look=None, name=Non
         sys.path.insert(0,str(nativebuild.ROOT/'src/shutter_sound'))
         import boot_sound
         # The stock boot block differs between builds: put back the identified build's own.
-        target['appFw.so']=boot_sound.restore_plan(ap,build=buildprofile.identify(ap,cp))[0]
+        target['appFw.so']=boot_sound.restore_plan(ap,build=build)[0]
     elif mode in ('sound_enable','sound_disable'):
         import sys
         sys.path.insert(0,str(nativebuild.ROOT/'src/shutter_sound'))
@@ -158,7 +163,7 @@ def plan(current, records, mode, *, factory=None, slot=None, look=None, name=Non
         target.update(candidate.patch(ap,cp) if desired else candidate.disable(ap,cp))
     elif mode == 'fl23_enable':
         import compat
-        target.update(compat.plan(ap, cp, '2.01', transitions=False)[2])
+        target.update(compat.plan(ap, cp, '2.01', transitions=False, build=build)[2])
         wanted[0] = dict(zip(checkpoint.AP_KEYS, (b'\x0a', b'\x0b')))
         units = {key: bytearray(records[1][key].data) for key in checkpoint.CP_KEYS}
         for row in core.read_json(core.BASE / 'assets/colors.json'):
@@ -179,7 +184,7 @@ def plan(current, records, mode, *, factory=None, slot=None, look=None, name=Non
             result[at:at + 2] = b'\0\0'
         target['appFw.so'] = bytes(result)
     elif mode in ('slot_default', 'look_import'):
-        identity = device_layout.structural(ap, cp)
+        identity = device_layout.structural(ap, cp, build=build)
         wanted[0] = recipe_defaults(ap, [slot])
         bank = photoformat.extract_bank(cp, records[1][0x02a40001].data,
             records[1][0x02a4000d].data, gamma_table_va=0x1209480,
@@ -187,20 +192,23 @@ def plan(current, records, mode, *, factory=None, slot=None, look=None, name=Non
         if mode == 'slot_default':
             raw = bytes(six.TABLE_BYTES)
             if identity['kind'] != 'legacy-six' and not identity.get('first_install'):
-                target.update(device_layout.deactivate(ap, cp, slot, raw, hash_checks=False, native_bank=bank, transitions=False)[2])
+                target.update(device_layout.deactivate(ap, cp, slot, raw, hash_checks=False, native_bank=bank, transitions=False,
+                                                       build=build)[2])
             elif identity['kind'] == 'legacy-six':
-                target.update(device_layout.replace(ap, cp, {slot: raw}, hash_checks=False, native_bank=bank, transitions=False)[2])
+                target.update(device_layout.replace(ap, cp, {slot: raw}, hash_checks=False, native_bank=bank, transitions=False,
+                                                    build=build)[2])
                 rename = ({slot: 'ST'}, identity['label_ids'])
         else:
             from . import lookfile
             raw = lookfile.writer_document(look)
             stage = look.get('native_photo')
-            base_cp = device_layout.replace(ap, cp, {slot: raw}, hash_checks=False, transitions=False)[2]['cpapp-b.bin'] if identity.get('first_install') else cp
+            base_cp = device_layout.replace(ap, cp, {slot: raw}, hash_checks=False, transitions=False,
+                                            build=build)[2]['cpapp-b.bin'] if identity.get('first_install') else cp
             bank = photoformat.extract_bank(base_cp, records[1][0x02a40001].data,
                 records[1][0x02a4000d].data, gamma_table_va=0x1209480,
                 regular_row=0, still_row=10, color_parameter=0)[0] if stage is not None or photoio.present(cp) else None
             target.update(device_layout.replace(ap, cp, {slot: raw}, hash_checks=False,
-                native_photo={slot: stage}, native_bank=bank, transitions=False)[2])
+                native_photo={slot: stage}, native_bank=bank, transitions=False, build=build)[2])
             rename = ({slot: name or look['name']}, identity['label_ids'])
         if rename:
             for filename in nameworker.filenames():
@@ -226,10 +234,11 @@ class DirectJob(Rollback):
         self.vertical_stage = None
 
     def capture(self, camera):
-        """Fresh camera bytes. Their programs have just been identified: the job records that build,
-        and its plans (a factory reset's reference among them) are for that build only."""
+        """Fresh camera bytes. Their programs have just been identified: a new job records that build,
+        and its plans (a factory reset's reference among them) are for that build only. A job that
+        recorded its build already (verify reads it) keeps it."""
         current=super().capture(camera)
-        self.state['firmware_build']=camera.require_build().key
+        self.state.setdefault('firmware_build',camera.require_build().key)
         self._runtime_binding_ap=current['appFw.so']
         self._synced_look_bases={}
         return current
@@ -353,7 +362,8 @@ class DirectJob(Rollback):
                 self.state['identity']=camera.identity
                 current=self.capture(camera)
                 options,rows=bundle.documents(prior['bundle_options'])
-                target,wanted,_=bundle.plan(current,camera.records(current['settings-ram.bin']),options,rows)
+                target,wanted,_=bundle.plan(current,camera.records(current['settings-ram.bin']),options,rows,
+                                            build=camera.require_build())
                 # Plan from the current body and require every program/name to
                 # already match. This method has no program/name write path.
                 for name in checkpoint.PROGRAM_PATHS:
@@ -524,7 +534,8 @@ class DirectJob(Rollback):
                     supersede_temporary(camera,self.root/'evidence/superseded-temporary',self.record)
                 current = self.capture(camera)
                 if mode == 'install_all':
-                    target, wanted, rename = bundle.plan(current, camera.records(current['settings-ram.bin']), bundle_options, bundle_rows)
+                    target, wanted, rename = bundle.plan(current, camera.records(current['settings-ram.bin']), bundle_options,
+                                                         bundle_rows, build=camera.require_build())
                 else:
                     target, wanted, rename = plan(current, camera.records(current['settings-ram.bin']), mode,
                         factory=factory_values, slot=slot, look=look, name=name, build=camera.require_build())
@@ -819,7 +830,8 @@ class DirectJob(Rollback):
             if self.state['mode'] == 'install_all':
                 from . import bundle
                 options, selected = bundle.documents(self.state['bundle_options'])
-                target, wanted, _ = bundle.plan(current, camera.records(current['settings-ram.bin']), options, selected)
+                target, wanted, _ = bundle.plan(current, camera.records(current['settings-ram.bin']), options, selected,
+                                                build=build)
             else:
                 target, wanted, _ = plan(current, camera.records(current['settings-ram.bin']), self.state['mode'],
                     factory=factory_values, slot=self.state['slot'], look=look, name=self.state['name'], build=build)

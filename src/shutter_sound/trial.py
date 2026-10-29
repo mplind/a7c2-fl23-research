@@ -84,7 +84,7 @@ def factory(expected=None):
             return super().temp_read(name, missing)
         def temp_write(self, name, data):
             if name == 'shutter.staged.so':
-                if not self.programs_pinned or not data or len(data) > 65536:
+                if not self.programs_pinned or not data or len(data) > devicesession.STAGING_LIMIT:
                     raise ValueError('Invalid sound preflight staging')
                 return self._jiritsu_write(name, data)
             return super().temp_write(name, data)
@@ -165,12 +165,8 @@ def run_native(camera, root, state, blob, kind, mode=0, plan=None):
 
 def capture(camera):
     """Current programs and settings. Identifies the programs' build: every sound write needs it."""
-    ap, cp = camera.read('/usr/lib/appFw.so'), camera.read('/cp/cpapp-b.bin')
-    camera.identify_programs(ap, cp)
-    return {'appFw.so':ap,
-            'cpapp-b.bin':cp,
-            'settings-ram.bin':camera.snapshot(True),
-            'settings-saved.bin':camera.snapshot(False)}
+    return dict(camera.read_programs(), **{'settings-ram.bin': camera.snapshot(True),
+                                           'settings-saved.bin': camera.snapshot(False)})
 
 
 def preflight(root, copy, zig=None, camera_factory=factory, *, expected=None, adopt_only=False):

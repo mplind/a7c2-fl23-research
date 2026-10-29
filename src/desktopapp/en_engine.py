@@ -24,7 +24,7 @@ ENGINE = {
         "The camera job ended, but its files couldn't be handed back to your Mac account; some stay owned by root. The camera isn't affected. Export diagnostics.\n%s",
 
     # desktopapp.worker
-    '读取相机程序文件以识别固件版本（只读）。': 'Reading the camera program files to identify the firmware build (read-only).',
+    '读取相机程序文件以识别固件编译版本（只读）。': 'Reading the camera program files to identify the firmware build (read-only).',
     '准备本次线框测试的 USB 驱动与服务连接。': 'Starting the vertical display job.',
     '先完成一次本页操作，再核对重新加载状态。': 'Nothing to verify yet: this page has no finished job. Run its action first.',
     '所选目录没有旧备份恢复记录，本次没有连接相机。用内置原厂基准或固件文件恢复后，请点“重启后核对并完成恢复”。':
@@ -40,8 +40,8 @@ ENGINE = {
     '相机内容已与上次恢复结果不同（%s），通常是之后又安装或修改过功能。旧记录保留；按当前相机字节重新生成原厂恢复计划。':
         "The camera no longer matches the last restore (%s), usually because features were installed or changed since. The old record stays; planning the factory restore from the camera's current bytes.",
 
-    '上次恢复记录的固件版本是 %s，而相机现在是 %s。旧记录保留；按相机当前的固件版本和字节重新生成原厂恢复计划。':
-        "The last restore recorded firmware build %s, but the camera is now %s. Its record stays; planning the factory restore for the camera's current build and bytes.",
+    '上次恢复记录的固件编译版本是 %s，而相机现在是 %s。旧记录保留；按相机当前的固件编译版本和字节重新生成原厂恢复计划。':
+        "The last restore was for %s, but the camera now runs %s. Its record stays; planning the factory restore for the camera's current build and bytes.",
 
     # desktopapp.allinone: one-click install.
     '本次一键安装已结束，没有重复写入。': 'This one-click install already finished. Nothing was written again.',
@@ -178,19 +178,19 @@ ENGINE = {
         "The camera hasn't loaded the saved sound yet. Do the cold restart the dialog showed after the write.",
 
     # looktool.buildprofile and devicesession: the firmware identity gate and other-build refusals.
-    '此相机的固件版本不受支持，未写入任何内容。（appFw.so %s…，cpapp-b.bin %s…）':
+    '此相机的固件编译版本不受支持，未写入任何内容。（appFw.so %s…，cpapp-b.bin %s…）':
         "This camera's firmware build isn't supported. Nothing was written. (appFw.so %s…, cpapp-b.bin %s…)",
-    '尚未识别此相机的固件版本，未写入任何内容。': "This camera's firmware build hasn't been identified, so nothing was written.",
-    '所保存的内容来自固件版本 %s，而相机是 %s，未写入任何内容。':
-        'The saved bytes come from firmware build %s, but the camera is %s. Nothing was written.',
-    '无法确定所保存的内容来自哪个固件版本，未写入任何内容。':
+    '尚未识别此相机的固件编译版本，未写入任何内容。': "This camera's firmware build hasn't been identified, so nothing was written.",
+    '所保存的内容来自固件编译版本 %s，而相机是 %s，未写入任何内容。':
+        'The saved bytes come from %s, but the camera runs %s. Nothing was written.',
+    '无法确定所保存的内容来自哪个固件编译版本，未写入任何内容。':
         "The firmware build of the saved bytes can't be identified, so nothing was written.",
-    '所选原厂文件是固件版本 %s，而相机是 %s，未写入任何内容。':
-        'The chosen Sony firmware file is build %s, but the camera is %s. Nothing was written.',
-    '所选原厂文件不是受支持的固件版本，未写入任何内容。':
+    '所选原厂文件是固件编译版本 %s，而相机是 %s，未写入任何内容。':
+        'The chosen Sony firmware file is for %s, but the camera runs %s. Nothing was written.',
+    '所选原厂文件不是受支持的固件编译版本，未写入任何内容。':
         "The chosen Sony firmware file isn't a supported build, so nothing was written.",
-    '此任务记录的固件版本是 %s，而相机现在是 %s，没有核对或写入任何内容。':
-        'This job recorded firmware build %s, but the camera is now %s. Nothing was verified or written.',
+    '此任务记录的固件编译版本是 %s，而相机现在是 %s，没有核对或写入任何内容。':
+        'This job was planned for %s, but the camera now runs %s. Nothing was verified or written.',
 
     # looktool.devicesession
     '等待相机普通 USB 连接（最多 %d 秒）。%s': "Waiting up to %d seconds for the camera's normal USB connection. %s",
@@ -509,6 +509,11 @@ ENGINE = {
         'Trial result recorded. You can save the converted clip now; no cold restart needed first.',
     '自动准备电子快门声支援；已有开关直接接入，不要求先手动开启或关联旧任务。':
         'Checking the electronic shutter sound support first; it is turned on if needed.',
+    # shutter_sound.sound_cli.RELOAD: the cold-restart steps after a sound write.
+    '所有读写已结束。拔 USB 和其他外部供电，等存取灯停止闪烁，再关机并等屏幕和灯完全熄灭；取下电池至少一分钟，再装回、开机并测试。磁盘读回不等于加载状态测试。':
+        'Reading and writing have ended. Unplug USB and any other power, wait for the access lamp to stop blinking, then switch the camera off and wait until the screen and lamp are dark. Take the battery out for at least 1 minute, put it back, switch on and test. Disk readback is not a loaded-state test.',
+    '这条声音安装记录保存于记录固件编译版本之前，无法确定它属于哪个固件编译版本，已停用，之后不会再被选用；本次没有连接相机。要改回相机原来的快门声，请在声音页“恢复原厂音效”一行点“恢复…”：它按相机当前的字节恢复，不需要旧记录。':
+        "This sound install record was saved before records named their firmware build, so its build can't be known. It is retired and won't be chosen again; the camera wasn't connected. To bring back the camera's own shutter sound, click Restore… beside Sony's original sound on the Shutter sound page: it works from the camera's current bytes and needs no old record.",
     '这个声音工作目录里没有可用的永久声音安装记录，本次没有连接相机。要还原相机的原厂快门音效，请点“恢复原厂功能”：它按相机当前字节还原全部声音程序，不依赖旧记录。':
         "This sound folder has no usable install record, so the camera was not connected. To get the factory shutter sound back, use the Factory restore page: it restores every sound program from the camera's current bytes, without old records.",
     '最近的声音安装记录不可直接恢复；改用同一机身最近一次完成的安装记录，从相机当前字节规划恢复。':

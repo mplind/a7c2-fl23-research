@@ -27,10 +27,12 @@ def modules():
 
 def plan(ap,cp,version=core.VERSION,*,transitions=True,build=None):
     """FL2/FL3 for appFw.so `ap` and cpapp-b.bin `cp` of `build`, which is identified from them
-    when None. Programs of no supported build raise UnsupportedFirmware before anything is planned."""
+    when None. Programs of no supported build raise UnsupportedFirmware before anything is planned.
+    A given `build` must be what buildprofile.identify found for these same programs (a job passes the
+    one Camera.read_programs identified): it is not checked again here."""
     if version!=core.VERSION:raise ValueError('FL23 只適用於 ILCE-7CM2 2.01；請依相機版本頁填寫')
     layout,firmware,_,_,buildprofile=modules()
-    if build is None:build=buildprofile.identify(ap,cp)
+    build=buildprofile.build_of(ap,cp,build)
     # The post-reload check reads runtime.so's compiled offsets: refuse a build that moved them.
     core.runtime_spans(build)
     before=dict(zip(core.PROGRAMS,[ap,cp]))

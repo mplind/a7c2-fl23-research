@@ -251,9 +251,8 @@ def run(root, original_job, zig=None, *, payload=None, register=False, wire_form
             if recovered_job is not None:
                 state['prior_marker_retirement'] = retire_recovered_marker(camera, root, recovered_job)
                 trial.save(root, state)
-            ap = camera.read('/usr/lib/appFw.so')
-            cp = camera.read('/cp/cpapp-b.bin')
-            camera.identify_programs(ap, cp)
+            programs = camera.read_programs()
+            ap, cp = programs['appFw.so'], programs['cpapp-b.bin']
             if cp[candidate.OFFSET:candidate.OFFSET+2]==candidate.BEFORE:
                 raise ValueError('当前相机的电子快门声音尚未开启，请先开启；本次没有注册试听声音。')
             candidate.guard(ap, cp, installed=True)

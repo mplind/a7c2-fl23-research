@@ -5,7 +5,7 @@ from pathlib import Path
 import struct
 import uuid
 from . import buildprofile, checkpoint, checkpointworker, devicesettings, nameworker, nativebuild
-from .devicesession import Camera, invoke
+from .devicesession import STAGING_LIMIT, Camera, invoke
 from .backupstore import write_json
 
 TEMPS={'checkpoint.staged.so','checkpoint.program.request','checkpoint.program.result',
@@ -43,7 +43,7 @@ class CheckpointCamera(Camera):
     def temp_write(self,name,data):
         if name in TEMPS:
             if self.identity_pending or not self.programs_pinned or self.service_only:raise ValueError('Body identity required before checkpoint execution')
-            if not data or len(data)>65536:raise ValueError('Checkpoint staging limit exceeded')
+            if not data or len(data)>STAGING_LIMIT:raise ValueError('Checkpoint staging limit exceeded')
             return self._jiritsu_write(name,data)
         return super().temp_write(name,data)
     def temp_remove(self,name):
@@ -90,9 +90,8 @@ class Rollback:
             record=self.record,save_raw=lambda raw:self.raw(kind+'-'+str(mode)+'.bin',raw),extras=extras)
     def capture(self,camera):
         print('Reading current programs, look settings and names.',flush=True)
-        values={name:camera.read(path) for name,path in checkpoint.PROGRAM_PATHS.items()}
-        # Every later write needs the build these programs are; tool regions are normalised first.
-        camera.identify_programs(values['appFw.so'],values['cpapp-b.bin'])
+        # Every later write needs the build these programs are; read_programs identifies it.
+        values=camera.read_programs()
         camera.programs_pinned=True
         values['settings-ram.bin']=camera.snapshot(True);values['settings-saved.bin']=camera.snapshot(False)
         for name in nameworker.filenames():values['resources/'+name]=camera.read('/usr/share/app/'+name)

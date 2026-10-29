@@ -44,7 +44,8 @@ No Claude or additional agents without explicit user authorization.
 - Service entry checks the normal USB product string, authenticates, then binds AP
   property `00e70003` using the legacy hex-text serial digest. Do not make TUR
   readiness or getCameraInfo prerequisites, or substitute a HASP hash.
-- Every camera write needs an identified firmware build. `looktool.devicesession`
+- Every firmware write (programs, name files and the settings jobs change through the
+  service session) needs an identified firmware build. `looktool.devicesession`
   refuses property, CP-unit and settings writes, and every native launch except
   the read-only `runtime`/`probe` ones, until `looktool.buildprofile.identify`
   recognises the programs read from the camera. It puts every tool-owned region
@@ -54,7 +55,8 @@ No Claude or additional agents without explicit user authorization.
   written. Never admit a build from the model or the user's version answer, and
   take every build-dependent byte and address from the identified build. Staging
   files in camera RAM (`/tmp`) is not gated. The standalone `src/fl23` tool
-  (`FL23.cmd`) is outside this gate.
+  (`FL23.cmd`) is outside this gate, and so are film recipes, which set camera
+  settings over PC Remote and touch no firmware.
 - FL23 and checkpoint workers use edited-byte checks and full host byte readback,
   without repeated package SHA scans; FL23's guards are the identified build's
   stock bytes. Keep actual patch-position conflict guards and body-bound backups.

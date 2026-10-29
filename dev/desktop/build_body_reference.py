@@ -14,8 +14,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(ROOT / 'src/looks')]
 from looktool import buildprofile
 
-PUBLIC, BODY = (next(build for build in buildprofile.BUILDS if build.key == key)
-                for key in ('public-2.01', 'body-2.01-20250923'))
+PUBLIC, BODY = (buildprofile.by_key(key) for key in ('public-2.01', 'body-2.01-20250923'))
 
 
 def reference(ap, cp, public):
@@ -33,11 +32,11 @@ def reference(ap, cp, public):
         for region in public['programs'][name]['regions']:
             at, size = region['offset'], region['bytes']
             if name == 'appFw.so':
-                moved = buildprofile.translate(at, BODY)
-                # A region must move whole or not at all.
-                if buildprofile.translate(at + size - 1, BODY) != moved + size - 1:
+                # A region must move whole or not at all: it lies inside the look table, or clear of it.
+                table = buildprofile.PUBLIC_LOOK_TABLE, buildprofile.PUBLIC_LOOK_TABLE + buildprofile.LOOK_TABLE_BYTES
+                if at < table[1] and table[0] < at + size and not (table[0] <= at and at + size <= table[1]):
                     raise ValueError('Region %s %#x+%d crosses the look table edge' % (name, at, size))
-                at = moved
+                at = buildprofile.translate(at, BODY)
             raw = programs[name][at:at + size]
             if len(raw) != size:
                 raise ValueError('Region %s %#x+%d lies outside the program' % (name, at, size))
@@ -52,8 +51,7 @@ def main(argv=None):
     parser.add_argument('--output', type=Path, default=buildprofile.ASSETS / BODY.regions_file)
     args = parser.parse_args(argv)
     ap, cp = ((args.components / name).read_bytes() for name in buildprofile.PROGRAMS)
-    public = json.loads((buildprofile.ASSETS / PUBLIC.regions_file).read_text(encoding='utf-8'))
-    output = reference(ap, cp, public)
+    output = reference(ap, cp, buildprofile.regions_document(PUBLIC))
     args.output.write_text(json.dumps(output, indent=2) + '\n', encoding='utf-8')
     print({'file': str(args.output), 'bytes': args.output.stat().st_size,
            'regions': {name: len(spec['regions']) for name, spec in output['programs'].items()}, 'camera_io': False})

@@ -14,8 +14,9 @@ AVAILABLE = (presets.ROOT / 'desktop-assets/presets' / presets.PACK / 'slot6.a7l
 class PresetTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory(); self.addCleanup(temporary.cleanup)
-        # The setup stores resolved paths; macOS's temp folder is /var/..., a link to /private/var/....
-        self.root = Path(temporary.name).resolve()
+        # Unresolved on purpose: on macOS the temp folder is /var/..., a link to /private/var/..., and the
+        # setup must cope with that; it stores resolved paths, which the assertions compare.
+        self.root = Path(temporary.name)
         env = patch.dict(os.environ, {'A7C2_DESKTOP_DATA': str(self.root / 'app')})
         env.start(); self.addCleanup(env.stop)
 
@@ -63,7 +64,7 @@ class PresetTests(unittest.TestCase):
         original = presets.resolve(args['options'])['looks']
         for source, saved in zip(original, result['options']['looks']):
             self.assertEqual(Path(source['path']).read_bytes(), Path(saved['path']).read_bytes())
-            self.assertEqual(Path(saved['path']).parent, self.root / 'setup/inputs')
+            self.assertEqual(Path(saved['path']).parent, (self.root / 'setup/inputs').resolve())
         with patch.object(presets, 'resolve', side_effect=AssertionError('Do not replace saved inputs')):
             result = allinone.run(dict(args, options=dict(looks=[])), dispatch=dispatch)
         self.assertEqual(result['phase'], 'COMPLETE')

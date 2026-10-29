@@ -9,6 +9,7 @@ import inspect
 import json
 from pathlib import Path
 import random
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -19,14 +20,13 @@ from looktool import buildprofile
 import build_body_reference
 
 ROOT = Path(__file__).resolve().parents[2]
-ASSETS = ROOT / 'src/looks/assets'
 STOCK_TABLE = bytes.fromhex('1200020406080a0c0e100000')
 PUBLIC, BODY = BUILDS
 EACH_BUILD = pytest.mark.parametrize('name, key', [('public', 'public-2.01'), ('body', 'body-2.01-20250923')])
 
 
 def public_reference():
-    return json.loads((ASSETS / PUBLIC.regions_file).read_text(encoding='utf-8'))
+    return buildprofile.regions_document(PUBLIC)
 
 
 # Real firmware -------------------------------------------------------------------------------
@@ -43,8 +43,10 @@ def test_public_and_body_fixtures_identify(build_fixtures):
 
 
 @pytest.mark.parametrize('program, offset', [('appFw.so', 0x100000), ('cpapp-b.bin', 0x400000)])
-def test_one_byte_outside_the_regions_is_unsupported(build_fixtures, program, offset):
-    files = {'appFw.so': bytearray(build_fixtures.body.ap), 'cpapp-b.bin': bytearray(build_fixtures.body.cp)}
+@pytest.mark.parametrize('name', ['public', 'body'])  # L49: both builds
+def test_one_byte_outside_the_regions_is_unsupported(build_fixtures, name, program, offset):
+    fixture = getattr(build_fixtures, name)
+    files = {'appFw.so': bytearray(fixture.ap), 'cpapp-b.bin': bytearray(fixture.cp)}
     files[program][offset] ^= 1
     with pytest.raises(UnsupportedFirmware):
         identify(bytes(files['appFw.so']), bytes(files['cpapp-b.bin']))
@@ -102,6 +104,31 @@ def test_regions_hold_each_builds_own_stock_bytes(build_fixtures):
                 assert files[program][at:at + len(raw)] == raw, (build.key, program, hex(at))
 
 
+# M7 (Review Focus 3): a camera with the legacy six-look layout still identifies as its build. Its write
+# spans (sixbuild.spans) lie inside the identity regions but for two 4-byte spans, AP 0x4b4a5b4 and CP
+# 0xb27fac, which are zero in both stock builds and which the six-look layout writes as zero.
+SIX_OUTSIDE = {'appFw.so': set(range(0x4b4a5b4, 0x4b4a5b8)), 'cpapp-b.bin': set(range(0xb27fac, 0xb27fb0))}
+
+
+@pytest.mark.parametrize('name, key', [('public', 'public-2.01'), ('body', 'body-2.01-20250923')])
+def test_the_legacy_six_layout_identifies_as_its_build(build_fixtures, name, key):
+    from looktool import sixbuild
+    fixture = getattr(build_fixtures, name)
+    build = buildprofile.by_key(key)
+    rows = buildprofile.identity_regions(build)
+    random.seed(7)
+    programs = {'appFw.so': bytearray(fixture.ap), 'cpapp-b.bin': bytearray(fixture.cp)}
+    for program, spans in sixbuild.spans().items():
+        inside = lambda at: any(start <= at < start + len(raw) for start, raw in rows[program])
+        outside = {at for start, size in spans for at in range(start, start + size) if not inside(at)}
+        assert outside == SIX_OUTSIDE[program]
+        assert all(programs[program][at] == 0 for at in outside)
+        for start, size in spans:
+            for at in range(start, start + size):
+                programs[program][at] = 0 if at in outside else random.randrange(256)
+    assert identify(bytes(programs['appFw.so']), bytes(programs['cpapp-b.bin'])) is build
+
+
 def test_translated_table_addresses_hold_the_same_bytes(build_fixtures):
     """The body's .rodata after 0x4c102e0 sits 16 bytes earlier, the look table included."""
     for offset in range(0x4c7cf7c, 0x4c7cf89):
@@ -111,7 +138,7 @@ def test_translated_table_addresses_hold_the_same_bytes(build_fixtures):
 def test_committed_body_reference_is_what_the_script_produces(build_fixtures, tmp_path):
     output = tmp_path / 'body.json'
     build_body_reference.main(['--components', str(build_fixtures.body.folder), '--output', str(output)])
-    assert output.read_bytes() == (ASSETS / BODY.regions_file).read_bytes()
+    assert output.read_bytes() == (buildprofile.ASSETS / BODY.regions_file).read_bytes()
 
 
 @pytest.mark.parametrize('name', ['public', 'hybrid'])
@@ -122,12 +149,15 @@ def test_body_reference_is_built_only_from_body_programs(build_fixtures, name):
         build_body_reference.reference(programs.ap, programs.cp, public)
 
 
-def test_body_reference_refuses_a_region_across_the_table_edge(build_fixtures):
-    """Moving only part of a region would mix the two builds' addresses."""
+@pytest.mark.parametrize('offset, size', [(0x4c7cf78, 16), (0x4c7cf80, 16), (0x4ba0000, 0x610000)],
+                         ids=['across the start', 'across the end', 'around the whole table'])
+def test_body_reference_refuses_a_region_across_the_table_edge(build_fixtures, offset, size):
+    """Moving only part of a region would mix the two builds' addresses (L44: also a region that holds
+    the whole table and more, whose two ends both lie outside it)."""
     public = public_reference()
     table = next(row for row in public['programs']['appFw.so']['regions'] if row['offset'] == 0x4c7cf7c)
-    table.update(offset=0x4c7cf78, bytes=16)
-    with pytest.raises(ValueError, match='0x4c7cf78'):
+    table.update(offset=offset, bytes=size)
+    with pytest.raises(ValueError, match='%#x' % offset):
         build_body_reference.reference(build_fixtures.body.ap, build_fixtures.body.cp, public)
 
 
@@ -171,7 +201,7 @@ def test_build_facts_are_each_builds_stock_bytes(build, converter, boot_log, tab
 
 
 def test_body_reference_keeps_the_public_color_units():
-    public, body = public_reference(), json.loads((ASSETS / BODY.regions_file).read_text(encoding='utf-8'))
+    public, body = public_reference(), buildprofile.regions_document(BODY)
     assert body['color_units'] == public['color_units']
     assert {key: body[key] for key in ('schema', 'model', 'version')} == \
         {'schema': 'a7c2-factory-regions/1', 'model': 'ILCE-7CM2', 'version': '2.01'}
@@ -199,12 +229,11 @@ def test_stock_outside_one_region_is_refused(build, program, offset, size):
 
 
 @pytest.mark.parametrize('offset, public, body', [
-    (0x4c7cf6c, 0x4c7cf6c, 0x4c7cf6c),
-    (0x4c7cf7b, 0x4c7cf7b, 0x4c7cf7b),
     (0x4c7cf7c, 0x4c7cf7c, 0x4c7cf6c),
     (0x4c7cf87, 0x4c7cf87, 0x4c7cf77),
     (0x4c7cf88, 0x4c7cf88, 0x4c7cf78),  # the end bound moves too, so a slice of the table stays 12 bytes
-    (0x4c7cf89, 0x4c7cf89, 0x4c7cf89),
+    (0x4ba1743, 0x4ba1743, 0x4ba1743),  # the last byte before the body's .rodata moves
+    (0x51a09e4, 0x51a09e4, 0x51a09e4),  # the first byte after the public build's .rodata
     (0x3528810, 0x3528810, 0x3528810),
     (0x3060a2c, 0x3060a2c, 0x3060a2c),
     (0x59896f0, 0x59896f0, 0x59896f0),
@@ -212,6 +241,31 @@ def test_stock_outside_one_region_is_refused(build, program, offset, size):
 ])
 def test_translate_moves_only_the_look_table(offset, public, body):
     assert (translate(offset, PUBLIC), translate(offset, BODY)) == (public, body)
+
+
+# M1: the body's .rodata from 0x4ba1744 sits 4 to 16 bytes lower (test_port_unchanged derives the shifts),
+# so any other address there has no single answer: translate refuses it, on every build, rather than give a
+# public address for the body.
+@pytest.mark.parametrize('offset', [0x4ba1744, 0x4c14ac3, 0x4c7cf6c, 0x4c7cf7b, 0x4c7cf89, 0x4f24114, 0x51a09e3], ids=hex)
+@pytest.mark.parametrize('build', BUILDS, ids=[build.key for build in BUILDS])
+def test_translate_refuses_every_other_address_in_the_shifted_rodata(offset, build):
+    with pytest.raises(ValueError, match='%#x' % offset):
+        translate(offset, build)
+
+
+def test_no_tool_address_lies_in_the_shifted_rodata():
+    # Every address the planners translate today: compat's patches.json sites, the runtime spans and the
+    # custom-look restore windows. A new one in the shifted .rodata fails loudly here and in its planner.
+    from looktool import device_layout
+    sys.path.insert(0, str(ROOT / 'src/camera_runtime'))
+    import core
+    sites = [int(write['file_offset'], 16) for write in core.read_json(core.BASE / 'assets/patches.json')[0]['writes']]
+    sites += [offset for at, size in core.RUNTIME_SPANS for offset in range(at, at + size)]
+    sites += [window['offset'] for spec in device_layout.runtime()['ap_sources'] for window in spec['restore']]
+    for build in BUILDS:
+        assert core.runtime_spans(build) == core.RUNTIME_SPANS
+        for offset in sites:
+            translate(offset, build)
 
 
 # Synthetic builds ----------------------------------------------------------------------------

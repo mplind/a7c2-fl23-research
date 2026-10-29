@@ -21,6 +21,10 @@ import trial
 
 PATHS = ('/usr/share/avsystemsound/custom-shutter.bin',
          '/usr/share/avsystemsound/custom.txt')
+# Printed when restore() retires a job whose saved windows belong to no build that can be named.
+RETIRED_UNKNOWN_BUILD = ('这条声音安装记录保存于记录固件编译版本之前，无法确定它属于哪个固件编译版本，已停用，之后不会再被选用；'
+                         '本次没有连接相机。要改回相机原来的快门声，请在声音页“恢复原厂音效”一行点“恢复…”：'
+                         '它按相机当前的字节恢复，不需要旧记录。')
 
 
 def update_plan(camera,root,components,payload,zig):
@@ -329,6 +333,13 @@ def install(root, backup_copy, native_job, audio_job, payload, battery, zig=None
     return state
 
 
+def restore_edits(components):
+    """The appFw.so edits a restore applies, as (offset, bytes now, bytes to put back): the Save's saved
+    windows (its restore windows, or for an older job its windows) undone, last first."""
+    return [(w['offset'], bytes.fromhex(w['after_hex']), bytes.fromhex(w['before_hex']))
+            for w in reversed(components.get('restore_windows', components['windows']))]
+
+
 def saved_build(root, state):
     """The build job `state` (in folder `root`) saved its windows from: the one install recorded, or
     for a job saved before builds were recorded, the build of the programs in its before.private.zip.
@@ -352,7 +363,15 @@ def restore(root, zig=None, camera_factory=trial.factory):
     if state['phase'] not in ('installed_cold_test_pending', 'loaded_owner_confirmation_pending', 'owner_confirmed_working'):
         raise ValueError('Inspect the original job before restoration; unknown operations are not repeated')
     # The saved windows hold one build's stock bytes; a job of no identifiable build is refused unopened.
-    saved = saved_build(root, state)
+    try:
+        saved = saved_build(root, state)
+    except buildprofile.OtherBuild:
+        # Such a job can never restore anything: retire it, so restore-sound chooses another record (or
+        # none) next time instead of this one again, and say what to do instead.
+        state.update(phase='retired_build_unknown', retired_from=state['phase'])
+        trial.save(root, state)
+        print(RETIRED_UNKNOWN_BUILD, flush=True)
+        raise
     components = state['components']
     state['phase'] = 'restoring_boot_hook_first'
     trial.save(root, state)
@@ -363,8 +382,7 @@ def restore(root, zig=None, camera_factory=trial.factory):
             buildprofile.same_build(saved.key, camera.require_build().key)
             camera.programs_pinned = True
             runtime = probe(camera, root, state, components)
-            reverse = [(w['offset'], bytes.fromhex(w['after_hex']), bytes.fromhex(w['before_hex']))
-                       for w in reversed(components.get('restore_windows',components['windows']))]
+            reverse = restore_edits(components)
             plan = program_worker(before['appFw.so'], before['cpapp-b.bin'], reverse, root / 'restore-build', zig)
             expected = boot_sound.patch(before['appFw.so'], reverse)
             trial.run_native(camera, root, state, plan['path'], 'program', 0, plan)
