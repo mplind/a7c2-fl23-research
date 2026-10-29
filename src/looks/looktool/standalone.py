@@ -4,8 +4,9 @@ Used by offline research/tests, not required by ordinary device imports. The
 native virtual call stays at its original address. No new RX segment/cave.
 """
 from .buildprofile import BUILDS
+from .device_layout import CONVERTER as ENTRY, CONVERTER_END as END
 
-ENTRY,END,TITLE=0x35287f0,0x3528874,0x3528840
+TITLE=0x3528840
 NATIVE_MAP=bytes([0,3,2,1,16,15,17,18,5,13,19,20])
 
 def assemble(mask,build=BUILDS[0]):

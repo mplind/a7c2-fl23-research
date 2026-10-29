@@ -83,7 +83,9 @@
 - `FINALIZING` 阶段接入声音、安装插件和 RAW 映射，并核对竖屏的持久化状态。
 - 失败后再点继续：写入前就失败的子事务会改用新的 `install-retry-*` 计划；结果不明的则停止，保留现场。
 
-**恢复原厂**：内置参考 `src/looks/assets/factory-regions-2.01.json` 只包含本项目会修改的区域的通用原厂字节，不含完整固件或机身数据。这些区域以外的字节和机身校准都保持不变。中断后从当前字节继续（`factoryrecover.pending`）。
+**固件编译版本校验**（`looktool/buildprofile.py`、`looktool/devicesession.py`）：支持 ILCE-7CM2 2.01 的两个编译版本：Sony 公开更新，以及机身上的另一个编译版本（CP 构建日期 2025 年 9 月 23 日）。任务通过 `Camera.read_programs()` 读取两个程序文件并识别：`buildprofile.identify()` 把工具可能改动的所有区域还原为该版本的原厂字节，再用 appFw.so 和 cpapp-b.bin 整个文件的 SHA-256 与各版本比对。识别成功之前，`devicesession.Camera` 拒绝所有设置、CP 和保存写入，以及除只读 `runtime`／`probe` 检测之外的所有原生程序启动。规划函数接收已识别的版本（`build=`），不再重复识别；所有与版本有关的字节和地址都取自该版本（`buildprofile.stock`、`translate`、`device_layout.runtime_for`）。拒绝都是 `buildprofile.Refusal`（`UnsupportedFirmware`、`OtherBuild`、`direct.JobOtherBuild`），其类名作为任务的 `error_type` 保留，窗口据此判断。保存下来的字节（备份、声音任务、原厂参考）记录其来源版本，在另一版本的相机上会被拒绝。
+
+**恢复原厂**：每个版本都有自己的内置参考，只包含本项目会修改的区域的该版本原厂字节：`src/looks/assets/factory-regions-2.01.json`（公开版本）和 `factory-regions-2.01-body-20250923.json`（机身版本，由 `dev/desktop/build_body_reference.py` 根据公开版本参考和机身程序生成）。恢复只使用已识别版本的参考，拒绝另一版本的参考。参考不含完整固件或机身数据。这些区域以外的字节和机身校准都保持不变。中断后从当前字节继续（`factoryrecover.pending`）。
 
 **USB 服务入口**（`camera_runtime/transport.Session`）：
 1. 检查普通 USB 的产品字符串。

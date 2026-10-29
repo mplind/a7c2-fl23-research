@@ -46,6 +46,17 @@ WRITE_TARGETS = {'vertical_enable': '竖屏显示＋Fn／子菜单线框修正',
                  'sound_audition': '临时试听当前转换的声音', 'sound_install': '保存当前转换的声音',
                  'sound_restore_sound': '恢复索尼原厂快门声', 'direct_factory_reset': '原厂 2.01 功能',
                  'direct_fl23_enable': 'FL2／FL3：启用', 'direct_fl23_disable': 'FL2／FL3：从列表移除'}
+# The line that opens the write confirmation of a write whose scope needs saying, by action.
+WRITE_SCOPES = {
+    'direct_looks_import': '一次应用清单内的写入和恢复，未添加的槽位保持原样；保留 FL23、声音和竖屏。写入读回完成后统一提示断电重开。\n',
+    'setup_all': '自动准备 USB 连接并安装首页勾选的功能。断电重开必须由你按提示完成；结果不明时停止，不自动重复刷写。\n',
+    'direct_factory_reset': '将移除项目程序修改、将六个自订栏位设为 ST 默认；旧配方不找回。请先在相机选择 ST。\n',
+    'direct_fl23_disable': '只关闭 FL2／FL3 列表入口，保留 LUT 与共用代码。请先在相机选择 ST。\n',
+    'direct_slot_default': '将所选自订栏位设为 ST 默认，保留其他栏位。\n'}
+# direct_resume_factory's opening line, by whether the restore it continues finished writing.
+RESUME_FACTORY_SCOPES = {
+    True: '先只读核对；只有相机内容已改变时才按当前字节写入，已符合原厂的内容不重复写入。\n',
+    False: '根据当前字节继续未完成阶段，已恢复的内容不重复写入；原失败事务保留，结果不明时先读取报告核对。\n'}
 # The body of every write confirmation. The battery is the one check left to the user (the app can't
 # read its level, so the click confirms it); the model and the firmware build are checked by the app
 # before anything is written (transport.Session, devicesession's build gate). The build check puts the
@@ -578,13 +589,22 @@ class Window(W.QMainWindow):
         layout.addWidget(shell.text_label(tr('连接中断后先查看完整日志。报错不会触发重新刷写或自动重装驱动。'), 'callout'))
         layout.addStretch()
 
-    def recovery_page(self):
+    @staticmethod
+    def builtin_reference():
+        """buildprofile.BUILTIN, the built-in reference Factory restore writes from. Read when the button
+        is clicked: the window opens without looktool (a first source launch), so this makes it importable
+        first, as launch() does."""
+        from .worker import setup_runtime
+        setup_runtime()  # looktool becomes importable only here
         from looktool.buildprofile import BUILTIN
+        return BUILTIN
+
+    def recovery_page(self):
         layout = self.page(tr('恢复原厂功能'), tr('已内置本项目修改区域的原厂 2.01 基准。移除已支持的项目修改，六个自订栏位设为 ST 默认，保留机身校准。无需旧备份或下载完整固件；旧配方不找回。'))
         group = shell.section(layout, tr('原厂 2.01 功能'))
         self.factory_status=shell.text_label(tr('恢复写入后必须按弹窗重启，再接回核对；核对通过前不会标记恢复完成。'), 'callout')
         self.factory_button=self.action_button(tr('恢复／继续恢复原厂 2.01 功能（无需旧备份）'), 'direct_factory_reset',
-                    lambda: self.direct_args('factory', mode='factory_reset', factory=BUILTIN), primary=True)
+                    lambda: self.direct_args('factory', mode='factory_reset', factory=self.builtin_reference()), primary=True)
         self.factory_start_text=self.factory_button.text()
         group.add(shell.ActionRow(tr('移除本工具的修改，六个自订栏位恢复为 ST'), self.factory_status, [self.factory_button]))
         self.factory_accept = self.reload_controls(group, tr('取景、拍照和回放正常'))
@@ -1256,25 +1276,9 @@ class Window(W.QMainWindow):
             return
         writing = action in jobs.POWER_ACTIONS
         if writing:
-            target = ((tr('首页勾选的功能；替换自订 1–6：') + tr(presets.SUMMARY) if arguments.get('options', {}).get('preset_pack') else tr('首页勾选的功能及所选 A7Look 槽位')) if action == 'setup_all' else
-                      tr('自动选择已连接机身最早可用的完整备份') if action == 'restore_auto' else
-                      arguments.get('backup') if action == 'restore' else
-                      tr(WRITE_TARGETS[action]) if action in WRITE_TARGETS else arguments.get('look') or arguments.get('workspace'))
-            if action in jobs.DIRECT_ACTIONS and action not in WRITE_TARGETS:
-                target = (tr('；').join(tr('自订 %s → %s') % (r['slot'], tr('恢复 ST 默认') if r['action']=='restore' else tr('写入 ')+r['name']) for r in arguments.get('operations', []))
-                          if action == 'direct_looks_import' else
-                          tr('继续已写好名称的外观安装：')+arguments.get('failed_workspace','') if action=='direct_resume_looks' else
-                          (tr('核对上次恢复；相机内容若已改变，则按当前字节重新恢复：') if factory_finished else
-                           tr('继续完成名称／设置恢复：')) + arguments.get('failed_workspace', '') if action == 'direct_resume_factory' else
-                          tr('自订 %s：%s') % (arguments.get('slot'), tr('ST 默认') if action == 'direct_slot_default'
-                                           else arguments.get('name') or Path(arguments.get('look', '')).stem))
-            scope = (tr('一次应用清单内的写入和恢复，未添加的槽位保持原样；保留 FL23、声音和竖屏。写入读回完成后统一提示断电重开。\n') if action=='direct_looks_import' else
-                     tr('自动准备 USB 连接并安装首页勾选的功能。断电重开必须由你按提示完成；结果不明时停止，不自动重复刷写。\n') if action == 'setup_all' else
-                     tr('先只读核对；只有相机内容已改变时才按当前字节写入，已符合原厂的内容不重复写入。\n') if action == 'direct_resume_factory' and factory_finished else
-                     tr('根据当前字节继续未完成阶段，已恢复的内容不重复写入；原失败事务保留，结果不明时先读取报告核对。\n') if action == 'direct_resume_factory' else
-                     tr('将移除项目程序修改、将六个自订栏位设为 ST 默认；旧配方不找回。请先在相机选择 ST。\n') if action == 'direct_factory_reset' else
-                     tr('只关闭 FL2／FL3 列表入口，保留 LUT 与共用代码。请先在相机选择 ST。\n') if action == 'direct_fl23_disable' else
-                     tr('将所选自订栏位设为 ST 默认，保留其他栏位。\n') if action == 'direct_slot_default' else '')
+            scope = tr(RESUME_FACTORY_SCOPES[factory_finished] if action == 'direct_resume_factory'
+                       else WRITE_SCOPES.get(action, ''))
+            target = self.write_target(action, arguments, factory_finished)
             if not ask(self, tr('开始相机写入'),
                 scope + tr('目标：') + str(target) + tr(WRITE_CHECKS),
                 tr('写入相机')):
@@ -1321,6 +1325,33 @@ class Window(W.QMainWindow):
         self.process.finished.connect(self.finished)
         self.process.errorOccurred.connect(self.process_error)
         self.process.start(command[0], command[1:])
+
+    @staticmethod
+    def write_target(action, arguments, factory_finished):
+        """The write confirmation's Target line for `action` launched with `arguments`; for
+        direct_resume_factory, `factory_finished` says whether the restore it continues finished writing.
+        Any other write names what it writes from: its look file or its job folder."""
+        if action in WRITE_TARGETS:
+            return tr(WRITE_TARGETS[action])
+        if action == 'setup_all':
+            return (tr('首页勾选的功能；替换自订 1–6：') + tr(presets.SUMMARY) if arguments.get('options', {}).get('preset_pack')
+                    else tr('首页勾选的功能及所选 A7Look 槽位'))
+        if action == 'restore_auto':
+            return tr('自动选择已连接机身最早可用的完整备份')
+        if action == 'restore':
+            return arguments.get('backup')
+        if action == 'direct_looks_import':
+            return tr('；').join(tr('自订 %s → %s') % (r['slot'], tr('恢复 ST 默认') if r['action'] == 'restore' else tr('写入 ') + r['name'])
+                                for r in arguments.get('operations', []))
+        if action == 'direct_resume_looks':
+            return tr('继续已写好名称的外观安装：') + arguments.get('failed_workspace', '')
+        if action == 'direct_resume_factory':
+            return (tr('核对上次恢复；相机内容若已改变，则按当前字节重新恢复：') if factory_finished else
+                    tr('继续完成名称／设置恢复：')) + arguments.get('failed_workspace', '')
+        if action in ('direct_slot_default', 'direct_look_import'):
+            return tr('自订 %s：%s') % (arguments.get('slot'), tr('ST 默认') if action == 'direct_slot_default'
+                                     else arguments.get('name') or Path(arguments.get('look', '')).stem)
+        return arguments.get('look') or arguments.get('workspace')
 
     def process_output(self):
         text = bytes(self.process.readAllStandardOutput()).decode('utf-8', errors='replace')

@@ -40,10 +40,6 @@ def at_in(build, program, offset):
     return translate(offset, build) if program == 'appFw.so' else offset
 
 
-def programs(fixture):
-    return {'appFw.so': fixture.ap, 'cpapp-b.bin': fixture.cp}
-
-
 @pytest.fixture(scope='module')
 def plans(build_fixtures):
     """compat.plan of each stock fixture, with both transitions, worked out once for the module."""
@@ -63,7 +59,7 @@ def test_the_stored_identity_keeps_its_format(plans):
 
 def test_body_plan_writes_the_same_bytes_as_public(build_fixtures, plans):
     public, body = plans['public'][2], plans['body'][2]
-    expected = {name: bytearray(data) for name, data in programs(build_fixtures.body).items()}
+    expected = {name: bytearray(data) for name, data in build_fixtures.body.programs.items()}
     for program, at, _, after in sites():
         moved = at_in(BODY, program, at)
         assert body[program][moved:moved + len(after)] == public[program][at:at + len(after)] == after, (program, hex(at))
@@ -128,14 +124,14 @@ def test_body_reverse_returns_body_stock(build_fixtures, plans):
     restored = firmware.apply(after, reverse)
     assert core.sha(restored['appFw.so']).startswith('77fa856e')
     assert (core.sha(restored['appFw.so']), core.sha(restored['cpapp-b.bin'])) == (BODY.ap_sha256, BODY.cp_sha256)
-    assert restored == programs(build_fixtures.body)
+    assert restored == build_fixtures.body.programs
     assert firmware.apply(restored, forward) == after
 
 
 @EACH_BUILD
 def test_fl23_changes_lie_inside_the_builds_regions(build_fixtures, plans, name, build):
     """Re-identification after the write (or after an interrupted one) must still find the build."""
-    before, after, forward = programs(getattr(build_fixtures, name)), plans[name][2], plans[name][3]
+    before, after, forward = getattr(build_fixtures, name).programs, plans[name][2], plans[name][3]
     tool = regions(build)
     for program in core.PROGRAMS:
         # Every changed byte: put the regions back and nothing else may differ.
@@ -159,7 +155,7 @@ def test_body_plan_recognises_its_own_result(plans):
 
 
 def test_body_plan_completes_an_interrupted_install(build_fixtures, plans):
-    partial = {name: bytearray(data) for name, data in programs(build_fixtures.body).items()}
+    partial = {name: bytearray(data) for name, data in build_fixtures.body.programs.items()}
     for program, at, _, after in sites()[::2]:
         moved = at_in(BODY, program, at)
         partial[program][moved:moved + len(after)] = after
@@ -173,7 +169,7 @@ def test_body_plan_completes_an_interrupted_install(build_fixtures, plans):
 def test_desktop_fl23_enable_installs_the_body_plan(build_fixtures, plans):
     """direct.plan is what the app's FL2/FL3 action runs: on the body build it must plan the same."""
     units = {0x02a40001: Prop(bytes(8192), 0), 0x02a4000d: Prop(bytes(28672), 0)}
-    target, wanted, _ = direct.plan(programs(build_fixtures.body), [{}, units], 'fl23_enable')
+    target, wanted, _ = direct.plan(build_fixtures.body.programs, [{}, units], 'fl23_enable')
     assert target == plans['body'][2]
     assert set(wanted[1]) == set(units)
 

@@ -5,6 +5,7 @@ Real-firmware tests read the folder named by A7C2_BUILD_FIXTURES through conftes
 the one the 28 Oct findings recorded.
 Synthetic tests run everywhere on two 64 KiB builds shaped like those two.
 """
+import ast
 import inspect
 import json
 from pathlib import Path
@@ -446,3 +447,25 @@ def test_a_damaged_regions_file_is_refused(two_builds, damage):
         regions(two_builds.a.build)
     with pytest.raises(ValueError, match='a.json'):
         identify(two_builds.a.ap, two_builds.a.cp)
+
+
+# S8: each public build fact is stated once -------------------------------------------------------
+
+FACTS = {0x35287f0: 'src/looks/looktool/device_layout.py', 0x3528874: 'src/looks/looktool/device_layout.py',
+         0x4c7cf7c: 'src/looks/looktool/buildprofile.py', '00f03d91': 'src/looks/looktool/buildprofile.py'}
+
+
+def test_the_public_build_facts_are_stated_once():
+    # BUILDS[0] states the public look table and converter add, device_layout the converter's extent;
+    # every other module takes them from there.
+    from looktool import device_layout, standalone
+    assert buildprofile.PUBLIC_LOOK_TABLE == PUBLIC.look_table
+    assert device_layout.PUBLIC_TABLE_ADD == PUBLIC.converter_add
+    assert (standalone.ENTRY, standalone.END) == (device_layout.CONVERTER, device_layout.CONVERTER_END)
+    found = {}
+    for relative in ('src/looks/looktool/buildprofile.py', 'src/looks/looktool/device_layout.py',
+                     'src/looks/looktool/standalone.py', 'src/camera_runtime/compat.py'):
+        for node in ast.walk(ast.parse((ROOT / relative).read_text(encoding='utf-8'))):
+            if isinstance(node, ast.Constant) and not isinstance(node.value, bool) and node.value in FACTS:
+                found.setdefault(node.value, []).append(relative)
+    assert found == {fact: [where] for fact, where in FACTS.items()}

@@ -115,13 +115,26 @@ def draw(text, png, work):
                 break
             time.sleep(.2)
     finally:
-        try:
-            os.killpg(chrome.pid, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
-        chrome.wait(timeout=30)
+        stop(chrome)
     if not (png.is_file() and png.read_bytes().endswith(PNG_END)):
         raise RuntimeError('Chrome did not draw the icon: ' + str(png))
+
+
+def stop(process, grace=30):
+    """Stop the process group `process` leads: SIGTERM, then SIGKILL when it hasn't exited after `grace`
+    seconds. A group that has already exited is quiet: killpg then fails with ESRCH, or with EPERM on
+    macOS when only the unreaped leader is left, and the wait reaps it."""
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        try:
+            os.killpg(process.pid, sig)
+        except (ProcessLookupError, PermissionError):
+            pass
+        try:
+            process.wait(timeout=grace)
+            return
+        except subprocess.TimeoutExpired:
+            continue
+    raise RuntimeError('Chrome did not stop, even after SIGKILL: process %d' % process.pid)
 
 
 def main():

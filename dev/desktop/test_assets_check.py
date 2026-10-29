@@ -92,8 +92,17 @@ def test_the_packaged_self_test_fails_without_the_vertical_display_files(monkeyp
     # that leaves them out must fail its self-test, even where verticaltool was already imported.
     from looktool import buildprofile
     monkeypatch.setattr(buildprofile, 'VERTICAL', tmp_path / 'vertical')
-    with pytest.raises(AssertionError, match='Vertical Display'):
+    with pytest.raises(RuntimeError, match='Vertical Display'):
         offline_smoke().check_identity_regions()
+
+
+def test_the_new_self_test_checks_raise_explicitly():
+    # R56 Task 9 minor 10: a check that is an assert vanishes under python -O.
+    import ast
+    tree = ast.parse((ROOT / 'dev/desktop/offline_smoke.py').read_text(encoding='utf-8'))
+    for name in ('check_identity_regions', 'check_app_icon'):
+        function = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == name)
+        assert not [node.lineno for node in ast.walk(function) if isinstance(node, ast.Assert)], name
 
 
 def test_the_packaged_self_test_fails_without_a_builds_regions_file(monkeypatch):

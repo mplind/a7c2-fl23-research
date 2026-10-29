@@ -35,7 +35,8 @@ def test_published_v2_native_fields_upgrade_and_reapply_without_touching_other_b
     # the curve fixture they remain independent and must also be preserved.
     before=bytes(cp)
     fake=SimpleNamespace(runtime_for=lambda build:dict(ap_templates=[''] if lut else ['nonmatching']),
-        fl23_native_windows=lambda:native,fl23_previous_values=layout.fl23_previous_values)
+        fl23_native_windows=lambda:native,fl23_previous_values=layout.fl23_previous_values,
+        CONVERTER=layout.CONVERTER,CONVERTER_END=layout.CONVERTER_END)
     manifest=[dict(writes=[]),dict(writes=[current])]
     with patch.object(compat,'modules',return_value=(fake,None,None,None,buildprofile)), \
          patch.object(compat.core,'read_json',return_value=manifest):

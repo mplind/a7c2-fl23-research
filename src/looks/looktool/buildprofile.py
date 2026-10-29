@@ -26,7 +26,6 @@ SCHEMA = 'a7c2-factory-regions/1'
 # The name of the built-in factory references (desktopapp.official.load, Factory restore's default):
 # every build's regions file, of which a factory reset takes the camera's own build's.
 BUILTIN = 'builtin'
-PUBLIC_LOOK_TABLE = 0x4c7cf7c
 LOOK_TABLE_BYTES = 12
 # appFw.so .rodata that the body build holds 4 to 16 bytes lower than the public build (translate).
 SHIFTED_RODATA = (0x4ba1744, 0x51a09e4)
@@ -98,6 +97,10 @@ BUILDS = (
           converter_add=bytes.fromhex('00b03d91'), boot_log_add=bytes.fromhex('00cc2a91'),
           regions_file='factory-regions-2.01-body-20250923.json'),
 )
+
+
+# The public build's look table, from which translate() moves table addresses to another build's.
+PUBLIC_LOOK_TABLE = BUILDS[0].look_table
 
 
 def by_key(key):

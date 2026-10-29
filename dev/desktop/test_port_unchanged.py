@@ -88,10 +88,6 @@ RESOLVED_PAIRS = {
 }
 
 
-def programs(fixture):
-    return {'appFw.so': fixture.ap, 'cpapp-b.bin': fixture.cp}
-
-
 def changed(before, after):
     """Every offset at which `after` differs from `before`, two programs of one size."""
     assert len(before) == len(after)
@@ -247,7 +243,7 @@ def tool_spans(public):
     """(program, public offset, size) of every span a tool writes in either program: the spans
     build_factory_reference.py collects from the public programs, joined with the public identity
     set, which also holds the regions of older tool releases."""
-    spans = build_factory_reference.program_spans(programs(public))
+    spans = build_factory_reference.program_spans(public.programs)
     for program, rows in buildprofile.identity_regions(PUBLIC).items():
         spans[program] = build_factory_reference.merged(spans[program] + [(at, len(raw)) for at, raw in rows])
     return [(program, at, size) for program in PROGRAMS for at, size in spans[program]]
@@ -332,7 +328,7 @@ def written(ap, windows, count, cut=0):
 
 def test_identity_regions_hold_each_builds_own_stock_bytes(build_fixtures):
     for build, fixture in ((PUBLIC, build_fixtures.public), (BODY, build_fixtures.body)):
-        files = programs(fixture)
+        files = fixture.programs
         for program, rows in buildprofile.identity_regions(build).items():
             for at, raw in rows:
                 assert files[program][at:at + len(raw)] == raw, (build.key, program, hex(at))
@@ -396,7 +392,7 @@ def test_identity_set_covers_every_generated_region(build_fixtures):
     """identity_regions holds every span build_factory_reference.py collects today, at each build's own
     address, so a generator change that adds a tool region cannot leave it out of identification
     unnoticed. (The committed public regions file predates the vertical windows.)"""
-    generated = build_factory_reference.program_spans(programs(build_fixtures.public))
+    generated = build_factory_reference.program_spans(build_fixtures.public.programs)
     assert sum(len(spans) for spans in generated.values()) == 44 + 41
     for build in BUILDS:
         identity = {program: Spans(rows) for program, rows in buildprofile.identity_regions(build).items()}
@@ -479,7 +475,7 @@ def photo_stages(build_fixtures):
     and .identified (the build its programs identify as)."""
     result = {}
     for name, build in (('public', PUBLIC), ('body', BODY)):
-        stock = programs(getattr(build_fixtures, name))
+        stock = getattr(build_fixtures, name).programs
         first = device_layout.replace(stock['appFw.so'], stock['cpapp-b.bin'], {1: table(1)}, build=build,
                                       hash_checks=False, transitions=False)[2]
         bank = photoio.neutral_bank(first['cpapp-b.bin'])
@@ -567,7 +563,7 @@ def test_every_write_site_has_identical_context_in_both_builds(build_fixtures, s
     assert facts == set(BUILD_FACTS)
     sites = tool_spans(build_fixtures.public)
     text = section(build_fixtures.public.ap, '.text')
-    pairs, failures = context_check(programs(build_fixtures.public), programs(build_fixtures.body), sites,
+    pairs, failures = context_check(build_fixtures.public.programs, build_fixtures.body.programs, sites,
                                     text=(text[0], text[0] + text[2]), shifts=shifts,
                                     moved=lambda at: translate(at, BODY), facts=BUILD_FACTS)
     assert [(program, hex(at), reason) for program, at, reason in failures] == []

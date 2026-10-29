@@ -11,9 +11,11 @@ writes to a new folder of its own, never into a fixture folder.
 Each must have the SHA-256 recorded here, as the programs must; a build's name files are refused
 until their digests are recorded. conftest.py serves them as build_resources. Offline only.
 """
+import copy
 import hashlib
+import json
 from pathlib import Path
-from types import SimpleNamespace
+from types import MappingProxyType, SimpleNamespace
 
 PROGRAMS = ('appFw.so', 'cpapp-b.bin')
 SIZES = (99960744, 18090880)
@@ -24,8 +26,8 @@ FINDINGS = {
     'body-2.01-20250923': ('77fa856ed5812124ffec507857ec48af43159357b2c8a341cb15f3d5c1076d54',
                            '171f6d7c0b95c6bea3b64487d0b826f38a94ec92ca3984679a0ee2899e704efa'),
 }
-# The camera after the 27 Oct Factory Restore wrote public bytes into the body build
-# (camera-check/20261028T043722Z/report.json).
+# The camera after the 27 Oct Factory Restore wrote public bytes into the body build, as the read-only
+# check of 28 Oct 2026 (camera_fingerprint.py's report) measured it.
 HYBRID = ('4a75b330c13132674879e6838ae44e7a07467384454cdf4d393a376a00fd7b3e',
           '171f6d7c0b95c6bea3b64487d0b826f38a94ec92ca3984679a0ee2899e704efa')
 DIGESTS = {**FINDINGS, 'hybrid-20261027': HYBRID}
@@ -110,14 +112,37 @@ def sha(data):
     return hashlib.sha256(data).hexdigest()
 
 
+def digests(programs):
+    """(appFw.so SHA-256, cpapp-b.bin SHA-256) of {'appFw.so': …, 'cpapp-b.bin': …}."""
+    return tuple(sha(programs[name]) for name in PROGRAMS)
+
+
+def manifest_digest(manifest):
+    """SHA-256 of a planner's window manifest or report, as sorted JSON: one pin for a whole plan."""
+    return sha(json.dumps(manifest, sort_keys=True).encode())
+
+
 def read(folder):
-    """Every fixture's programs under `folder`, by folder name, with their digests."""
+    """Every fixture's programs under `folder`, by folder name: .ap, .cp, both as .programs
+    ({'appFw.so': …, 'cpapp-b.bin': …}, the shape the planners take) and their .digests."""
     result = {}
     for name in DIGESTS:
         path = Path(folder) / name
         ap, cp = ((path / program).read_bytes() for program in PROGRAMS)
-        result[name] = SimpleNamespace(folder=path, ap=ap, cp=cp, digests=(sha(ap), sha(cp)))
+        programs = MappingProxyType(dict(zip(PROGRAMS, (ap, cp))))  # read-only: one copy serves the module
+        result[name] = SimpleNamespace(folder=path, ap=ap, cp=cp, programs=programs, digests=digests(programs))
     return result
+
+
+def unchanged(camera):
+    """A copy of what simulated `camera` (test_checkpoint.Camera) holds: its files, live and saved settings."""
+    return copy.deepcopy((camera.files, camera.ram, camera.saved))
+
+
+def assert_nothing_written(camera, before):
+    """Simulated `camera` ran no native worker, saved no settings and holds what unchanged() copied."""
+    assert camera.native_calls == [] and camera.saves == []
+    assert (camera.files, camera.ram, camera.saved) == before
 
 
 def mismatches(files):

@@ -168,11 +168,13 @@ def check_identity_regions():
     even where verticaltool was already imported from somewhere else."""
     from looktool import buildprofile
     layout = buildprofile.VERTICAL / 'verticaltool/portraitlayout.py'
-    assert layout.is_file(), 'The Vertical Display files are missing from the package: ' + str(layout)
+    if not layout.is_file():
+        raise RuntimeError('The Vertical Display files are missing from the package: ' + str(layout))
     result = {}
     for build in buildprofile.BUILDS:
         rows = buildprofile.identity_regions(build)
-        assert rows['appFw.so'] and rows['cpapp-b.bin'], 'No identity regions for ' + build.key
+        if not (rows['appFw.so'] and rows['cpapp-b.bin']):
+            raise RuntimeError('No identity regions for ' + build.key)
         result[build.key] = {program: len(found) for program, found in rows.items()}
     return result
 
@@ -192,8 +194,8 @@ def check_app_icon():
     for index in range(reader.imageCount()):
         reader.jumpToImage(index)
         sizes.add(reader.read().width())
-    assert reader.format() == b'icns' and set(APP_ICON_SIZES) <= sizes, \
-        'The app icon is missing or unreadable: %s (%s)' % (paths.APP_ICON, reader.errorString())
+    if reader.format() != b'icns' or not set(APP_ICON_SIZES) <= sizes:
+        raise RuntimeError('The app icon is missing or unreadable: %s (%s)' % (paths.APP_ICON, reader.errorString()))
     return dict(sizes=sorted(sizes))
 
 

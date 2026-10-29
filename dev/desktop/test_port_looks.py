@@ -8,7 +8,6 @@ from concurrent.futures import ThreadPoolExecutor
 import dataclasses
 import importlib.util
 import inspect
-import json
 from types import SimpleNamespace
 
 import numpy as np
@@ -18,6 +17,7 @@ from unicorn.arm64_const import UC_ARM64_REG_LR, UC_ARM64_REG_PC, UC_ARM64_REG_X
 
 from looktool import device_layout, firmware, six, standalone
 from looktool.buildprofile import BUILDS, LOOK_TABLE_BYTES, PUBLIC_LOOK_TABLE, identify, regions, stock, translate
+from buildfixtures import digests, manifest_digest
 from looktool.devicesession import modules
 
 core = modules()[1]
@@ -74,18 +74,10 @@ def slots(mask):
     return [slot for slot in range(1, 7) if mask >> (slot - 1) & 1]
 
 
-def programs(fixture):
-    return {'appFw.so': fixture.ap, 'cpapp-b.bin': fixture.cp}
-
-
 def install(source, mask, build, **options):
     """device_layout.replace of the slots in `mask`, each with its own table, on `source`."""
     return device_layout.replace(source['appFw.so'], source['cpapp-b.bin'], {slot: table(slot) for slot in slots(mask)},
                                  build=build, **options)
-
-
-def digests(result):
-    return firmware.sha(result['appFw.so']), firmware.sha(result['cpapp-b.bin'])
 
 
 CHUNK = 1 << 20
@@ -127,7 +119,7 @@ def sweep(build_fixtures):
     highest slot (deactivations[mask], so deactivations[1] is mask 0). Each is kept as change()."""
     result = {}
     for name, build in (('public', PUBLIC), ('body', BODY)):
-        base = programs(getattr(build_fixtures, name))
+        base = getattr(build_fixtures, name).programs
         installs, deactivations = {}, {}
         for mask in range(1, 64):
             after = install(base, mask, build, hash_checks=False, transitions=False)[2]
@@ -303,7 +295,7 @@ def test_body_identify_ap_recognises_installed_masks(sweep):
 
 
 def test_body_stock_and_fl23_are_first_installs(build_fixtures):
-    body = programs(build_fixtures.body)
+    body = build_fixtures.body.programs
     _, _, fl23, _, _ = compat.plan(body['appFw.so'], body['cpapp-b.bin'], transitions=False)
     for source, kind in ((body, 'stock'), (fl23, 'fl23')):
         expected = {'kind': kind, 'mask': 0, 'label_ids': LABEL_IDS, 'first_install': True}
@@ -322,7 +314,7 @@ def test_body_deactivate_restores_body_stock(build_fixtures):
     """Install three looks on body stock and take them off again, with whole-file identity checks and
     both transitions at every step. The install's reverse gives body stock byte for byte; taking every
     slot off leaves body stock with only the dormant converter and CP runtime on top."""
-    body = programs(build_fixtures.body)
+    body = build_fixtures.body.programs
     raw = {slot: device_layout.before_first_table(body['appFw.so'], body['cpapp-b.bin'], slot, build=BODY) for slot in (1, 3, 6)}
     # replace and deactivate identify the build from the programs themselves.
     forward, reverse, installed = install(body, 0b100101, None)
@@ -355,7 +347,7 @@ def test_body_deactivate_restores_body_stock(build_fixtures):
 def test_fl23_and_custom_looks_install_in_either_order(build_fixtures, name, build):
     """FL2/FL3 planned on a camera with custom looks keeps them, and FL2/FL3 then looks ends in the
     same programs as looks then FL2/FL3 (src/looks/tests/test_install_order.py, on both builds)."""
-    base = programs(getattr(build_fixtures, name))
+    base = getattr(build_fixtures, name).programs
     looks = {2: table(2), 5: table(5)}
     _, _, fl23, _, _ = compat.plan(base['appFw.so'], base['cpapp-b.bin'], transitions=False)
     _, _, first = device_layout.replace(fl23['appFw.so'], fl23['cpapp-b.bin'], looks, transitions=False)
@@ -381,7 +373,7 @@ def test_body_runtime_digests_are_those_of_the_fixtures(build_fixtures):
     custom-look CP code. The same computations on the public fixtures give the public digests."""
     asset = device_layout.runtime()
     for name, build in (('public', PUBLIC), ('body', BODY)):
-        base = programs(getattr(build_fixtures, name))
+        base = getattr(build_fixtures, name).programs
         _, _, fl23, _, _ = compat.plan(base['appFw.so'], base['cpapp-b.bin'], transitions=False)
         _, _, installed = install(base, 1, build, hash_checks=False, transitions=False)
         computed = {'stock_sha256': firmware.sha(base['appFw.so']), 'fl23_sha256': firmware.sha(fl23['appFw.so']),
@@ -397,7 +389,7 @@ def test_body_runtime_digests_are_those_of_the_fixtures(build_fixtures):
 def test_body_restore_windows_hold_body_stock_and_body_fl23(build_fixtures):
     """runtime_for(BODY)'s restore windows: 'stock' holds body stock and 'fl23' holds what compat.plan
     writes on body stock, each at the body's own addresses."""
-    body = programs(build_fixtures.body)
+    body = build_fixtures.body.programs
     _, _, fl23, _, _ = compat.plan(body['appFw.so'], body['cpapp-b.bin'], transitions=False)
     sources = {spec['kind']: spec for spec in device_layout.runtime_for(BODY)['ap_sources']}
     for kind, source in (('stock', body), ('fl23', fl23)):
@@ -407,7 +399,7 @@ def test_body_restore_windows_hold_body_stock_and_body_fl23(build_fixtures):
 
 
 def test_public_custom_looks_are_unchanged_by_the_port(build_fixtures):
-    public = programs(build_fixtures.public)
+    public = build_fixtures.public.programs
     results = {}
     forward, reverse, one = install(public, 1, None)
     results.update({'install-1': digests(one), 'install-1-forward': manifest_digest(forward),
@@ -425,10 +417,6 @@ def test_public_custom_looks_are_unchanged_by_the_port(build_fixtures):
     _, _, fl23, _, _ = compat.plan(public['appFw.so'], public['cpapp-b.bin'], transitions=False)
     results['fl23-then-18'] = digests(install(fl23, 18, PUBLIC, hash_checks=False, transitions=False)[2])
     assert results == PUBLIC_BEFORE_THE_PORT
-
-
-def manifest_digest(manifest):
-    return firmware.sha(json.dumps(manifest, sort_keys=True).encode())
 
 
 # Committed tables ----------------------------------------------------------------------------

@@ -17,7 +17,7 @@ CODE_SHA='5434cd40a746fef421fbe6825ebbdc1d41aa5304a686a162bb56378a6e94c4b5'  # F
 
 CONVERTER,CONVERTER_END=0x35287f0,0x3528874
 TABLE_ADD=0x3528828  # every template's `add x0,x0,#table` (template offset 0x38)
-PUBLIC_TABLE_ADD=bytes.fromhex('00f03d91')
+PUBLIC_TABLE_ADD=buildprofile.BUILDS[0].converter_add  # the public build's, which the bundled templates hold
 
 def _candidates(build):
     """The builds an appFw.so-only check may match: `build`, or every supported build when None."""
@@ -149,7 +149,7 @@ def structural_ap(ap,*,build=None):
         if template in asset['ap_templates']:
             return {'kind':base+'-lut','mask':asset['ap_templates'].index(template),'label_ids':labels}
     legacy=bytes.fromhex('e1000035002800511f1400718800005400e4031140000039c0035fd63f2c007188020054800000100048613840000039c0035fd600030201100f1112050d13141f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d5')
-    if ap[0x3528804:0x3528874]==legacy:
+    if ap[0x3528804:CONVERTER_END]==legacy:
         from .resources import LABEL_IDS
         return {'kind':'legacy-six','mask':63,'label_ids':list(LABEL_IDS)}
     for asset in assets:

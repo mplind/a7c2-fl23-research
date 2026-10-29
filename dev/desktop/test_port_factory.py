@@ -1,7 +1,7 @@
 """Factory Restore per build: a camera is restored only from its own build's stock regions.
 
 On 27 Oct 2026 a Factory Restore wrote the public build's regions file into the body build, 14 bytes
-in three windows, which camera-check/putback.py put back on 28 Oct. Now the built-in reference is
+in three windows, which a one-off put-back script restored on 28 Oct. Now the built-in reference is
 chosen once the camera's programs are identified, a full Sony reference is used only on the build its
 own programs are, and a job's verification reloads the reference of the build it recorded.
 
@@ -9,8 +9,6 @@ Cameras are simulated (test_checkpoint.Camera). Real-firmware tests read A7C2_BU
 conftest.py's build_fixtures and skip when it is unset; the rest run everywhere on the committed
 regions files. Offline only.
 """
-import copy
-import hashlib
 import inspect
 import json
 import os
@@ -24,6 +22,7 @@ from desktopapp import official, worker
 from desktopapp.en import STRINGS
 from looktool import buildprofile, checkpoint, checkpointworker, direct, nameworker
 from looktool.buildprofile import BUILDS, UnsupportedFirmware, identity_regions, regions
+from buildfixtures import assert_nothing_written, digests, sha, unchanged
 import buildfixtures
 from test_checkpoint import Camera, fake_compile, stock_names
 from test_device_job import Prop
@@ -31,7 +30,7 @@ from test_direct import SimDirect
 
 PUBLIC, BODY = BUILDS
 PROGRAMS = ('appFw.so', 'cpapp-b.bin')
-# The 28 Oct put-back (camera-check/putback.py, RESTORED): (offset, what the 27 Oct restore wrote,
+# The 28 Oct put-back, as its script recorded it (RESTORED): (offset, what the 27 Oct restore wrote,
 # the body's own bytes). 2 + 1 + 11 = 14 bytes; cpapp-b.bin was untouched.
 PUT_BACK = [(0x3060a2d, '0c2b', 'cc2a'),
             (0x3528811, 'f0', 'b0'),
@@ -61,18 +60,6 @@ PUBLIC_BEFORE_THE_PORT = {
         'wanted': '96a23ed45d0720bf6fde3f815446960164ad550c05b65f4f9fe4728e3616dfe6',
         'headers': '98874040e41fffb0032d97bc58aac494f47e875452f8037bfc86a063c274a5d8', 'windows': 20},
 }
-
-
-def sha(data):
-    return hashlib.sha256(data).hexdigest()
-
-
-def programs(fixture):
-    return {'appFw.so': fixture.ap, 'cpapp-b.bin': fixture.cp}
-
-
-def digests(values):
-    return sha(values['appFw.so']), sha(values['cpapp-b.bin'])
 
 
 def windows(before, after):
@@ -136,15 +123,6 @@ def camera(values):
     return sim
 
 
-def unchanged(sim):
-    return copy.deepcopy((sim.files, sim.ram, sim.saved))
-
-
-def assert_nothing_written(sim, before):
-    assert sim.native_calls == [] and sim.saves == []
-    assert (sim.files, sim.ram, sim.saved) == before
-
-
 def through_the_worker(action, sim, folder, monkeypatch, **arguments):
     """Run a desktop direct action the way the Factory Restore button does, on simulated camera `sim`."""
     monkeypatch.setenv('A7C2_DESKTOP_DATA', str(folder / 'data'))
@@ -170,8 +148,8 @@ def full_reference(folder, fixture):
 
 
 def put_back_reference(values):
-    """The 28 Oct put-back's reference (camera-check/putback.py build_reference): the public regions
-    file's regions, each holding the body's own bytes at the same offset, recorded as the body build."""
+    """The 28 Oct put-back script's reference: the public regions file's regions, each holding the
+    body's own bytes at the same offset, recorded as the body build."""
     document = buildprofile.regions_document(PUBLIC)
     for name in PROGRAMS:
         for region in document['programs'][name]['regions']:
@@ -286,7 +264,7 @@ def test_direct_has_no_region_decoder_of_its_own():
 def test_builtin_factory_on_body_writes_only_body_stock(build_fixtures, tmp_path, monkeypatch):
     """Replays 27 Oct: Factory Restore with the built-in reference, from the Factory Restore button, on
     the body camera in the state that restore found (stock programs, FL2 selected)."""
-    body = programs(build_fixtures.body)
+    body = build_fixtures.body.programs
     # What the 27 Oct restore wrote: the public regions file over the body's programs.
     wrote = {name: with_regions(body[name], rows) for name, rows in regions(PUBLIC).items()}
     assert digests(wrote) == buildfixtures.HYBRID
@@ -315,7 +293,7 @@ def test_factory_restore_leaves_a_saved_custom_sound_on_the_camera(build_fixture
     the saved custom sound's files (boot_trial.PATHS), which stay on the camera, unused. The English
     must say so, not that everything the tool added is removed."""
     import boot_trial
-    sim = camera(every_region_changed(programs(build_fixtures.body), BODY))
+    sim = camera(every_region_changed(build_fixtures.body.programs, BODY))
     saved_sound = {path: b'saved sound for ' + path.encode() for path in boot_trial.PATHS}
     sim.files.update(saved_sound)
     before = dict(sim.files)
@@ -330,7 +308,7 @@ def test_factory_restore_leaves_a_saved_custom_sound_on_the_camera(build_fixture
 
 
 def test_body_restore_writes_every_changed_region_back_with_body_stock(build_fixtures, tmp_path, monkeypatch):
-    body = programs(build_fixtures.body)
+    body = build_fixtures.body.programs
     before = every_region_changed(body, BODY)
     sim = camera(before)
     result = through_the_worker('direct_factory_reset', sim, tmp_path, monkeypatch)
@@ -344,7 +322,7 @@ def test_body_restore_writes_every_changed_region_back_with_body_stock(build_fix
 
 
 def test_the_27_oct_state_is_refused_before_any_write(build_fixtures, tmp_path, monkeypatch):
-    sim = camera(programs(build_fixtures.hybrid))
+    sim = camera(build_fixtures.hybrid.programs)
     before = unchanged(sim)
     with pytest.raises(UnsupportedFirmware):
         through_the_worker('direct_factory_reset', sim, tmp_path, monkeypatch)
@@ -354,7 +332,7 @@ def test_the_27_oct_state_is_refused_before_any_write(build_fixtures, tmp_path, 
 def test_body_regions_alone_cannot_repair_the_27_oct_state(build_fixtures):
     """Why the identity gate refuses the 27 Oct state: the public table landed outside every body
     region, so the body's own regions file leaves those 11 bytes as the public restore wrote them."""
-    body, hybrid = programs(build_fixtures.body), programs(build_fixtures.hybrid)
+    body, hybrid = build_fixtures.body.programs, build_fixtures.hybrid.programs
     repaired = with_regions(hybrid['appFw.so'], regions(BODY)['appFw.so'])
     assert windows(repaired, body['appFw.so']) == [PUT_BACK[2]]
 
@@ -362,8 +340,8 @@ def test_body_regions_alone_cannot_repair_the_27_oct_state(build_fixtures):
 def test_the_27_oct_state_is_recovered_by_the_put_back_reference(build_fixtures):
     """The recovery for a body camera in the 27 Oct state, which Factory Restore refuses: the regional
     factory plan computed directly, for the body build, from the put-back's own reference (the public
-    region offsets holding the body's bytes), as camera-check/putback.py ran it on 28 Oct."""
-    body, hybrid = programs(build_fixtures.body), programs(build_fixtures.hybrid)
+    region offsets holding the body's bytes), as the put-back script ran it on 28 Oct."""
+    body, hybrid = build_fixtures.body.programs, build_fixtures.hybrid.programs
     with pytest.raises(UnsupportedFirmware):
         buildprofile.identify(hybrid['appFw.so'], hybrid['cpapp-b.bin'])
     target, _, rename = direct.plan(current(hybrid), factory_records(), 'factory_reset',
@@ -383,7 +361,7 @@ def test_full_reference_of_another_build_is_refused(build_fixtures, tmp_path, mo
     assert body['firmware_build'] == BODY.key
     for build, fixture, reference in ((BODY, build_fixtures.body, 'public-reference'),
                                       (PUBLIC, build_fixtures.public, 'body-reference')):
-        sim = camera(programs(fixture))
+        sim = camera(fixture.programs)
         before = unchanged(sim)
         other = {'public-reference': PUBLIC, 'body-reference': BODY}[reference]
         with patch.object(checkpointworker, 'build_programs', side_effect=AssertionError('planned')), \
@@ -400,7 +378,7 @@ def test_a_full_reference_carrying_tool_changes_is_refused_when_loaded(build_fix
     with tool changes still identify (the changes sit in tool regions) but are refused."""
     fixture = getattr(build_fixtures, name)
     folder = full_reference(tmp_path / 'reference', fixture)
-    changed = every_region_changed(programs(fixture), build)['appFw.so']
+    changed = every_region_changed(fixture.programs, build)['appFw.so']
     assert buildprofile.identify(changed, fixture.cp) is build
     (folder / 'appFw.so').unlink()
     (folder / 'appFw.so').write_bytes(changed)
@@ -421,16 +399,16 @@ def test_the_decoded_public_bodydata_is_a_public_reference(build_fixtures):
     reference = official.load(os.environ['A7C2_ORIGINAL_REFERENCE'])
     assert reference['firmware_build'] == PUBLIC.key
     assert digests(reference) == buildfixtures.FINDINGS[PUBLIC.key]
-    body = current(programs(build_fixtures.body))
+    body = current(build_fixtures.body.programs)
     with pytest.raises(buildprofile.OtherBuild):
         direct.plan(body, None, 'factory_reset', factory=reference, build=BODY)
-    changed = current(every_region_changed(programs(build_fixtures.public), PUBLIC))
+    changed = current(every_region_changed(build_fixtures.public.programs, PUBLIC))
     target, _, _ = direct.plan(changed, factory_records(), 'factory_reset', factory=reference)
     assert digests(target) == buildfixtures.FINDINGS[PUBLIC.key]
 
 
 def test_verify_uses_the_jobs_recorded_build(build_fixtures, tmp_path, monkeypatch):
-    sim = camera(every_region_changed(programs(build_fixtures.body), BODY))
+    sim = camera(every_region_changed(build_fixtures.body.programs, BODY))
     result = through_the_worker('direct_factory_reset', sim, tmp_path, monkeypatch)
     state_path = Path(result['workspace']) / 'direct.private.json'
     assert json.loads(state_path.read_text(encoding='utf-8'))['firmware_build'] == BODY.key
@@ -444,7 +422,7 @@ def test_verify_uses_the_jobs_recorded_build(build_fixtures, tmp_path, monkeypat
     state = json.loads(state_path.read_text(encoding='utf-8'))
     state_path.write_text(json.dumps(dict(state, phase='AWAITING_RELOAD')), encoding='utf-8')
     for name, path in checkpoint.PROGRAM_PATHS.items():
-        sim.files[path] = programs(build_fixtures.public)[name]
+        sim.files[path] = build_fixtures.public.programs[name]
     sim.native_calls.clear()
     sim.saves.clear()
     before = unchanged(sim)
@@ -455,7 +433,7 @@ def test_verify_uses_the_jobs_recorded_build(build_fixtures, tmp_path, monkeypat
 
 
 def test_a_job_saved_before_builds_were_recorded_verifies_the_cameras_build(build_fixtures, tmp_path, monkeypatch):
-    sim = camera(every_region_changed(programs(build_fixtures.body), BODY))
+    sim = camera(every_region_changed(build_fixtures.body.programs, BODY))
     result = through_the_worker('direct_factory_reset', sim, tmp_path, monkeypatch)
     state_path = Path(result['workspace']) / 'direct.private.json'
     state = json.loads(state_path.read_text(encoding='utf-8'))
@@ -496,7 +474,7 @@ def test_public_factory_restore_is_unchanged_by_the_port(build_fixtures):
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'src/vertical'))
     from verticaltool import portraitlayout
-    public = programs(build_fixtures.public)
+    public = build_fixtures.public.programs
     results = {'vertical-window-stray-byte': public_factory_outputs(stray_vertical_byte(public, portraitlayout)),
                'every-region-changed': public_factory_outputs(every_region_changed(public, PUBLIC)),
                'vertical-installed': public_factory_outputs(

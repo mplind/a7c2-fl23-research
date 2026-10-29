@@ -23,6 +23,7 @@ import pytest
 from desktopapp import recovery, worker
 from looktool import buildprofile, checkpoint, checkpointworker
 from looktool.buildprofile import BUILDS
+from buildfixtures import assert_nothing_written, unchanged
 import test_checkpoint as simulated
 from test_checkpoint import Camera, KEYS, SimRollback, fake_compile, values
 from guihelpers import HAN_OR_PUNCTUATION
@@ -65,15 +66,6 @@ def updated_camera(build):
     camera.saved = copy.deepcopy(camera.ram)
     camera.carries = build
     return camera
-
-
-def unchanged(camera):
-    return copy.deepcopy((camera.files, camera.ram, camera.saved))
-
-
-def assert_nothing_written(camera, before):
-    assert camera.native_calls == [] and camera.saves == []
-    assert (camera.files, camera.ram, camera.saved) == before
 
 
 def restored(camera):

@@ -456,3 +456,18 @@ def test_no_english_label_drops_a_safety_fact_the_chinese_states():
     for source in ('FL2／FL3 已启用：写入并完整读回。重开相机后生效，无需再点核对。',
                    'FL2／FL3 已从列表移除：写入并完整读回。重开相机后生效，无需再点核对。'):
         assert 'written and read back in full' in STRINGS[source]
+
+
+@pytest.mark.parametrize('action', ['direct_install_all', 'direct_vertical_enable', 'direct_sound_enable',
+                                    'direct_resume_settings'])
+def test_a_direct_write_without_its_own_target_names_its_workspace(window, action):
+    # S5: such a write once read "Target: Custom None: …"; its target is its workspace.
+    ui = window('en')
+    text = confirmation(ui, action, dict(firmware='2.01', workspace='/work/job-folder'))
+    assert 'Target: /work/job-folder' in text and 'None' not in text
+
+
+def test_every_write_scope_belongs_to_a_write():
+    from desktopapp import jobs, window as window_module
+    assert set(window_module.WRITE_SCOPES) <= jobs.POWER_ACTIONS
+    assert set(window_module.WRITE_TARGETS) <= jobs.POWER_ACTIONS

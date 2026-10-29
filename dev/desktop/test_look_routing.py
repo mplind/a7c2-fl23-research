@@ -71,12 +71,42 @@ class LookRoutingTests(unittest.TestCase):
             window.close()
             print('fresh-look-route-ok')
         ''')
+        self.assertIn('fresh-look-route-ok', self.fresh(script))
+
+    def fresh(self, script):
+        """Run `script` in a child interpreter started as a first source launch: only src/ on the
+        path, so looktool is importable only once the window makes it so. Returns its output."""
         environment = dict(os.environ)
         environment.pop('PYTHONPATH', None)
         result = subprocess.run([sys.executable, '-c', script], cwd=ROOT,
             env=environment, capture_output=True, text=True, encoding='utf-8', timeout=30)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn('fresh-look-route-ok', result.stdout)
+        return result.stdout
+
+    def test_first_source_launch_factory_restore_asks_for_the_builtin_reference(self):
+        # The window opens without looktool; the Factory restore button reads buildprofile.BUILTIN
+        # when clicked. launch is replaced, so nothing is planned or started.
+        script = textwrap.dedent('''
+            import sys
+            from pathlib import Path
+            from unittest.mock import patch
+            sys.path.insert(0, str(Path.cwd() / 'src'))
+            from PySide6 import QtWidgets as W
+            from desktopapp.window import Window
+            app = W.QApplication([])
+            window = Window()
+            window.timer.stop()
+            assert 'looktool' not in sys.modules
+            with patch.object(Window, 'launch') as launch:
+                window.factory_button.click()
+            from looktool.buildprofile import BUILTIN
+            action, arguments = launch.call_args.args
+            assert (action, arguments['factory']) == ('direct_factory_reset', BUILTIN), launch.call_args
+            window.process = None
+            window.close()
+            print('fresh-factory-ok')
+        ''')
+        self.assertIn('fresh-factory-ok', self.fresh(script))
 
     def test_continuation_tracks_actual_returned_workspace_and_survives_gui_restart(self):
         for phase in ('AWAITING_RESOURCE_RELOAD',):

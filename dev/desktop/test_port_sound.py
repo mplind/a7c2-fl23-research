@@ -20,6 +20,7 @@ import pytest
 
 from looktool import buildprofile, direct, firmware
 from looktool.buildprofile import BUILDS, UnsupportedFirmware, identify, regions, stock
+from buildfixtures import digests, manifest_digest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'src/shutter_sound'))
 import boot_sound  # noqa: E402
@@ -51,18 +52,6 @@ PUBLIC_BEFORE_THE_PORT = {
     'current-probe-installed': '12972af7baf7a7ca39d9ee5495398e9f4e0e0d02e97519836a05845d2e18a92d',
     'emulation': 'dedfc21eae3920b3fcc13a7e2236aac8851facf804b4738fc1ff44839820b5d8',
 }
-
-
-def programs(fixture):
-    return {'appFw.so': fixture.ap, 'cpapp-b.bin': fixture.cp}
-
-
-def digests(result):
-    return firmware.sha(result['appFw.so']), firmware.sha(result['cpapp-b.bin'])
-
-
-def manifest_digest(manifest):
-    return firmware.sha(json.dumps(manifest, sort_keys=True).encode())
 
 
 @contextmanager
@@ -125,7 +114,7 @@ def saves(build_fixtures, tmp_path_factory):
     identified from the programs: .stock, .target, .parts and the .folder of the generated headers."""
     result = {}
     for name in ('public', 'body'):
-        base = programs(getattr(build_fixtures, name))
+        base = getattr(build_fixtures, name).programs
         folder = tmp_path_factory.mktemp(name) / 'save'
         target, parts = save(base, folder)
         result[name] = SimpleNamespace(stock=base, target=target, parts=parts, folder=folder)
@@ -135,7 +124,7 @@ def saves(build_fixtures, tmp_path_factory):
 # Real firmware -------------------------------------------------------------------------------
 
 def test_body_sound_windows_check_body_stock(build_fixtures):
-    body = programs(build_fixtures.body)
+    body = build_fixtures.body.programs
     edits = boot_sound.windows(body['appFw.so'], build=BODY)
     assert edits == boot_sound.expected_windows(BODY)
     for at, old, _ in edits:
@@ -150,7 +139,7 @@ def test_each_build_is_checked_against_its_own_boot_block_only(build_fixtures, n
     with pytest.raises(ValueError, match='differs at 0x3060a24'):
         boot_sound.windows(fixture.ap, build=other)
     with pytest.raises(ValueError, match='conflict at 0x3060a24'):
-        save(programs(fixture), tmp_path / 'save', build=other)
+        save(fixture.programs, tmp_path / 'save', build=other)
     with pytest.raises(ValueError, match='conflict at 0x3060a24'):
         boot_sound.restore_plan(fixture.ap, build=other)
     with pytest.raises(ValueError, match='conflict at 0x3060a24'), offline_compiler():
@@ -290,7 +279,7 @@ def test_body_with_the_public_boot_block_is_refused(build_fixtures, tmp_path):
     """The 27 Oct Factory Restore wrote the public boot block into the body build. It lies inside the
     tool regions, so the programs identify as the body, but neither Save nor restore may take the
     public block for the body's own: a factory restore puts the body's back."""
-    body = programs(build_fixtures.body)
+    body = build_fixtures.body.programs
     assert build_fixtures.hybrid.ap[BOOT:BOOT + 16] == boot_sound.original_boot(PUBLIC)
     mixed = dict(body, **{'appFw.so': body['appFw.so'][:BOOT] + boot_sound.original_boot(PUBLIC) + body['appFw.so'][BOOT + 16:]})
     assert identify(mixed['appFw.so'], mixed['cpapp-b.bin']) is BODY
@@ -303,7 +292,7 @@ def test_body_with_the_public_boot_block_is_refused(build_fixtures, tmp_path):
 
 
 def test_hybrid_programs_are_refused_before_any_sound_planning(build_fixtures, tmp_path):
-    hybrid = programs(build_fixtures.hybrid)
+    hybrid = build_fixtures.hybrid.programs
     with pytest.raises(UnsupportedFirmware):
         save(hybrid, tmp_path / 'save')
     assert not (tmp_path / 'save').exists()
@@ -325,7 +314,7 @@ def test_boot_sound_cli_identifies_the_build(build_fixtures, saves, tmp_path):
 
 
 def test_public_sound_is_unchanged_by_the_port(build_fixtures, saves, tmp_path):
-    public, save_ = programs(build_fixtures.public), saves['public']
+    public, save_ = build_fixtures.public.programs, saves['public']
     results = {
         'install': digests(save_.target),
         'install-windows': manifest_digest({key: save_.parts[key] for key in ('windows', 'cp_windows', 'restore_windows')}),
