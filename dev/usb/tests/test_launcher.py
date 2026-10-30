@@ -9,6 +9,11 @@ from unittest.mock import patch
 ROOT=Path(__file__).resolve().parents[3]
 spec=importlib.util.spec_from_file_location('a7c2_launcher',ROOT/'src/launcher.py')
 launcher=importlib.util.module_from_spec(spec);spec.loader.exec_module(launcher)
+# src/launcher.py prepare() refuses every non-Windows system before it looks at
+# the environment ('The CMD entries support Windows'), so the environment checks
+# behind that refusal can only run on Windows.
+PREPARE_RUNS_ON_WINDOWS_ONLY=unittest.skipUnless(os.name=='nt',
+    'src/launcher.py prepare() refuses non-Windows systems by design (the CMD entries support Windows)')
 
 class LauncherTests(unittest.TestCase):
     def test_check_is_stdlib_only_and_never_prepares_or_executes(self):
@@ -20,16 +25,16 @@ class LauncherTests(unittest.TestCase):
             self.assertEqual(launcher.main(['fl23','unsafe-unknown-command']),1)
         prepare.assert_not_called()
     def test_manual_device_command_executes_once_and_returns_failure(self):
-        args=['fl23','install','--workspace','D:\space and 中文\work','--battery-percent','82']
+        args=['fl23','install','--workspace',r'D:\space and 中文\work','--battery-percent','82']
         with patch.object(launcher,'prepare',return_value=Path(sys.executable)),patch.object(launcher,'execute',return_value=9) as run:
             self.assertEqual(launcher.main(args),9)
         self.assertEqual(run.call_count,1)
         self.assertEqual(run.call_args.args[0][-5:],args[-5:])
     def test_looks_uses_module_path_and_passes_help_and_input_arguments(self):
         with patch.object(launcher,'prepare',return_value=Path(sys.executable)) as prepare,patch.object(launcher,'execute',return_value=0) as run:
-            self.assertEqual(launcher.main(['looks','--research','inspect','D:\color docs\profiles\参考.dcp']),0)
+            self.assertEqual(launcher.main(['looks','--research','inspect',r'D:\color docs\profiles\参考.dcp']),0)
         prepare.assert_called_once_with('looks',True)
-        self.assertEqual(run.call_args.args[0][-2:],['inspect','D:\color docs\profiles\参考.dcp'])
+        self.assertEqual(run.call_args.args[0][-2:],['inspect',r'D:\color docs\profiles\参考.dcp'])
         self.assertEqual(run.call_args.args[2],ROOT/'src/looks')
         with patch.object(launcher,'prepare',return_value=Path(sys.executable)),patch.object(launcher,'execute',return_value=0) as run:
             self.assertEqual(launcher.main(['looks','--help']),0)
@@ -43,12 +48,22 @@ class LauncherTests(unittest.TestCase):
             with patch.object(launcher,'prepare') as prepare,redirect_stdout(io.StringIO()) as out:
                 self.assertEqual(launcher.main([workflow,'--check']),0)
             prepare.assert_not_called();self.assertEqual(json.loads(out.getvalue())['workflow'],workflow)
+    @unittest.skipIf(os.name=='nt','checks the refusal on systems other than Windows')
+    def test_prepare_refuses_non_windows_before_touching_the_environment(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)
+            with patch.object(launcher,'ROOT',root),patch.object(launcher,'PYTHON',root/'.venv/Scripts/python.exe'),patch.object(launcher,'execute') as execute:
+                for workflow in ['fl23','looks']:
+                    with self.assertRaisesRegex(RuntimeError,'The CMD entries support Windows'):launcher.prepare(workflow)
+            execute.assert_not_called();self.assertEqual(list(root.iterdir()),[])
+    @PREPARE_RUNS_ON_WINDOWS_ONLY
     def test_incomplete_environment_is_preserved(self):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder);(root/'.venv').mkdir();sentinel=root/'.venv/keep';sentinel.write_text('original')
             with patch.object(launcher,'ROOT',root),patch.object(launcher,'PYTHON',root/'.venv/Scripts/python.exe'),patch.object(launcher,'execute') as execute:
                 with self.assertRaisesRegex(RuntimeError,'incomplete'):launcher.prepare('looks')
             self.assertEqual(sentinel.read_text(),'original');execute.assert_not_called()
+    @PREPARE_RUNS_ON_WINDOWS_ONLY
     def test_dependency_setup_failure_cannot_start_camera(self):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder);python=root/'.venv/Scripts/python.exe';python.parent.mkdir(parents=True);python.touch()
