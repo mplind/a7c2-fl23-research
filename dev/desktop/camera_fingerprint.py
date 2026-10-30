@@ -39,8 +39,12 @@ FOLDERS = (HERE, ROOT / 'src/looks', ROOT / 'src/camera_runtime', ROOT / 'src/ca
 # Each probe spans both targets, to show what that modification may have left there.
 PROBES = {'appFw.so': ((0x4c7cf6c, 0x20), (0x4c14aa3, 0x30))}
 RESOURCES = '/usr/share/app/'
-# The image banks Vertical Display edits (verticaltool.device SOURCES and ALIASES), read only.
-IMAGES = tuple('image_%02d_%s_IPSX.uxc' % (index, kind) for kind in ('32', '23') for index in range(3))
+# The image banks Vertical Display edits (verticaltool.device SOURCES and ALIASES), read only. Every
+# camera has the sources; Vertical Display creates the aliases when it installs, so a camera that never
+# had it has none, and they are recorded as absent.
+SOURCE_IMAGES = tuple('image_%02d_32_IPSX.uxc' % index for index in range(3))
+ALIAS_IMAGES = tuple('image_%02d_23_IPSX.uxc' % index for index in range(3))
+IMAGES = SOURCE_IMAGES + ALIAS_IMAGES
 STOCK, TOOL_CHANGES, UNSUPPORTED = 0, 3, 2
 ROOT_UID = 0
 
@@ -145,8 +149,16 @@ def save_resources(camera, names, out):
 
 
 def save_images(camera, out):
-    """The camera's /usr/share/app/ image banks IMAGES, saved in out/images/ (see save_files)."""
-    return save_files(camera, RESOURCES, IMAGES, out / 'images')
+    """The camera's /usr/share/app/ image banks, saved in out/images/ (see save_files): the sources
+    always, and each alias that exists; an alias the camera lacks is reported {'absent': True}."""
+    report = save_files(camera, RESOURCES, SOURCE_IMAGES, out / 'images')
+    aliases = {name: camera.read(RESOURCES + name, True) for name in ALIAS_IMAGES}
+    present = {name: data for name, data in aliases.items() if data is not None}
+    save(present, out / 'images')
+    report.update({name: {'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest()}
+                   for name, data in present.items()})
+    report.update({name: {'absent': True} for name in ALIAS_IMAGES if name not in present})
+    return report
 
 
 def owner(path):

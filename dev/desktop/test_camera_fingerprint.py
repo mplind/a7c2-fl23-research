@@ -31,8 +31,11 @@ class ReadOnlyCamera:
     def __init__(self, files):
         self.files, self.reads = files, []
 
-    def read(self, path):
+    def read(self, path, missing=False):
+        """Like devicesession.Camera.read: an absent file is None when `missing`, else an error."""
         self.reads.append(path)
+        if missing and path not in self.files:
+            return None
         return self.files[path]
 
     def __enter__(self):
@@ -445,3 +448,30 @@ def test_real_programs_as_root(build_fixtures, tmp_path, monkeypatch, capsys, na
     assert result == code and text in printed
     assert 'appFw.so sha256 %s' % sha(ap) in printed and 'cpapp-b.bin sha256 %s' % fixture.digests[1] in printed
     assert (out / 'appFw.so').read_bytes() == ap
+
+
+ALIASES = [name for name in IMAGES if '_23_' in name]
+
+
+def test_on_a_camera_without_vertical_display_the_alias_images_are_recorded_absent(tmp_path, monkeypatch):
+    """Vertical Display creates the image_0N_23 aliases when it installs; a stock camera has none
+    (seen on the owner's body, 30 Oct 2026: reading image_00_23 failed with Jiritsu 0x10000006).
+    The check records them as absent and still finishes, with the three sources saved."""
+    stock = {path: data for path, data in files().items() if not any(path.endswith(name) for name in ALIASES)}
+    identified_as(monkeypatch, playing(BODY, stock))
+    code, out, _ = run_as_root(tmp_path, monkeypatch, ReadOnlyCamera(stock))
+    assert code == 0
+    report = json.loads((out / 'report.json').read_text(encoding='utf-8'))
+    for name in ALIASES:
+        assert report['images'][name] == {'absent': True}
+        assert not (out / 'images' / name).exists()
+    for name in IMAGES:
+        if name not in ALIASES:
+            assert (out / 'images' / name).read_bytes() == name.encode() * 3
+
+
+def test_a_missing_source_image_still_stops_the_check(tmp_path, monkeypatch):
+    """The image_0N_32 sources exist on every camera, so a missing one is an error, not 'absent'."""
+    broken = {path: data for path, data in files().items() if not path.endswith('image_00_32_IPSX.uxc')}
+    with pytest.raises(KeyError):
+        run_as_root(tmp_path, monkeypatch, ReadOnlyCamera(broken))
