@@ -475,3 +475,12 @@ def test_a_missing_source_image_still_stops_the_check(tmp_path, monkeypatch):
     broken = {path: data for path, data in files().items() if not path.endswith('image_00_32_IPSX.uxc')}
     with pytest.raises(KeyError):
         run_as_root(tmp_path, monkeypatch, ReadOnlyCamera(broken))
+
+
+def test_the_summary_counts_saved_and_absent_image_files_apart(tmp_path, monkeypatch, capsys):
+    """30 Oct 2026 the summary said '6 image files' when 3 were saved and 3 absent."""
+    stock = {path: data for path, data in files().items() if not any(path.endswith(name) for name in ALIASES)}
+    identified_as(monkeypatch, playing(BODY, stock))
+    _, out, _ = run_as_root(tmp_path, monkeypatch, ReadOnlyCamera(stock))
+    printed = capsys.readouterr().out
+    assert '3 image files saved in %s; 3 absent (Vertical Display not installed)' % (out / 'images') in printed

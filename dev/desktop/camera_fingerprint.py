@@ -5,8 +5,8 @@ Usage, as root (the camera's USB service connection needs it), with a new folder
 
 It opens the same service session as the app's Test button (Service connection) and reads
 /usr/lib/appFw.so and /cp/cpapp-b.bin. Then it reads the /usr/share/app/ name files the name tools use
-(nameworker.filenames()) into DIR/resources/, and the six image files Vertical Display edits (IMAGES)
-into DIR/images/. The files and report.json are saved read-only in DIR, and the files this run made are
+(nameworker.filenames()) into DIR/resources/, and the image files Vertical Display edits (IMAGES: the
+three sources, and each alias it made when it installed) into DIR/images/. The files and report.json are saved read-only in DIR, and the files this run made are
 handed back to the sudo user. Nothing is written to the camera.
 
 DIR must be new or empty: a folder that already holds a file this run writes, or any symbolic link, or
@@ -207,8 +207,11 @@ def main(argv=None, camera=None):
         print('%s sha256 %s' % (name, report[name]['sha256']))
     code, text = verdict(report['build'])
     print('Build: ' + text)
-    print('%d name files saved in %s, %d image files in %s' % (
-        len(report['resources']), out / 'resources', len(report['images']), out / 'images'))
+    absent = [name for name, entry in report['images'].items() if entry.get('absent')]
+    print('%d name files saved in %s' % (len(report['resources']), out / 'resources'))
+    print('%d image files saved in %s%s' % (
+        len(report['images']) - len(absent), out / 'images',
+        '; %d absent (Vertical Display not installed)' % len(absent) if absent else ''))
     return code
 
 

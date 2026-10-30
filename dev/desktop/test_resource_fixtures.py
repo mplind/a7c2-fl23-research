@@ -82,11 +82,14 @@ def test_name_files_without_recorded_digests_are_refused(tmp_path):
         buildfixtures.resources(fixtures, 'body', NAMES, None)
 
 
-def test_the_public_name_files_are_recorded_and_the_body_files_are_not_yet():
+def test_both_builds_name_files_are_recorded():
+    """The public update's from extract_resources.py; the camera build's from the owner's body, read
+    by camera_fingerprint.py on 30 Oct 2026 (Task 10 step 1)."""
     from looktool import nameworker
-    assert list(buildfixtures.RESOURCE_DIGESTS) == ['public-2.01']
-    assert list(buildfixtures.RESOURCE_DIGESTS['public-2.01']) == nameworker.filenames()
-    assert all(len(digest) == 64 and int(digest, 16) >= 0 for digest in buildfixtures.RESOURCE_DIGESTS['public-2.01'].values())
+    assert list(buildfixtures.RESOURCE_DIGESTS) == ['public-2.01', 'body-2.01-20250923']
+    for build, digests in buildfixtures.RESOURCE_DIGESTS.items():
+        assert list(digests) == nameworker.filenames(), build
+        assert all(len(digest) == 64 and int(digest, 16) >= 0 for digest in digests.values()), build
 
 
 # Pulling the public name files from the update file ----------------------------------------
