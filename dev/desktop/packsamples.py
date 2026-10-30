@@ -6,7 +6,7 @@ from desktopapp import presets
 
 # The owner's six, Custom 1–6, in the order chosen on 29 Oct 2026.
 OWNER_SIX = ('Portra 400 (Dehancer)', 'Classic Chrome', 'Kodachrome 64 (Dehancer)', 'Velvia 50 (Dehancer)',
-             'CineStill 800T (Dehancer)', 'Portra 160 NC (DxO)')
+             'CineStill 800T (Dehancer)', 'Portra 160 VC (DxO)')
 # Stand-in names for a pack.json pack the tests write.
 NAMES = ('Look One', 'Look Two', 'Look Three', 'Look Four', 'Look Five', 'Look Six')
 # The English of presets.IN_ORDER: the one-click line naming a pack.json pack's six.
