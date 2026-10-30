@@ -12,7 +12,9 @@ exec((root / 'src/desktopapp/__init__.py').read_text(encoding='utf-8'), version)
 # below, where the window loads it (desktopapp.paths.APP_ICON).
 ICON = 'dev/desktop/icon/AppIcon.icns'
 icon = str(root / ICON)
-assets_check.require(root)
+# personal or public: only the personal edition ships the owner's personal assets (assets_check.PERSONAL).
+edition = assets_check.edition()
+assets_check.require(root, edition)
 datas, binaries, hidden = [], [], ['PySide6.QtCore', 'PySide6.QtGui', 'PySide6.QtSvg', 'PySide6.QtWidgets',
                                  'tarfile', 'lzma', 'bz2', 'zlib', 'urllib.request', 'wave', 'plistlib', 'backports.tarfile', 'zipfile', 'filecmp']
 if sys.platform=='darwin':hidden.append('pwd')
@@ -30,13 +32,16 @@ for folder in ('src/desktopapp', 'src/camera_runtime', 'src/looks/looktool',
     for source in (root / folder).rglob('*'):
         relative = source.relative_to(root)
         if relative.parts[:2]==('desktop-assets','profile-library-v1'):continue
+        if assets_check.personal(relative) and edition != 'personal':
+            continue
         if not source.is_file() or any(p in ('__pycache__', 'tests') for p in relative.parts):
             continue
         if sys.platform == 'darwin' and (relative.parts[:2] == ('desktop-assets', 'windows') or source.suffix.lower() in ('.exe', '.dll', '.pyd', '.bat', '.cmd')):
             continue
         if source.suffix.lower()=='.dcp' and relative.parts[:2]!=('desktop-assets','profile-library-v1'):
             continue
-        if '.private.' in source.name or source.suffix.lower() in ('.arw', '.hif', '.jpg', '.cube', '.pyc'):
+        if '.private.' in source.name or (source.suffix.lower() in ('.arw', '.hif', '.jpg', '.cube', '.pyc')
+                                          and not assets_check.personal_sample(relative)):
             continue
         datas.append((str(source), str(relative.parent)))
 for relative,source in profile_files().items():

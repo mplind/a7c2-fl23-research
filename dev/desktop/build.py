@@ -10,6 +10,7 @@ import sys
 import tempfile
 import zipfile
 from profilepack import files as profile_files
+import assets_check
 
 ROOT = Path(__file__).resolve().parents[2]
 APP_NAME = 'A7C2Tools.app'
@@ -79,18 +80,22 @@ def make_windows_zip(output):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output',type=Path,default=ROOT/'dist')
+    parser.add_argument('--edition',choices=assets_check.EDITIONS,default=assets_check.default_edition(ROOT),
+                        help="personal bundles the owner's personal looks (the default where they are present); "
+                             'public leaves them out, as any release must')
     args=parser.parse_args()
     if sys.platform not in ('win32','darwin'):raise RuntimeError('Build on native Windows or macOS')
     output=args.output.resolve();output.mkdir(parents=True,exist_ok=True)
     profile_files()
     subprocess.run([sys.executable,'-m','PyInstaller','--noconfirm',
                     '--distpath',str(output),'--workpath',str(ROOT/'build/desktop'),
-                    str(ROOT/'dev/desktop/desktop.spec')],cwd=ROOT,check=True)
+                    str(ROOT/'dev/desktop/desktop.spec')],cwd=ROOT,check=True,
+                   env=dict(os.environ,A7C2_EDITION=args.edition))
     if sys.platform=='darwin':
         check_bundled_zig(output/APP_NAME)
         target=make_dmg(output)
     else:target=make_windows_zip(output)
-    print(json.dumps(dict(artifact=str(target),bytes=target.stat().st_size,camera_io=False)))
+    print(json.dumps(dict(artifact=str(target),bytes=target.stat().st_size,camera_io=False,edition=args.edition)))
 
 
 if __name__=='__main__':main()

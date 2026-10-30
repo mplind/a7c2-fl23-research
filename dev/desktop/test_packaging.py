@@ -249,3 +249,45 @@ def test_the_spec_bundles_every_qt_module_the_source_imports():
         used |= set(re.findall(r'PySide6\.(Qt\w+)', text))
     spec = (ROOT / 'dev/desktop/desktop.spec').read_text(encoding='utf-8')
     assert sorted(used - set(re.findall(r"'PySide6\.(Qt\w+)'", spec))) == []
+
+
+# The personal and public editions ----------------------------------------------------------------------
+
+def run_edition(tmp_path, *extra, default='public'):
+    """(edition PyInstaller saw, printed result) of build.main on a Mac with `extra` arguments, where the
+    edition is `default` unless they choose one."""
+    seen = []
+    def command(args, **kwargs):
+        if args[1:3] == ['-m', 'PyInstaller']:
+            seen.append(kwargs['env']['A7C2_EDITION'])
+        return fake_toolchain([])(args, **kwargs)
+    output = tmp_path / 'dist'
+    with patch.object(build.sys, 'platform', 'darwin'), \
+            patch.object(build.platform, 'machine', return_value='x86_64'), \
+            patch.object(build.sys, 'argv', ['build.py', '--output', str(output), *extra]), \
+            patch.object(build.assets_check, 'default_edition', return_value=default) as default_edition, \
+            patch.object(build, 'profile_files', return_value={}), \
+            patch.object(build, 'check_bundled_zig'), \
+            patch.object(build.subprocess, 'run', side_effect=command), \
+            patch('sys.stdout', io.StringIO()) as printed:
+        build.main()
+    default_edition.assert_called_once_with(build.ROOT)  # where this checkout has the personal assets
+    return seen, json.loads(printed.getvalue())
+
+
+@posix_only
+@pytest.mark.parametrize('extra, default, edition', [
+    ((), 'personal', 'personal'), ((), 'public', 'public'),
+    (('--edition', 'public'), 'personal', 'public'), (('--edition', 'personal'), 'public', 'personal')])
+def test_build_tells_the_spec_its_edition(tmp_path, extra, default, edition):
+    seen, result = run_edition(tmp_path, *extra, default=default)
+    assert seen == [edition] and result['edition'] == edition
+
+
+def test_build_refuses_an_edition_it_does_not_know(tmp_path):
+    with patch.object(build.sys, 'argv', ['build.py', '--edition', 'release']), \
+            patch.object(build.subprocess, 'run') as run, patch('sys.stderr', io.StringIO()):
+        with pytest.raises(SystemExit):
+            build.main()
+    run.assert_not_called()
+

@@ -24,26 +24,91 @@ def tree(tmp_path, *, presets=True, film=True, sounds=True):
 
 
 def test_a_complete_tree_passes(tmp_path):
-    assets_check.require(tree(tmp_path))
+    assets_check.require(tree(tmp_path), 'public')
 
 
 def test_the_six_built_in_looks_are_required(tmp_path):
     with pytest.raises(FileNotFoundError, match='six-look'):
-        assets_check.require(tree(tmp_path, presets=False))
+        assets_check.require(tree(tmp_path, presets=False), 'public')
 
 
 def test_the_film_look_library_is_required(tmp_path):
     with pytest.raises(FileNotFoundError, match='prepare_film_looks.py'):
-        assets_check.require(tree(tmp_path, film=False))
+        assets_check.require(tree(tmp_path, film=False), 'public')
 
 
 def test_the_shutter_sound_library_is_required(tmp_path):
     with pytest.raises(FileNotFoundError, match='prepare_shutter_sounds.py'):
-        assets_check.require(tree(tmp_path, sounds=False))
+        assets_check.require(tree(tmp_path, sounds=False), 'public')
 
 
 def test_the_spec_uses_the_check():
-    assert 'assets_check.require(root)' in (ROOT / 'dev/desktop/desktop.spec').read_text()
+    assert 'assets_check.require(root, edition)' in (ROOT / 'dev/desktop/desktop.spec').read_text()
+
+
+# The personal and public editions ----------------------------------------------------------------------
+
+def personal_assets(root, library=True, pack=True):
+    if library:
+        folder = root / assets_check.PERSONAL_LIBRARY; folder.mkdir(parents=True)
+        (folder / 'catalog.json').write_text('{}')
+    if pack:
+        folder = root / assets_check.PERSONAL_PACK; folder.mkdir(parents=True)
+        (folder / 'pack.json').write_text('{}')
+    return root
+
+
+def test_the_personal_edition_needs_the_personal_assets_and_the_public_one_does_not(tmp_path):
+    assets_check.require(tree(tmp_path), 'public')
+    with pytest.raises(FileNotFoundError, match='prepare_personal_looks.py.*--edition public'):
+        assets_check.require(tmp_path, 'personal')
+    personal_assets(tmp_path, pack=False)
+    with pytest.raises(FileNotFoundError, match='personal-six-v1'):
+        assets_check.require(tmp_path, 'personal')
+    personal_assets(tmp_path, library=False)
+    assets_check.require(tmp_path, 'personal')
+    with pytest.raises(ValueError, match='Unknown edition'):
+        assets_check.require(tmp_path, 'release')
+
+
+def test_the_default_edition_is_personal_only_where_the_personal_assets_are(tmp_path):
+    assert assets_check.default_edition(tree(tmp_path)) == 'public'
+    (tmp_path / assets_check.PERSONAL_PACK).mkdir(parents=True)
+    assert assets_check.default_edition(tmp_path) == 'personal'
+
+
+@pytest.mark.parametrize('relative, personal, sample', [
+    ('desktop-assets/film-looks-personal-v1/catalog.json', True, False),
+    ('desktop-assets/film-looks-personal-v1/dh-portra400.a7look', True, False),
+    ('desktop-assets/film-looks-personal-v1/samples/dh-portra400.jpg', True, True),
+    ('desktop-assets/film-looks-personal-v1/samples/dh-portra400.cube', True, False),
+    ('desktop-assets/film-looks-personal-v1/dh-portra400.jpg', True, False),
+    ('desktop-assets/presets/personal-six-v1/slot1.a7look', True, False),
+    ('desktop-assets/presets/personal-six-v1/samples/x.jpg', True, False),
+    ('desktop-assets/presets/default-six-v1/slot1.a7look', False, False),
+    ('desktop-assets/presets/personal-six-v1-old/slot1.a7look', False, False),
+    ('desktop-assets/film-looks-v1/samples/portra400.jpg', False, False),
+    ('src/desktopapp/presets.py', False, False),
+])
+def test_personal_assets_are_known_by_their_folders(relative, personal, sample):
+    assert assets_check.personal(relative) is personal
+    assert assets_check.personal_sample(relative) is sample
+
+
+@pytest.mark.parametrize('value', [None, '', 'release', 'Personal'])
+def test_the_spec_refuses_an_edition_it_does_not_know(monkeypatch, value):
+    if value is None:
+        monkeypatch.delenv('A7C2_EDITION', raising=False)
+    else:
+        monkeypatch.setenv('A7C2_EDITION', value)
+    with pytest.raises(RuntimeError, match='build.py'):
+        assets_check.edition()
+
+
+@pytest.mark.parametrize('value', ['personal', 'public'])
+def test_the_spec_reads_the_edition_build_py_sets(monkeypatch, value):
+    monkeypatch.setenv('A7C2_EDITION', value)
+    assert assets_check.edition() == value
 
 
 def test_the_packaged_self_test_imports_every_new_module_and_loads_the_film_library(monkeypatch, tmp_path):
