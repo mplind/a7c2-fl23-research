@@ -121,3 +121,13 @@ def test_a_test_may_still_answer_a_static_dialog_itself(blocked_side_effects, di
         W.QMessageBox.question(None, 'Title', 'Text')  # the guard is back once the test's own patch ends
     assert dialogs_closed == []
     blocked_side_effects.clear()
+
+
+@pytest.mark.parametrize('owner', [W.QDialog, W.QMessageBox, W.QFileDialog])
+@pytest.mark.parametrize('name', ['exec', 'exec_'])
+def test_a_dialogs_own_exec_is_refused_under_either_name(blocked_side_effects, dialogs_closed, owner, name):
+    dialog = owner()
+    with pytest.raises(AssertionError, match='Forbidden in tests: opening a modal dialog'):
+        getattr(dialog, name)()
+    assert blocked_side_effects == ['opening a modal dialog'] and dialogs_closed == []
+    blocked_side_effects.clear()

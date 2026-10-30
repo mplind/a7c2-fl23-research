@@ -106,8 +106,11 @@ def blocked_side_effects(monkeypatch, blocked_programs):
     monkeypatch.setattr(QtCore.QProcess, 'start', lambda *a, **k: refuse('starting a worker process'))
     # An unpatched modal dialog would wait forever for a click offscreen: refuse it instead.
     from PySide6 import QtWidgets
-    monkeypatch.setattr(QtWidgets.QDialog, 'exec', lambda *a, **k: refuse('opening a modal dialog'))
-    monkeypatch.setattr(QtWidgets.QMessageBox, 'exec', lambda *a, **k: refuse('opening a modal dialog'))
+    # Each dialog class's own modal loop, under its name and its deprecated alias exec_, which some
+    # classes define for themselves.
+    for owner in ('QDialog', 'QMessageBox') + tuple(name for name in STATIC_DIALOGS if name != 'QMessageBox'):
+        for name in ('exec', 'exec_'):
+            monkeypatch.setattr(getattr(QtWidgets, owner), name, lambda *a, **k: refuse('opening a modal dialog'))
 
     def refuse_dialog(name):
         return lambda *a, **k: refuse('opening a modal dialog (' + name + ')')
