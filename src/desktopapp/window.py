@@ -30,14 +30,16 @@ SENTENCE_END = '.!?\u3002\uff01\uff1f'  # full stop, ! and ? in English and Chin
 
 
 def six_target(options):
-    """The six looks a one-click job of a built-in pack writes, for its confirmation: the line naming the
-    pack's six, or, when the pack can no longer be read, the looks the job saved (a job continues from its
-    saved copies), or why the pack can't be read."""
+    """The six looks a one-click job of a built-in pack writes, for its confirmation. A job that has saved
+    its looks continues from those copies, so it names them, in slot order; a new job names its pack's six,
+    or says why that pack can't be read."""
+    saved = sorted(options.get('looks', []), key=lambda row: row['slot'])
+    if saved:
+        return presets.in_order([row.get('name') or Path(row['path']).stem for row in saved], i18n.language())
     try:
         return presets.summary(presets.load(options['preset_pack']), i18n.language())
     except (ValueError, OSError) as exc:
-        saved = [row['name'] for row in options.get('looks', []) if row.get('name')]
-        return tr('、').join(saved) if saved else display(str(exc))
+        return display(str(exc))
 
 
 def joined(text, rest):

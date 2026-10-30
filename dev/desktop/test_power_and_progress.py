@@ -49,7 +49,7 @@ class PowerProgressTests(unittest.TestCase):
 
     def test_home_defaults_to_six_looks_without_selecting_files(self):
         from desktopapp import presets
-        # The public pack, as on a checkout without the owner's personal pack (test_one_click_pack covers his).
+        # The public pack, as on a checkout without the personal pack (test_one_click_pack covers that one).
         active = patch.object(presets, 'active', return_value=presets.PACK)
         active.start(); self.addCleanup(active.stop)
         window = self.window()

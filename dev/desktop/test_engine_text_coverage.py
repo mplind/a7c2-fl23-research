@@ -224,6 +224,9 @@ def test_the_scan_finds_the_known_messages():
     assert ('src/desktopapp/platforms/usb_drivers.py',
             '未找到相机的海量存储身份 054C:0E8A，请在相机选择“海量存储”后重新连接。当前检测：%s。完整设备／接口信息已保存，不会为未知 PID 自动更换驱动。') in found
     assert ('src/desktopapp/window.py', '就绪。选择左侧功能；启动软件不会访问相机。') in found
+    # A message kept as a module constant and filled in with %, as presets keeps its two refusals.
+    from desktopapp import presets
+    assert {('src/desktopapp/presets.py', presets.MISSING), ('src/desktopapp/presets.py', presets.INVALID)} <= found
 
 
 def test_every_message_has_english():

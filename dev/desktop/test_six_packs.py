@@ -1,7 +1,6 @@
-"""The six-look packs One-click installs: the public pack from its constants, the owner's personal pack from
-its pack.json, which of the two is active, and the lines that name a pack's six and the exposure its
+"""The six-look packs One-click installs: the public pack from its constants, the owner's personal pack
+from its pack.json, which of the two is active, and the lines that name a pack's six and the exposure its
 dark looks need. No camera, no USB."""
-import json
 import os
 from pathlib import Path
 
@@ -9,28 +8,11 @@ import pytest
 
 from desktopapp import presets
 from desktopapp.en import STRINGS
+from packsamples import IN_ORDER, NAMES, pack_rows as rows, write_pack
 
 ROOT = Path(__file__).resolve().parents[2]
 PUBLIC = ROOT / 'desktop-assets/presets' / presets.PACK
 PUBLIC_AVAILABLE = (PUBLIC / 'slot6.a7look').is_file()
-NAMES = ('Look One', 'Look Two', 'Look Three', 'Look Four', 'Look Five', 'Look Six')
-REPLACES = ' They replace what is in Custom 1–6 now, settings included. The camera’s own Creative Looks stay.'
-
-
-def rows(names=NAMES, thirds=(0,) * 6):
-    return [dict(slot=slot, name=name, file='slot%d.a7look' % slot, exposure_comp_thirds=dark)
-            for slot, (name, dark) in enumerate(zip(names, thirds), 1)]
-
-
-def write_pack(folder, document=None, **change):
-    """A personal pack.json in `folder`: six rows of NAMES unless `document` or `change` says otherwise."""
-    if document is None:
-        document = dict(dict(pack=presets.PERSONAL, personal_use_only=True, notice='Personal use only.', looks=rows()),
-                        **change)
-    folder.mkdir(parents=True, exist_ok=True)
-    (folder / 'pack.json').write_text(document if isinstance(document, str) else json.dumps(document),
-                                      encoding='utf-8')
-    return folder
 
 
 @pytest.fixture
@@ -41,7 +23,12 @@ def root(tmp_path, monkeypatch):
 
 
 def personal(root):
-    return root / 'desktop-assets/presets' / presets.PERSONAL
+    return root / 'desktop-assets/personal/presets' / presets.PERSONAL
+
+
+def test_the_personal_pack_lives_under_the_personal_root_and_the_public_pack_where_it_was():
+    assert presets.folder(presets.PERSONAL) == ROOT / 'desktop-assets/personal/presets/personal-six-v1'
+    assert presets.folder(presets.PACK) == ROOT / 'desktop-assets/presets/default-six-v1'
 
 
 # Which pack is active ------------------------------------------------------------------------------
@@ -129,11 +116,14 @@ def test_an_invalid_personal_pack_json_is_refused_before_the_camera(root, docume
         presets.resolve(dict(preset_pack=presets.PERSONAL))
 
 
-def test_the_engine_messages_have_english_that_names_the_next_step():
+def test_the_engine_messages_are_constants_whose_english_names_the_next_step():
     from desktopapp.en_engine import ENGINE, NEXT_STEP
-    for source in ('内置六款外观文件缺失，请使用完整工具包；尚未连接相机：%s',
-                   '内置六款外观包描述无效，请使用完整工具包；尚未连接相机：%s'):
+    assert presets.MISSING == '内置六款外观文件缺失，请使用完整工具包；尚未连接相机：%s'
+    assert presets.INVALID == '内置六款外观包描述无效，请使用完整工具包；尚未连接相机：%s'
+    for source in (presets.MISSING, presets.INVALID):
         assert 'Reinstall the complete app' in ENGINE[source] and source in NEXT_STEP
+    text = (ROOT / 'src/desktopapp/presets.py').read_text(encoding='utf-8')
+    assert text.count('内置六款外观文件缺失') == 1 and text.count('内置六款外观包描述无效') == 1  # one constant each
 
 
 # A pack.json pack resolves like the public pack ---------------------------------------------------
@@ -168,16 +158,19 @@ def test_the_public_packs_line_is_exactly_as_before(root):
     pack = presets.load(presets.PACK)
     assert presets.summary(pack, 'zh_CN') == '1 NC · 2 CC · 3 NN · 4 Astia · 5 GR 正片 · 6 GR 负片'
     assert presets.summary(pack, 'en') == ('Classic Neg., Classic Chrome, Nostalgic Neg., Astia, GR Positive and '
-                                           'GR Negative.' + REPLACES)
+                                           'GR Negative. They replace what is in Custom 1–6 now, settings included. '
+                                           'The camera’s own Creative Looks stay.')
     assert presets.exposure_note(pack.dark, 'en') == ''
 
 
 def test_a_pack_json_packs_line_names_its_six_in_slot_order(root):
     write_pack(personal(root))
     pack = presets.load(presets.PERSONAL)
-    assert presets.summary(pack, 'en') == 'Look One, Look Two, Look Three, Look Four, Look Five, Look Six.' + REPLACES
+    assert presets.summary(pack, 'en') == ('Look One, Look Two, Look Three, Look Four, Look Five, Look Six, in Custom '
+                                           '1–6 in that order. They replace what is there now, settings included. '
+                                           'The camera’s own Creative Looks stay.')
     assert presets.summary(pack, 'zh_CN') == 'Look One、Look Two、Look Three、Look Four、Look Five、Look Six（依次装入自订 1–6）'
-    assert STRINGS[presets.IN_ORDER] == '%s.' + REPLACES
+    assert STRINGS[presets.IN_ORDER] == IN_ORDER
 
 
 @pytest.mark.parametrize('thirds, written', [(1, '⅓'), (2, '⅔'), (3, '1'), (4, '1⅓'), (5, '1⅔'), (6, '2')])
@@ -197,11 +190,17 @@ def test_the_exposure_note_groups_dark_looks_by_amount_in_slot_order():
     assert presets.exposure_note((), 'en') == ''
 
 
-def test_a_last_name_that_ends_in_a_full_stop_ends_the_sentence_once(root):
+def test_a_last_name_that_ends_in_a_full_stop_is_shown_as_it_is(root):
     write_pack(personal(root), looks=rows(NAMES[:5] + ('Classic Neg.',)))
     pack = presets.load(presets.PERSONAL)
-    assert presets.summary(pack, 'en') == 'Look One, Look Two, Look Three, Look Four, Look Five, Classic Neg.' + REPLACES
+    assert presets.summary(pack, 'en') == IN_ORDER % ', '.join(NAMES[:5] + ('Classic Neg.',))
     assert presets.summary(pack, 'zh_CN').endswith('Classic Neg.（依次装入自订 1–6）')
+
+
+def test_saved_names_read_like_a_pack_json_packs_line():
+    assert presets.in_order(NAMES, 'en') == IN_ORDER % ', '.join(NAMES)
+    assert presets.in_order(NAMES, 'zh_CN') == '、'.join(NAMES) + '（依次装入自订 1–6）'
+
 
 
 def test_a_look_that_does_not_render_dark_gets_no_exposure_line():
