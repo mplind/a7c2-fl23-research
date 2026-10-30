@@ -69,11 +69,17 @@ def entry(look, document=None, model=None):
     return result
 
 
-def replace(staging, target, what='film look library'):
-    """Swap a prepared staging folder in for target, which must be an earlier library (it has a catalog)."""
+def replaceable(target, what='film look library', descriptor='catalog.json'):
+    """Refuse a target folder that exists but is not an earlier `what`, which has its `descriptor` file."""
+    if target.exists() and not (target / descriptor).is_file():
+        raise RuntimeError('Refusing to replace %s: it is not a %s' % (target, what))
+
+
+def replace(staging, target, what='film look library', descriptor='catalog.json'):
+    """Swap a prepared staging folder in for target, which must be an earlier `what` (it has its
+    `descriptor`: a library its catalog)."""
+    replaceable(target, what, descriptor)
     if target.exists():
-        if not (target / 'catalog.json').is_file():
-            raise RuntimeError('Refusing to replace %s: it is not a %s' % (target, what))
         shutil.rmtree(target)
     os.replace(staging, target)
 
