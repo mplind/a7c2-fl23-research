@@ -75,6 +75,18 @@ def release_widgets():
     QtWidgets.QApplication.sendPostedEvents(None, QtCore.QEvent.DeferredDelete)
 
 
+# Qt's static dialog functions, by class. Each runs a modal dialog of its own, which neither exec patch
+# below reaches, so offscreen it would wait for a click forever. A test that expects one patches it itself.
+STATIC_DIALOGS = {
+    'QMessageBox': ('information', 'warning', 'critical', 'question', 'about', 'aboutQt'),
+    'QFileDialog': ('getOpenFileName', 'getOpenFileNames', 'getSaveFileName', 'getExistingDirectory',
+                    'getOpenFileUrl', 'getOpenFileUrls', 'getSaveFileUrl', 'getExistingDirectoryUrl'),
+    'QInputDialog': ('getText', 'getMultiLineText', 'getItem', 'getInt', 'getDouble'),
+    'QColorDialog': ('getColor',),
+    'QFontDialog': ('getFont',),
+}
+
+
 @pytest.fixture(autouse=True)
 def blocked_side_effects(monkeypatch, blocked_programs):
     """No test may start a worker, ask for administrator rights, enumerate USB, stop macOS camera
@@ -96,6 +108,12 @@ def blocked_side_effects(monkeypatch, blocked_programs):
     from PySide6 import QtWidgets
     monkeypatch.setattr(QtWidgets.QDialog, 'exec', lambda *a, **k: refuse('opening a modal dialog'))
     monkeypatch.setattr(QtWidgets.QMessageBox, 'exec', lambda *a, **k: refuse('opening a modal dialog'))
+
+    def refuse_dialog(name):
+        return lambda *a, **k: refuse('opening a modal dialog (' + name + ')')
+    for owner, functions in STATIC_DIALOGS.items():
+        for function in functions:
+            monkeypatch.setattr(getattr(QtWidgets, owner), function, refuse_dialog(owner + '.' + function))
     monkeypatch.setattr(usb.core, 'find', lambda *a, **k: refuse('USB enumeration'))
     # ptpremote binds subprocess.run as a default argument when it is imported.
     monkeypatch.setitem(ptpremote.claim_after_stopping_ptpcamerad.__kwdefaults__, 'run', guarded_run)
