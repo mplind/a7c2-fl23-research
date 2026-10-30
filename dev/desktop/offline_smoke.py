@@ -161,6 +161,25 @@ def check_feature_modules():
     return dict(film_looks=len(looks), shutter_sounds=len(sounds))
 
 
+def check_edition():
+    """The edition this package records (desktop.spec writes it), and the pack and library the app uses
+    with it: a public package must use the public six and the open library, a personal one the owner's.
+    A source tree records no edition; a package that records none fails."""
+    import sys
+    from desktopapp import looklibrary, paths, presets
+    edition = paths.edition()
+    if edition is None:
+        if getattr(sys, 'frozen', False):
+            raise RuntimeError('This package does not record its edition')
+        return dict(edition='source')
+    expected = {'public': (presets.PACK, looklibrary.PUBLIC), 'personal': (presets.PERSONAL, looklibrary.PERSONAL)}
+    pack, library = presets.active(), looklibrary.location()
+    if (pack, library) != expected[edition]:
+        raise RuntimeError('This %s package uses the six-look pack %s and the film library %s'
+                           % (edition, pack, library))
+    return dict(edition=edition, six_look_pack=pack, film_library=str(library))
+
+
 def check_identity_regions():
     """Every supported build's identity regions, loaded as the firmware gate loads them: the build's
     regions file under src/looks/assets, and the Vertical Display windows buildprofile imports from its
@@ -241,7 +260,7 @@ def run():
     # The public six, which every package ships: their embedded DCPs feed the conversion check below.
     packed, selected = bundle.documents(presets.resolve(dict(preset_pack=presets.PACK)))
     assert [row['name'] for row in selected] == list(presets.NAMES)
-    # The pack One-click installs from this package: the owner's six in his personal build, else the public six.
+    # The pack One-click installs from this package: the owner's six in the personal edition, else the public six.
     six = presets.load(presets.active())
     _, installed = bundle.documents(presets.resolve(dict(preset_pack=six.id)))
     assert [row['name'] for row in installed] == list(six.names)
@@ -361,6 +380,7 @@ def run():
         assert forward['stream_install'] and Path(forward['path']).read_bytes()[:4]==b'\x7fELF'
     features = check_feature_modules()
     return {'camera_io': False, 'project_imports': 'passed', **features, 'app_icon': check_app_icon(),
+            'edition': check_edition(),
             'identity_regions': identity_regions,
             'bundled_exiftool':exif_result.stdout.strip(), 'assets': 'passed', 'builtin_factory_reference': 'passed',
             'native_cross_compile': 'passed', 'native_assembler_disassembler':'passed',

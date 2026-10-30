@@ -114,7 +114,10 @@ python desktop.py
 
 **打包：**
 1. 准备被 Git 忽略的发行资源：`python dev/desktop/prepare_assets.py`。用 `--preset-archive <zip>` 从导出的资源包或 Windows 安装包中导入默认六款和配对库；用 `--export-presets <zip>` 导出资源包。
-2. 构建：`python dev/desktop/build.py`。
+2. 构建：凡要发布的包都用 `python dev/desktop/build.py --edition public`。`--edition` 决定 `desktop-assets/` 中哪些内容进包：
+   - `--edition public` 只打包已知的公开资源文件夹，并在构建输出中列出略过的其他文件夹。构建后检查 APP，一旦发现来自 `desktop-assets/personal` 的内容或标记为 `personal_use_only` 的文件，就不生成安装包。CI 始终用 `--edition public` 构建。
+   - `--edition personal` 另外打包 `desktop-assets/personal` 下所有者的个人资源（被 Git 忽略，由 `dev/desktop/prepare_personal_looks.py` 准备）。安装包名为 `…-personal.dmg`（或 `…-personal.zip`），DMG 卷名为“A7C II Tools (personal)”。切勿发布；在 GitHub Actions 上 build.py 会拒绝构建此版本。
+   - 不加 `--edition` 时，存在 `desktop-assets/personal` 则构建个人版，否则构建公开版。
 
 产物：
 - **Windows**：`dist/A7C2Tools-Windows-x64.zip`，包含 `A7C2Tools.exe`、`_internal/`、`Profiles/`（配对库）、两份 README 和 `LICENSE`。

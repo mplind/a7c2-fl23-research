@@ -1,6 +1,6 @@
 """Preparing the owner's personal film library and six-look pack from the bake-off's library: byte-for-byte
 copies checked against the manifest, catalog entries with their rationale and exposure note, and refusals
-that leave the previous assets in place. A fixture library stands in for his; no camera access."""
+that leave the previous assets in place. A fixture library stands in for the real one; no camera access."""
 import hashlib
 import json
 from pathlib import Path
@@ -16,6 +16,7 @@ sys.path.insert(0, str(ROOT / 'dev/desktop'))
 import assets_check  # noqa: E402
 import prepare_personal_looks as personal  # noqa: E402
 from looksamples import look_file  # noqa: E402
+from packsamples import OWNER_SIX as SIX  # noqa: E402
 
 DEHANCER_LICENCE = 'Personal use only — converted from a purchased Dehancer licence; not for distribution'
 DXO_LICENCE = 'Personal use only — converted from a purchased DxO licence; not for distribution'
@@ -36,14 +37,14 @@ LOOKS = [
          why='The closest to Kodachrome.'),
     look('dxo-kodachrome64generic', 'Kodachrome 64 generic (DxO)', 'Kodachrome', 'dxo'),
     look('dh-velvia50', 'Velvia 50 (Dehancer)', 'Velvia', 'dehancer', slot=4, thirds=1),
-    look('dh-portra400', 'Portra 400 (Dehancer)', 'Portra 400', 'dehancer', slot=1, thirds=2, why='Skin first.'),
-    look('dxo-portra160nc', 'Portra 160 NC (DxO)', 'Portra 160 NC', 'dxo', slot=6),
+    look('dh-portra400', 'Portra 400 (Dehancer)', 'Portra 400', 'dehancer', slot=1, thirds=2,
+         why='Skin first. Fit: MAE 1.26 / P95 4.03, within the median bundled look (2.39 / 8.02).'),
+    look('dxo-portra160nc', 'Portra 160 NC (DxO)', 'Portra 160 NC', 'dxo', slot=6,
+         why='Natural, as NC was. Fit: MAE 1.59 / P95 5.72, within the median bundled look (2.39 / 8.02).'),
     look('dh-cinestill800t', 'CineStill 800T (Dehancer)', 'CineStill 800T', 'dehancer', slot=5, thirds=1),
     look('fujifilm-bundled-classicchrome', 'Classic Chrome', 'Classic Chrome', 'fujifilm-bundled', slot=2, sim=True),
     look('dxo-eterna', 'Eterna sim (DxO)', 'Eterna', 'dxo', sim=True),
 ]
-SIX = ['Portra 400 (Dehancer)', 'Classic Chrome', 'Kodachrome 64 (Dehancer)', 'Velvia 50 (Dehancer)',
-       'CineStill 800T (Dehancer)', 'Portra 160 NC (DxO)']
 
 
 def sha(path):
@@ -89,8 +90,9 @@ def prepare(tmp_path, source):
 def test_the_targets_are_the_personal_assets_the_app_and_the_build_know():
     assert personal.LIBRARY == ROOT / assets_check.PERSONAL_LIBRARY
     assert personal.PACK == ROOT / assets_check.PERSONAL_PACK
-    assert personal.PACK.name == presets.PERSONAL
+    assert personal.PACK == presets.folder(presets.PERSONAL)
     assert personal.LIBRARY == looklibrary.PERSONAL
+    assert all(path.is_relative_to(ROOT / assets_check.PERSONAL_ROOT) for path in (personal.LIBRARY, personal.PACK))
 
 
 # The library ----------------------------------------------------------------------------------------
@@ -111,12 +113,14 @@ def test_each_entry_names_its_source_licence_and_rationale(tmp_path, checked_slo
     entries = {entry['id']: entry for entry in prepare(tmp_path, library(tmp_path))[0]}
     portra = entries['dh-portra400']
     assert portra['name'] == 'Portra 400 (Dehancer)' and portra['kind'] == 'negative'
+    assert entries['dxo-eterna']['notes'] == 'Why it made the cut.'  # no fit sentence, nothing dropped
     assert portra['file'] == 'dh-portra400.a7look' and portra['shareable'] is False
     assert portra['source'] == dict(project='Dehancer Desktop 1.1.0', author='Dehancer',
                                     url='https://www.dehancer.com/', licence=DEHANCER_LICENCE)
     assert portra['modification'] == ('Rendered through Dehancer Desktop 1.1.0 from an identity image, made '
                                       'into a CUBE LUT and fitted to the A7C II look table')
     assert portra['notes'] == 'Skin first. Portra 400 (Dehancer) renders about ⅔ stop dark; add +⅔ EV.'
+    assert entries['dxo-portra160nc']['notes'] == 'Natural, as NC was.'  # its fit sentence dropped
     assert entries['dh-kodachrome64']['notes'] == ('The closest to Kodachrome. Kodachrome 64 (Dehancer) renders '
                                                    'about ⅓ stop dark; add +⅓ EV.')
     assert entries['dh-kodachrome64']['kind'] == 'slide' and entries['dh-cinestill800t']['kind'] == 'cine'
@@ -159,7 +163,7 @@ def test_the_pack_holds_the_six_default_slots_in_order(tmp_path, checked_slots):
     document = json.loads((pack / 'pack.json').read_text(encoding='utf-8'))
     assert document['pack'] == presets.PERSONAL and document['personal_use_only'] is True
     assert document['notice'] == personal.NOTICE and document['looks'] == rows
-    assert [row['name'] for row in rows] == SIX
+    assert [row['name'] for row in rows] == list(SIX)
     assert [row['exposure_comp_thirds'] for row in rows] == [2, 0, 1, 1, 1, 0]
     assert [row['licence'] for row in rows] == [DEHANCER_LICENCE, BUNDLED_LICENCE] + [DEHANCER_LICENCE] * 3 + [DXO_LICENCE]
     for slot, row in enumerate(rows, 1):
@@ -261,3 +265,12 @@ def test_a_folder_that_is_not_a_personal_asset_is_never_replaced(tmp_path, check
     other = ({'film-looks-personal-v1', 'personal-six-v1'} - {target}).pop()
     assert not (tmp_path / other).exists()  # checked before either target changes
     assert sorted(path.name for path in tmp_path.iterdir()) == sorted(['personal-library', target])
+
+
+@pytest.mark.parametrize('why, kept', [
+    ('Skin first. Fit: MAE 1.26 / P95 4.03, within the median bundled look (2.39 / 8.02).', 'Skin first.'),
+    ('Fit: MAE 2.07 / P95 7.13, within the median bundled look (2.39 / 8.02).', ''),
+    ('Kept for its beauty. The accurate one fits better.', 'Kept for its beauty. The accurate one fits better.'),
+])
+def test_the_rationale_drops_its_fit_sentence_which_the_library_shows_itself(why, kept):
+    assert personal.rationale(why) == kept

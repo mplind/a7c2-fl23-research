@@ -1,17 +1,18 @@
-"""Copy the owner's personal film library and his six default looks into the desktop assets.
+"""Copy the owner's personal film library and six default looks into the desktop assets.
 
 Usage: python dev/desktop/prepare_personal_looks.py <personal library folder>
 
 The folder is the film-look bake-off's finished library: manifest.json, looks/, samples/, writeups/ and
-its guides. Its looks are converted from apps the owner bought (Dehancer, DxO FilmPack) or are
-Fujifilm-derived, so they are for his personal use only: both targets sit under desktop-assets/, which
-git ignores, and only the personal edition of the build bundles them (assets_check.PERSONAL). Every look
-is copied byte for byte and checked against the manifest's sha256; nothing is converted or refitted.
-Both targets are checked and staged before either replaces the earlier one.
+its guides. They are the owner's personal assets, for personal use only: both targets sit under the
+personal root (assets_check.PERSONAL_ROOT), which git ignores and only the personal edition of the build
+ships. Every look is copied byte for byte and checked against the manifest's sha256; nothing is converted
+or refitted. Both targets are checked and staged, inside the personal root, before either replaces the
+earlier one.
 """
 import argparse
 import hashlib
 import json
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -35,10 +36,12 @@ REQUIRED = ('id', 'stock', 'camera_name', 'source', 'source_app', 'sim', 'file',
 # digital film simulation, so a style. A new stock needs its kind here.
 KINDS = {'Kodachrome': 'slide', 'Velvia': 'slide', 'Fuji Provia': 'slide', 'Portra 400': 'negative',
          'Portra 160 NC': 'negative', 'Portra 160 VC': 'negative', 'CineStill 800T': 'cine'}
-# The maker and site of each app a paid look was converted from, by the manifest's 'source'.
-PURCHASED = {'dehancer': ('Dehancer', 'https://www.dehancer.com/'),
+# The maker and site of the app each look was converted from, by the manifest's 'source'.
+MAKERS = {'dehancer': ('Dehancer', 'https://www.dehancer.com/'),
              'dxo': ('DxO', 'https://www.dxo.com/dxo-filmpack/')}
 LICENCE = 'Personal use only — converted from a purchased %s licence; not for distribution'
+# The manifest's reasons end with the look's fit, which the library dialog shows on its own.
+FIT_SENTENCE = re.compile(r'\s*Fit: MAE .*\Z', re.S)
 # The Classic Chrome that A7C II Tools already bundles (its paired profile library). It keeps the licence
 # the manifest gives it. Its DCP came from 门萨特里顿 (MTriton), as docs/en/notices.md credits it.
 BUNDLED = 'fujifilm-bundled'
@@ -106,9 +109,9 @@ def source_of(look):
     if look['source'] == BUNDLED:
         author, url = BUNDLED_SOURCE
         return dict(project=look['source_app'], author=author, url=url, licence=look['licence'])
-    if look['source'] not in PURCHASED:
+    if look['source'] not in MAKERS:
         raise ValueError('Unknown source %r for %s' % (look['source'], look['id']))
-    maker, url = PURCHASED[look['source']]
+    maker, url = MAKERS[look['source']]
     return dict(project=look['source_app'], author=maker, url=url, licence=LICENCE % maker)
 
 
@@ -123,13 +126,18 @@ def modification(look, document):
     raise ValueError('%s has an unknown conversion method %r' % (look['id'], method))
 
 
+def rationale(why):
+    """The manifest's reason for including a look, without its closing fit sentence."""
+    return FIT_SENTENCE.sub('', why).strip()
+
+
 def entry(look, document, model):
     """The catalog entry of a look. Its notes are the manifest's reason for including it, then what to do
     if it renders dark."""
     note = presets.exposure_note(((look['camera_name'], look['exposure_comp_thirds']),), 'en')
     result = {'id': look['id'], 'name': look['camera_name'], 'kind': kind(look), 'file': look['id'] + '.a7look',
               'source': source_of(look), 'modification': modification(look, document), 'shareable': False,
-              'notes': ' '.join(part for part in (look['why_included'], note) if part)}
+              'notes': ' '.join(part for part in (rationale(look['why_included']), note) if part)}
     colours = prepare_film_looks.swatches(document, model)
     if colours:
         result['swatches'] = colours

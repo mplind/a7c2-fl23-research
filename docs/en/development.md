@@ -114,7 +114,10 @@ The root `conftest.py` blocks physical USB enumeration in every test. Other suit
 
 **Packaging:**
 1. Prepare the ignored distribution assets: `python dev/desktop/prepare_assets.py`. Use `--preset-archive <zip>` to import the six defaults and the paired library from an exported pack or a Windows build; use `--export-presets <zip>` to create such a pack.
-2. Build: `python dev/desktop/build.py`.
+2. Build: `python dev/desktop/build.py --edition public` for anything you publish. `--edition` chooses what ships from `desktop-assets/`:
+   - `--edition public` ships the known public asset folders only and names any other folder it leaves out. After building, it checks the app for anything from `desktop-assets/personal` or marked `personal_use_only`, and makes no package if it finds one. CI always builds `--edition public`.
+   - `--edition personal` also ships the owner's personal assets under `desktop-assets/personal` (git-ignored; `dev/desktop/prepare_personal_looks.py` prepares them). Its package is named `…-personal.dmg` (or `…-personal.zip`) and its DMG volume "A7C II Tools (personal)". Never publish it; build.py refuses it on GitHub Actions.
+   - Without `--edition`, build.py builds the personal edition where `desktop-assets/personal` exists and the public edition elsewhere.
 
 Outputs:
 - **Windows:** `dist/A7C2Tools-Windows-x64.zip`. It contains `A7C2Tools.exe`, `_internal/`, `Profiles/` (paired library), both READMEs and `LICENSE`.

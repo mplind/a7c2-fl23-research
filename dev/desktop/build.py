@@ -14,6 +14,9 @@ import assets_check
 
 ROOT = Path(__file__).resolve().parents[2]
 APP_NAME = 'A7C2Tools.app'
+# A personal package says so in its file name and its DMG volume; a public one is named as before.
+SUFFIX = {'public': '', 'personal': '-personal'}
+VOLUME = {'public': 'A7C II Tools', 'personal': 'A7C II Tools (personal)'}
 EM_AARCH64 = 183
 
 
@@ -38,11 +41,19 @@ def check_bundled_zig(app):
             raise RuntimeError('Bundled Zig did not produce an AArch64 ELF library: '+str(zig))
 
 
-def make_dmg(output):
+def refuse_personal(output):
+    """Refuse to package a public build whose app holds any personal asset (assets_check.personal_findings)."""
+    found=[folder+'/'+path for folder in (APP_NAME,'A7C2Tools') if (Path(output)/folder).is_dir()
+           for path in assets_check.personal_findings(Path(output)/folder)]
+    if found:
+        raise RuntimeError('This public build holds personal assets, so no package was made: '+', '.join(found[:20]))
+
+
+def make_dmg(output,edition):
     output=Path(output).resolve()
     app=output/APP_NAME
     if not app.is_dir():raise FileNotFoundError(app)
-    target=output/('A7C2Tools-macOS-'+platform.machine()+'.dmg')
+    target=output/('A7C2Tools-macOS-'+platform.machine()+SUFFIX[edition]+'.dmg')
     # Temporary staging prevents files from older builds leaking into the DMG.
     with tempfile.TemporaryDirectory(prefix='a7c2-dmg-',dir=output) as temporary:
         staging=Path(temporary)
@@ -50,14 +61,14 @@ def make_dmg(output):
         (staging/'Applications').symlink_to('/Applications',target_is_directory=True)
         subprocess.run(['codesign','--verify','--deep','--strict',str(app)],check=True)
         subprocess.run(['hdiutil','create','-ov','-format','UDZO','-volname',
-                        'A7C II Tools','-srcfolder',str(staging),str(target)],check=True)
+                        VOLUME[edition],'-srcfolder',str(staging),str(target)],check=True)
     subprocess.run(['hdiutil','verify',str(target)],check=True)
     return target
 
 
-def make_windows_zip(output):
+def make_windows_zip(output,edition):
     output=Path(output)
-    target=output/'A7C2Tools-Windows-x64.zip'
+    target=output/('A7C2Tools-Windows-x64'+SUFFIX[edition]+'.zip')
     library=profile_files()
     for relative,source in library.items():
         dest=output/'A7C2Tools/Profiles'/relative
@@ -81,9 +92,11 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output',type=Path,default=ROOT/'dist')
     parser.add_argument('--edition',choices=assets_check.EDITIONS,default=assets_check.default_edition(ROOT),
-                        help="personal bundles the owner's personal looks (the default where they are present); "
-                             'public leaves them out, as any release must')
+                        help="personal ships the owner's personal assets (the default where they are present); "
+                             'public leaves them out, as every release and CI build must')
     args=parser.parse_args()
+    if args.edition=='personal' and os.environ.get('GITHUB_ACTIONS'):
+        raise RuntimeError('The personal edition is never built on GitHub Actions; build with --edition public.')
     if sys.platform not in ('win32','darwin'):raise RuntimeError('Build on native Windows or macOS')
     output=args.output.resolve();output.mkdir(parents=True,exist_ok=True)
     profile_files()
@@ -91,10 +104,11 @@ def main():
                     '--distpath',str(output),'--workpath',str(ROOT/'build/desktop'),
                     str(ROOT/'dev/desktop/desktop.spec')],cwd=ROOT,check=True,
                    env=dict(os.environ,A7C2_EDITION=args.edition))
+    if args.edition=='public':refuse_personal(output)
     if sys.platform=='darwin':
         check_bundled_zig(output/APP_NAME)
-        target=make_dmg(output)
-    else:target=make_windows_zip(output)
+        target=make_dmg(output,args.edition)
+    else:target=make_windows_zip(output,args.edition)
     print(json.dumps(dict(artifact=str(target),bytes=target.stat().st_size,camera_io=False,edition=args.edition)))
 
 

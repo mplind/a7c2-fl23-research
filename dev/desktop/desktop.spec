@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 import sys
 from PyInstaller.utils.hooks import collect_all
@@ -12,9 +13,15 @@ exec((root / 'src/desktopapp/__init__.py').read_text(encoding='utf-8'), version)
 # below, where the window loads it (desktopapp.paths.APP_ICON).
 ICON = 'dev/desktop/icon/AppIcon.icns'
 icon = str(root / ICON)
-# personal or public: only the personal edition ships the owner's personal assets (assets_check.PERSONAL).
+# personal or public. Under desktop-assets/, each edition ships only the folders it knows
+# (assets_check.shipped): the public edition never ships the owner's personal root.
 edition = assets_check.edition()
 assets_check.require(root, edition)
+# The package records its edition beside the app's files (desktopapp.paths.edition()).
+edition_record = Path(workpath) / 'edition.json'
+edition_record.parent.mkdir(parents=True, exist_ok=True)
+edition_record.write_text(json.dumps({'edition': edition}), encoding='utf-8')
+left_out = set()
 datas, binaries, hidden = [], [], ['PySide6.QtCore', 'PySide6.QtGui', 'PySide6.QtSvg', 'PySide6.QtWidgets',
                                  'tarfile', 'lzma', 'bz2', 'zlib', 'urllib.request', 'wave', 'plistlib', 'backports.tarfile', 'zipfile', 'filecmp']
 if sys.platform=='darwin':hidden.append('pwd')
@@ -32,7 +39,9 @@ for folder in ('src/desktopapp', 'src/camera_runtime', 'src/looks/looktool',
     for source in (root / folder).rglob('*'):
         relative = source.relative_to(root)
         if relative.parts[:2]==('desktop-assets','profile-library-v1'):continue
-        if assets_check.personal(relative) and edition != 'personal':
+        if relative.parts[0] == 'desktop-assets' and not assets_check.bundled(relative, edition):
+            if source.is_file():
+                left_out.add(assets_check.unlisted(relative, edition))
             continue
         if not source.is_file() or any(p in ('__pycache__', 'tests') for p in relative.parts):
             continue
@@ -44,6 +53,9 @@ for folder in ('src/desktopapp', 'src/camera_runtime', 'src/looks/looktool',
                                           and not assets_check.personal_sample(relative)):
             continue
         datas.append((str(source), str(relative.parent)))
+if left_out:
+    print('Left out of this %s package (not a known asset folder): %s' % (edition, ', '.join(sorted(left_out))))
+datas.append((str(edition_record), '.'))
 for relative,source in profile_files().items():
     datas.append((str(source),str(Path('desktop-assets/profile-library-v1')/Path(relative).parent)))
 for name in ('desktop.py', 'LICENSE', 'README.md', 'README.zh-CN.md', 'desktop-requirements.txt',

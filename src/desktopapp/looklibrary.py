@@ -30,11 +30,11 @@ HEX = re.compile(r'#[0-9A-Fa-f]{6}\Z')
 READ_ERRORS = (OSError, ValueError, KeyError, TypeError, AttributeError)
 
 
-# The open library every build ships, and the owner's personal library, which only his personal build ships
-# (dev/desktop/assets_check.PERSONAL). GOOD and ACCEPTED above come from neither: they are the paired
-# profile library's (desktop-assets/profile-library-v1), whatever library the app shows.
+# The open library every build ships, and the owner's personal library, which only the personal edition
+# ships (dev/desktop/assets_check.PERSONAL_ROOT). GOOD and ACCEPTED above come from neither: they are the
+# paired profile library's (desktop-assets/profile-library-v1), whatever library the app shows.
 PUBLIC = ROOT / 'desktop-assets/film-looks-v1'
-PERSONAL = ROOT / 'desktop-assets/film-looks-personal-v1'
+PERSONAL = ROOT / 'desktop-assets/personal/film-looks-v1'
 
 
 def location():

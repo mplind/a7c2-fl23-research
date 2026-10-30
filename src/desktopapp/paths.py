@@ -7,6 +7,20 @@ ROOT = Path(__file__).resolve().parents[2]
 # The app icon for the Dock and the window. desktop.spec ships it at this path (and gives the bundle the
 # same file), so it resolves in the source tree and in the packaged app; make_icon.py beside it redraws it.
 APP_ICON = ROOT / 'dev/desktop/icon/AppIcon.icns'
+# The edition a package was built as, which desktop.spec records beside the app's files: public or
+# personal. A source tree has none.
+EDITION_RECORD = ROOT / 'edition.json'
+EDITIONS = ('personal', 'public')
+
+
+def edition():
+    """The edition this package records, or None in a source tree."""
+    if not EDITION_RECORD.is_file():
+        return None
+    value = json.loads(EDITION_RECORD.read_text(encoding='utf-8')).get('edition')
+    if value not in EDITIONS:
+        raise ValueError('Unknown edition %r in %s' % (value, EDITION_RECORD))
+    return value
 
 
 def data_root():

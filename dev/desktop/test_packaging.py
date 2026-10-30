@@ -83,7 +83,7 @@ def test_windows_output_path_unchanged(tmp_path):
     exe=tmp_path/'A7C2Tools/A7C2Tools.exe';exe.parent.mkdir();exe.write_bytes(b'test')
     (exe.parent/'a7c2-diagnostics.zip').write_bytes(b'private local diagnostic')
     with patch.object(build,'profile_files',side_effect=lambda:profilepack.files(fixture)):
-        result=build.make_windows_zip(tmp_path)
+        result=build.make_windows_zip(tmp_path,'public')
     assert result.name=='A7C2Tools-Windows-x64.zip'
     with zipfile.ZipFile(result) as z:
         assert z.read('A7C2Tools/A7C2Tools.exe')==b'test'
@@ -128,7 +128,7 @@ def test_dmg_has_fresh_staging_and_arch_specific_filename(tmp_path):
     with patch.object(build.platform,'machine',return_value='arm64'), \
             patch.object(build.subprocess,'run',side_effect=command) as run, \
             patch.object(Path,'symlink_to',symlink):
-        result=build.make_dmg(tmp_path)
+        result=build.make_dmg(tmp_path,'public')
     assert result.name=='A7C2Tools-macOS-arm64.dmg'
     assert not list(tmp_path.glob('a7c2-dmg-*'))
     assert run.call_args.args[0]==['hdiutil','verify',str(result)]
@@ -207,7 +207,8 @@ def run_main(tmp_path,host):
     events=[];output=tmp_path/'dist'
     with patch.object(build.sys,'platform',host), \
             patch.object(build.platform,'machine',return_value='x86_64'), \
-            patch.object(build.sys,'argv',['build.py','--output',str(output)]), \
+            patch.object(build.sys,'argv',['build.py','--output',str(output),'--edition','public']), \
+            patch.dict(build.os.environ,{'GITHUB_ACTIONS':''}), \
             patch.object(build,'profile_files',return_value={}), \
             patch.object(build,'check_bundled_zig',side_effect=lambda app:events.append(('zig check',app))), \
             patch.object(build.subprocess,'run',side_effect=fake_toolchain(events)):
@@ -253,26 +254,36 @@ def test_the_spec_bundles_every_qt_module_the_source_imports():
 
 # The personal and public editions ----------------------------------------------------------------------
 
-def run_edition(tmp_path, *extra, default='public'):
-    """(edition PyInstaller saw, printed result) of build.main on a Mac with `extra` arguments, where the
-    edition is `default` unless they choose one."""
-    seen = []
+def run_edition(tmp_path, *extra, default='public', app_content=None):
+    """(edition PyInstaller saw, printed result, commands run) of build.main on a Mac with `extra`
+    arguments, where the edition is `default` unless they choose one; `app_content` adds files to the
+    built app, {relative path: text}."""
+    seen, events = [], []
+    toolchain = fake_toolchain(events)
     def command(args, **kwargs):
         if args[1:3] == ['-m', 'PyInstaller']:
             seen.append(kwargs['env']['A7C2_EDITION'])
-        return fake_toolchain([])(args, **kwargs)
+            toolchain(args, **kwargs)
+            for relative, text in (app_content or {}).items():
+                path = Path(args[args.index('--distpath') + 1]) / 'A7C2Tools.app' / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(text)
+            return None
+        return toolchain(args, **kwargs)
     output = tmp_path / 'dist'
     with patch.object(build.sys, 'platform', 'darwin'), \
             patch.object(build.platform, 'machine', return_value='x86_64'), \
             patch.object(build.sys, 'argv', ['build.py', '--output', str(output), *extra]), \
             patch.object(build.assets_check, 'default_edition', return_value=default) as default_edition, \
+            patch.dict(build.os.environ, {}, clear=False) as environment, \
             patch.object(build, 'profile_files', return_value={}), \
             patch.object(build, 'check_bundled_zig'), \
             patch.object(build.subprocess, 'run', side_effect=command), \
             patch('sys.stdout', io.StringIO()) as printed:
+        environment.pop('GITHUB_ACTIONS', None)
         build.main()
     default_edition.assert_called_once_with(build.ROOT)  # where this checkout has the personal assets
-    return seen, json.loads(printed.getvalue())
+    return seen, json.loads(printed.getvalue()), events
 
 
 @posix_only
@@ -280,8 +291,10 @@ def run_edition(tmp_path, *extra, default='public'):
     ((), 'personal', 'personal'), ((), 'public', 'public'),
     (('--edition', 'public'), 'personal', 'public'), (('--edition', 'personal'), 'public', 'personal')])
 def test_build_tells_the_spec_its_edition(tmp_path, extra, default, edition):
-    seen, result = run_edition(tmp_path, *extra, default=default)
+    seen, result, _ = run_edition(tmp_path, *extra, default=default)
     assert seen == [edition] and result['edition'] == edition
+    suffix = '-personal' if edition == 'personal' else ''
+    assert Path(result['artifact']).name == 'A7C2Tools-macOS-x86_64%s.dmg' % suffix
 
 
 def test_build_refuses_an_edition_it_does_not_know(tmp_path):
@@ -291,3 +304,83 @@ def test_build_refuses_an_edition_it_does_not_know(tmp_path):
             build.main()
     run.assert_not_called()
 
+
+
+# Fail closed: CI, the built app, the package name ------------------------------------------------------
+
+def test_build_refuses_the_personal_edition_on_github_actions(tmp_path):
+    with patch.object(build.sys, 'platform', 'darwin'), \
+            patch.object(build.sys, 'argv', ['build.py', '--output', str(tmp_path), '--edition', 'personal']), \
+            patch.dict(build.os.environ, {'GITHUB_ACTIONS': 'true'}), \
+            patch.object(build.subprocess, 'run') as run:
+        with pytest.raises(RuntimeError, match='GitHub Actions'):
+            build.main()
+    run.assert_not_called()
+
+
+@posix_only
+@pytest.mark.parametrize('content', [
+    {'Contents/Resources/desktop-assets/personal/film-looks-v1/look.a7look': 'look'},
+    {'Contents/Resources/desktop-assets/somewhere/pack.json': '{"pack": "personal-six-v1", "looks": []}'},
+    {'Contents/Resources/x/catalog.json': '{"personal_use_only": true, "looks": []}'},
+])
+def test_a_public_build_holding_a_personal_asset_makes_no_package(tmp_path, content):
+    with pytest.raises(RuntimeError, match='personal assets, so no package was made') as refused:
+        run_edition(tmp_path, '--edition', 'public', app_content=content)
+    assert 'Contents/Resources' in str(refused.value)
+    assert not list((tmp_path / 'dist').glob('*.dmg'))
+
+
+@posix_only
+def test_the_personal_edition_is_not_scanned_and_names_its_package(tmp_path):
+    content = {'Contents/Resources/desktop-assets/personal/presets/personal-six-v1/pack.json': '{"pack": "personal-six-v1"}'}
+    _, result, events = run_edition(tmp_path, '--edition', 'personal', app_content=content)
+    assert Path(result['artifact']).name == 'A7C2Tools-macOS-x86_64-personal.dmg'
+    assert 'hdiutil' in events
+
+
+@pytest.mark.parametrize('edition, name, volume', [
+    ('public', 'A7C2Tools-macOS-arm64.dmg', 'A7C II Tools'),
+    ('personal', 'A7C2Tools-macOS-arm64-personal.dmg', 'A7C II Tools (personal)')])
+def test_the_dmg_name_and_volume_say_the_edition(tmp_path, edition, name, volume):
+    app = tmp_path / 'A7C2Tools.app'; app.mkdir(); (app / 'file').write_bytes(b'app')
+    created = []
+    def command(args, **kwargs):
+        if args[:2] == ['hdiutil', 'create']:
+            created.append(args[args.index('-volname') + 1])
+            Path(args[-1]).write_bytes(b'dmg')
+    with patch.object(build.platform, 'machine', return_value='arm64'), \
+            patch.object(build.subprocess, 'run', side_effect=command), \
+            patch.object(Path, 'symlink_to', lambda path, target, **kwargs: path.write_text(str(target))):
+        result = build.make_dmg(tmp_path, edition)
+    assert result.name == name and created == [volume]
+
+
+def test_the_windows_zip_name_says_the_edition(tmp_path):
+    fixture = tmp_path / 'fixture'; library_fixture(fixture)
+    exe = tmp_path / 'A7C2Tools/A7C2Tools.exe'; exe.parent.mkdir(); exe.write_bytes(b'test')
+    with patch.object(build, 'profile_files', side_effect=lambda: profilepack.files(fixture)):
+        assert build.make_windows_zip(tmp_path, 'personal').name == 'A7C2Tools-Windows-x64-personal.zip'
+
+
+WORKFLOWS = [ROOT / '.github/workflows/release.yml', ROOT / '.github/workflows/desktop-preview.yml']
+
+
+@pytest.mark.parametrize('workflow', WORKFLOWS, ids=lambda path: path.name)
+def test_every_ci_build_is_the_public_edition(workflow):
+    lines = [line for line in workflow.read_text(encoding='utf-8').splitlines() if 'dev/desktop/build.py' in line]
+    assert lines and all(line.rstrip().endswith('dev/desktop/build.py --edition public') for line in lines)
+
+
+@pytest.mark.parametrize('workflow', WORKFLOWS, ids=lambda path: path.name)
+def test_ci_runs_the_personal_asset_guards(workflow):
+    focused = [line for line in workflow.read_text(encoding='utf-8').splitlines()
+               if 'python -m pytest' in line and 'dev/desktop/test_packaging.py' in line]
+    assert len(focused) == 1 and 'dev/desktop/test_personal_assets.py' in focused[0].split()
+
+
+@pytest.mark.parametrize('document', ['docs/en/development.md', 'docs/zh-CN/development.md'])
+def test_the_development_guide_documents_the_edition(document):
+    text = (ROOT / document).read_text(encoding='utf-8')
+    for words in ('--edition public', '--edition personal', 'desktop-assets/personal', '-personal'):
+        assert words in text, words

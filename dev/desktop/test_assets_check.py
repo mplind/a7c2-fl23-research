@@ -1,4 +1,5 @@
 """Distribution assets a build must not ship without; no camera access."""
+import json
 from pathlib import Path
 import sys
 import pytest
@@ -71,26 +72,35 @@ def test_the_personal_edition_needs_the_personal_assets_and_the_public_one_does_
         assets_check.require(tmp_path, 'release')
 
 
-def test_the_default_edition_is_personal_only_where_the_personal_assets_are(tmp_path):
+def test_the_personal_assets_share_one_root():
+    assert assets_check.PERSONAL_ROOT == 'desktop-assets/personal'
+    assert assets_check.PERSONAL_LIBRARY == 'desktop-assets/personal/film-looks-v1'
+    assert assets_check.PERSONAL_PACK == 'desktop-assets/personal/presets/personal-six-v1'
+
+
+def test_the_default_edition_is_personal_only_where_the_personal_root_is(tmp_path):
     assert assets_check.default_edition(tree(tmp_path)) == 'public'
-    (tmp_path / assets_check.PERSONAL_PACK).mkdir(parents=True)
+    (tmp_path / assets_check.PERSONAL_ROOT).mkdir(parents=True)
     assert assets_check.default_edition(tmp_path) == 'personal'
 
 
 @pytest.mark.parametrize('relative, personal, sample', [
-    ('desktop-assets/film-looks-personal-v1/catalog.json', True, False),
-    ('desktop-assets/film-looks-personal-v1/dh-portra400.a7look', True, False),
-    ('desktop-assets/film-looks-personal-v1/samples/dh-portra400.jpg', True, True),
-    ('desktop-assets/film-looks-personal-v1/samples/dh-portra400.cube', True, False),
-    ('desktop-assets/film-looks-personal-v1/dh-portra400.jpg', True, False),
-    ('desktop-assets/presets/personal-six-v1/slot1.a7look', True, False),
-    ('desktop-assets/presets/personal-six-v1/samples/x.jpg', True, False),
+    ('desktop-assets/personal/film-looks-v1/catalog.json', True, False),
+    ('desktop-assets/personal/film-looks-v1/dh-portra400.a7look', True, False),
+    ('desktop-assets/personal/film-looks-v1/samples/dh-portra400.jpg', True, True),
+    ('desktop-assets/personal/film-looks-v1/samples/dh-portra400.cube', True, False),
+    ('desktop-assets/personal/film-looks-v1/dh-portra400.jpg', True, False),
+    ('desktop-assets/personal/presets/personal-six-v1/slot1.a7look', True, False),
+    ('desktop-assets/personal/presets/personal-six-v1/samples/x.jpg', True, False),
+    ('desktop-assets/personal/presets/personal-six-v1.partial/slot1.a7look', True, False),
+    ('desktop-assets/personal/anything-else.txt', True, False),
     ('desktop-assets/presets/default-six-v1/slot1.a7look', False, False),
-    ('desktop-assets/presets/personal-six-v1-old/slot1.a7look', False, False),
+    ('desktop-assets/presets/personal-six-v1/slot1.a7look', False, False),
+    ('desktop-assets/personal-old/slot1.a7look', False, False),
     ('desktop-assets/film-looks-v1/samples/portra400.jpg', False, False),
     ('src/desktopapp/presets.py', False, False),
 ])
-def test_personal_assets_are_known_by_their_folders(relative, personal, sample):
+def test_personal_assets_are_everything_under_the_personal_root(relative, personal, sample):
     assert assets_check.personal(relative) is personal
     assert assets_check.personal_sample(relative) is sample
 
@@ -165,7 +175,7 @@ def test_the_new_self_test_checks_raise_explicitly():
     # R56 Task 9 minor 10: a check that is an assert vanishes under python -O.
     import ast
     tree = ast.parse((ROOT / 'dev/desktop/offline_smoke.py').read_text(encoding='utf-8'))
-    for name in ('check_identity_regions', 'check_app_icon'):
+    for name in ('check_identity_regions', 'check_app_icon', 'check_edition'):
         function = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == name)
         assert not [node.lineno for node in ast.walk(function) if isinstance(node, ast.Assert)], name
 
@@ -177,3 +187,121 @@ def test_the_packaged_self_test_fails_without_a_builds_regions_file(monkeypatch)
     monkeypatch.setattr(buildprofile, 'BUILDS', (public, dataclasses.replace(body, regions_file='factory-regions-missing.json')))
     with pytest.raises(FileNotFoundError, match='factory-regions-missing.json'):
         offline_smoke().check_identity_regions()
+
+
+# What each edition ships (I1-A: an allow-list) ---------------------------------------------------------
+
+@pytest.mark.parametrize('relative', [
+    'desktop-assets/exiftool/exiftool', 'desktop-assets/film-looks-v1/catalog.json',
+    'desktop-assets/presets/default-six-v1/slot1.a7look', 'desktop-assets/shutter-sounds-v1/catalog.json',
+    'desktop-assets/windows/wdi-simple.exe'])
+def test_both_editions_ship_the_known_public_folders(relative):
+    assert assets_check.bundled(relative, 'public') and assets_check.bundled(relative, 'personal')
+
+
+@pytest.mark.parametrize('relative, named', [
+    ('desktop-assets/presets/x.partial/slot1.a7look', 'desktop-assets/presets/x.partial'),
+    ('desktop-assets/film-looks-v1.partial/catalog.json', 'desktop-assets/film-looks-v1.partial'),
+    ('desktop-assets/presets/default-six-v1 copy/slot1.a7look', 'desktop-assets/presets/default-six-v1 copy'),
+    ('desktop-assets/presets/personal-six-v1/slot1.a7look', 'desktop-assets/presets/personal-six-v1'),
+    ('desktop-assets/notes.txt', 'desktop-assets/notes.txt'),
+    ('desktop-assets/film-looks-personal-v1/catalog.json', 'desktop-assets/film-looks-personal-v1'),
+])
+def test_no_edition_ships_a_folder_it_does_not_know_and_it_names_it(relative, named):
+    for edition in assets_check.EDITIONS:
+        assert not assets_check.bundled(relative, edition)
+        assert assets_check.unlisted(relative, edition) == named
+
+
+def test_only_the_personal_edition_ships_the_personal_root():
+    relative = 'desktop-assets/personal/presets/personal-six-v1/slot1.a7look'
+    assert assets_check.bundled(relative, 'personal') and not assets_check.bundled(relative, 'public')
+    assert assets_check.unlisted(relative, 'public') == 'desktop-assets/personal'
+
+
+@pytest.mark.parametrize('edition', ['personal', 'public'])
+def test_each_edition_ships_everything_require_demands(edition):
+    demanded = assets_check.required(edition)
+    assert demanded and all(assets_check.bundled(path, edition) for path, _ in demanded)
+    assert any(path.startswith(assets_check.PERSONAL_ROOT) for path, _ in demanded) == (edition == 'personal')
+
+
+# A built package holds no personal asset (C1-B) ---------------------------------------------------------
+
+def package(root):
+    folder = root / 'A7C2Tools.app/Contents/Resources/desktop-assets'
+    (folder / 'film-looks-v1').mkdir(parents=True)
+    (folder / 'film-looks-v1/catalog.json').write_text('{"schema": "a7c2-film-look-library/1", "looks": []}')
+    (folder / 'presets/default-six-v1').mkdir(parents=True)
+    (folder / 'presets/default-six-v1/credits.json').write_text('{"pack": "default-six-v1", "looks": []}')
+    (root / 'A7C2Tools.app/Contents/Resources/numpy.json').write_text('[1, 2]')
+    (root / 'A7C2Tools.app/Contents/Resources/broken.json').write_text('{not json')
+    return root / 'A7C2Tools.app'
+
+
+def test_a_clean_public_package_has_no_personal_findings(tmp_path):
+    assert assets_check.personal_findings(package(tmp_path)) == []
+
+
+@pytest.mark.parametrize('relative, content, found', [
+    ('Contents/Resources/desktop-assets/personal/film-looks-v1/look.a7look', 'look',
+     'Contents/Resources/desktop-assets/personal'),
+    ('Contents/Frameworks/desktop-assets/personal', None, 'Contents/Frameworks/desktop-assets/personal'),
+    ('Contents/Resources/elsewhere/pack.json', '{"pack": "personal-six-v1", "looks": []}', None),
+    ('Contents/Resources/elsewhere/catalog.json', '{"schema": "x", "personal_use_only": true, "looks": []}', None),
+    ('Contents/Resources/elsewhere/manifest.json', '{"personal_use_only": true}', None),
+])
+def test_a_personal_root_or_marker_anywhere_in_a_package_is_found(tmp_path, relative, content, found):
+    app = package(tmp_path)
+    path = app / relative
+    if content is None:
+        path.mkdir(parents=True)
+    else:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content)
+    assert assets_check.personal_findings(app) == [found or relative]
+
+
+# The edition the package records, and the packaged self-test's check of it ------------------------------
+
+def test_the_app_reads_the_edition_its_package_records(tmp_path, monkeypatch):
+    from desktopapp import paths
+    monkeypatch.setattr(paths, 'EDITION_RECORD', tmp_path / 'edition.json')
+    assert paths.edition() is None  # a source tree records none
+    for value in assets_check.EDITIONS:
+        (tmp_path / 'edition.json').write_text(json.dumps({'edition': value}))
+        assert paths.edition() == value
+    (tmp_path / 'edition.json').write_text(json.dumps({'edition': 'release'}))
+    with pytest.raises(ValueError, match='release'):
+        paths.edition()
+
+
+@pytest.mark.parametrize('edition, pack, library, ok', [
+    ('public', 'default-six-v1', 'PUBLIC', True),
+    ('public', 'personal-six-v1', 'PUBLIC', False),
+    ('public', 'default-six-v1', 'PERSONAL', False),
+    ('personal', 'personal-six-v1', 'PERSONAL', True),
+    ('personal', 'default-six-v1', 'PERSONAL', False),
+])
+def test_the_packaged_self_test_checks_the_pack_and_library_of_its_edition(monkeypatch, edition, pack, library, ok):
+    from desktopapp import looklibrary, paths, presets
+    smoke = offline_smoke('offline_smoke_edition')
+    monkeypatch.setattr(paths, 'edition', lambda: edition)
+    monkeypatch.setattr(presets, 'active', lambda: pack)
+    monkeypatch.setattr(looklibrary, 'location', lambda: getattr(looklibrary, library))
+    if ok:
+        assert smoke.check_edition() == dict(edition=edition, six_look_pack=pack,
+                                             film_library=str(getattr(looklibrary, library)))
+    else:
+        with pytest.raises(RuntimeError, match='%s package' % edition):
+            smoke.check_edition()
+
+
+def test_a_package_must_record_its_edition_but_a_source_run_need_not(monkeypatch):
+    from desktopapp import paths
+    smoke = offline_smoke('offline_smoke_edition_source')
+    monkeypatch.setattr(paths, 'edition', lambda: None)
+    assert smoke.check_edition() == dict(edition='source')
+    monkeypatch.setattr(sys, 'frozen', True, raising=False)
+    with pytest.raises(RuntimeError, match='does not record its edition'):
+        smoke.check_edition()
