@@ -1474,6 +1474,8 @@ class Window(W.QMainWindow):
         if success and status.get('action')=='recipe_apply':self.status.setText(tr('配方已写入并读回核对。'))
         refused_build=connection_checked and self.build_unsupported
         if refused_build:self.status.setText(self.build_label.text())
+        elif connection_checked and result.get('firmware_programs_written') is False:
+            self.status.setText(tr('服务连接正常。相机固件编译版本：%s。未写入任何内容。') % self.build_label.text())
         if not success and sys.platform == 'win32' and self.driver_step_failed(status.get('action')):
             self.status.setText(self.status.text() + tr(DRIVER_HINT))
         if sound_notice:self.status.setText(sound_notice['status'])

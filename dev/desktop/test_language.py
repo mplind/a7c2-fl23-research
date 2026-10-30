@@ -286,3 +286,26 @@ def test_qts_own_buttons_follow_the_interface_language(ui, language, cancel, clo
     box = W.QMessageBox(W.QMessageBox.Warning, 'title', 'text', W.QMessageBox.Cancel | W.QMessageBox.Ok)
     assert box.button(W.QMessageBox.Cancel).text() == cancel
     assert window.settings_dialog.findChild(W.QDialogButtonBox).button(W.QDialogButtonBox.Close).text() == close
+
+
+# The camera's own label for the USB mode the tools need: ILCE-7CM2 menu, USB Connection Mode, read off
+# the camera on 30 Oct 2026 (Sel. When Connect, USB Streaming, MassStorage (MSC), MTP, PC Remote). Its
+# position differs between that menu and the prompt the camera shows on connecting, so the copy names
+# the option and never gives its number.
+CAMERA_MSC = 'MassStorage (MSC)'
+PICKS_THE_USB_MODE = re.compile(r'\b(?:[Cc]hoose|[Ss]elect|[Ss]et [^.;]*? to)\b[^.;]*?Mass ?Storage(?: \(MSC\))?')
+
+
+def english_copy():
+    from desktopapp.en_engine import ENGINE
+    return [text for table in (STRINGS, ENGINE) for text in table.values() if isinstance(text, str)]
+
+
+def test_every_instruction_to_pick_the_usb_mode_names_the_cameras_own_label():
+    picks = [match.group(0) for text in english_copy() for match in PICKS_THE_USB_MODE.finditer(text)]
+    assert len(picks) >= 6
+    assert [pick for pick in picks if not pick.endswith(CAMERA_MSC)] == []
+
+
+def test_no_english_copy_gives_the_usb_modes_position():
+    assert [text for text in english_copy() if re.search(r'\bitem \d', text) and 'Storage' in text] == []

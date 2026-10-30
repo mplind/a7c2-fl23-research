@@ -64,6 +64,29 @@ def test_connection_test_shows_the_cameras_build(window, key, english):
     assert not HAN_OR_PUNCTUATION.search(ui.build_label.text())
 
 
+@pytest.mark.parametrize('key, english', [(PUBLIC.key, PUBLIC_LABEL), (BODY.key, BODY_LABEL)])
+def test_a_passed_test_names_the_build_in_the_status_line(window, key, english):
+    # It said only "Done. Details are in the log.", sending the reader to the log for the answer the
+    # page already had (camera test, 30 Oct 2026).
+    ui = window('en')
+    finish(ui, 'connect', connect_result(key))
+    assert ui.status.text() == 'Service connection works. Camera firmware build: %s. Nothing was written.' % english
+
+
+@pytest.mark.parametrize('build', BUILDS, ids=[build.key for build in BUILDS])
+def test_a_passed_test_names_the_build_in_the_chinese_status_line(window, build):
+    ui = window()
+    finish(ui, 'connect', connect_result(build.key))
+    assert ui.status.text() == '服务连接正常。相机固件编译版本：%s。未写入任何内容。' % build.label_zh
+
+
+def test_a_passed_test_that_reports_a_write_does_not_say_nothing_was_written(window):
+    ui = window('en')
+    finish(ui, 'connect', dict(connect_result(BODY.key), firmware_programs_written=True))
+    assert ui.build_label.text() == BODY_LABEL
+    assert ui.status.text() == 'Done. Details are in the log.'
+
+
 def test_every_supported_build_has_its_english_label():
     assert [STRINGS[build.label_zh] for build in BUILDS] == [PUBLIC_LABEL, BODY_LABEL]
 

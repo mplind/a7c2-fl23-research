@@ -139,7 +139,7 @@ ENGINE = {
     '未找到服务身份 054C:0336，请先使用“两阶段驱动与连接”入口。当前检测：%s。完整设备／接口信息已保存，不会为未知 PID 自动更换驱动。':
         'Service identity 054C:0336 not found. Use "Prepare drivers and test the connection" first. Found: %s. Full device and interface details are saved; unknown PIDs never get an automatic driver change.',
     '未找到相机的海量存储身份 054C:0E8A，请在相机选择“海量存储”后重新连接。当前检测：%s。完整设备／接口信息已保存，不会为未知 PID 自动更换驱动。':
-        "Choose Mass Storage on the camera, then reconnect. The camera's Mass Storage identity 054C:0E8A was not found. Found: %s. Full device and interface details are saved; unknown PIDs never get an automatic driver change.",
+        "Choose MassStorage (MSC) on the camera, then reconnect. The camera's Mass Storage identity 054C:0E8A was not found. Found: %s. Full device and interface details are saved; unknown PIDs never get an automatic driver change.",
     '054C:%s 已安装 %s，直接沿用，跳过驱动安装与管理员申请。':
         '054C:%s already has %s. Keeping it; no driver install or administrator prompt needed.',
     '驱动安装超过 180 秒，已停止等待；请保留日志核对当前绑定，不自动重复安装。':
@@ -199,7 +199,7 @@ ENGINE = {
     '普通 USB 身份未出现；只读取已有服务会话的机身序列，核对后续接，不重复认证。':
         "The camera is still in service mode from the last job. Confirming it's the same camera, then continuing on that session.",
     '相机没有以普通“海量存储”身份连接（可能仍停在上次的服务模式 054C:0336）。请拔掉 USB、关机并取出电池约 1 分钟，再开机选择海量存储、接回 USB 后重试；本次没有写入相机。（Normal Mass Storage USB serial is required for body binding）':
-        'Unplug USB, turn the camera off and take the battery out for about 1 minute. Then turn it on, choose Mass Storage, reconnect USB and try again. The camera did not connect as Mass Storage (it may still be in service mode, 054C:0336). Nothing was written. (Normal Mass Storage USB serial is required for body binding)',
+        'Unplug USB, turn the camera off and take the battery out for about 1 minute. Then turn it on, choose MassStorage (MSC), reconnect USB and try again. The camera did not connect as Mass Storage (it may still be in service mode, 054C:0336). Nothing was written. (Normal Mass Storage USB serial is required for body binding)',
     '读取相机文件时 USB 通信出错：%s': 'USB error while reading camera file: %s',
     '已清理上次只读检测留下的报告（不影响相机内容），继续本次操作。':
         'Cleared the report the last read-only check left (camera content unaffected). Continuing.',
@@ -349,7 +349,7 @@ ENGINE = {
 
     # camera_runtime.macos_host: taking USB over on macOS.
     '若相机屏幕询问 USB 连接方式，请选择第 2 项「影像传输（MSC）」。':
-        'If the camera asks how to connect over USB, choose item 2, Mass Storage (MSC).',
+        'If the camera asks how to connect over USB, choose MassStorage (MSC).',
     '请只连接一台海量存储模式的 A7C II，再准备 USB 连接。%s':
         'Connect one A7C II only, in Mass Storage mode, then try again. %s',
     '相机磁盘尚未稳定，尚未接管 USB。%s等存取灯停止后重试。':
@@ -366,7 +366,7 @@ ENGINE = {
     '等待普通 USB 重新枚举：%s': 'Waiting for normal USB to reappear: %s',
     '普通 USB 连接已恢复。': 'Normal USB connection is back.',
     '%d 秒内未恢复普通 USB 连接。下次操作前请在相机上选择「影像传输（MSC）」。':
-        "The normal USB connection didn't come back within %d seconds. Before the next operation, choose Mass Storage (MSC) on the camera.",
+        "The normal USB connection didn't come back within %d seconds. Before the next operation, choose MassStorage (MSC) on the camera.",
 
     # camera_runtime.transport: the USB session.
     '相機操作超出有界等待時間': 'The camera operation ran past its time limit',
@@ -392,7 +392,7 @@ ENGINE = {
     '服務身份未出現；若是第一次，請依文件安裝0336驅動（已嘗試 %d 次）':
         "The camera didn't enter service mode after %d attempts, so nothing was written. Do a cold restart, then try again. On Windows, also check the 0336 driver (Zadig guide).",
     '服務身份未出現，相機也未回到普通 USB；請在相機選擇「影像傳輸（MSC）」後重新連接':
-        "Choose Mass Storage (MSC) on the camera, then reconnect. The service identity didn't appear, and the camera didn't return to normal USB",
+        "Choose MassStorage (MSC) on the camera, then reconnect. The service identity didn't appear, and the camera didn't return to normal USB",
     '相机已回到普通 USB，冷却后自动重试（第 %d/%d 次）。':
         'The camera is back on normal USB. Retrying after a cool-down (attempt %d/%d).',
     '目前機身與備份機身不同': "This isn't the camera this job or backup belongs to, so nothing was written.",
@@ -489,7 +489,7 @@ ENGINE = {
     '旧版快门声音尚未限制机械快门。请重新点击“开启电子快门声”更新后再试听；本次未注册声音。':
         'The older shutter sound support also plays with the mechanical shutter, so no sound was registered. Click "Turn on…" under "Electronic shutter" again to update it, then try the sound.',
     '未找到相机 USB 连接。请拔插 USB 并选择海量存储后重试；尚未进行服务认证或声音写入。':
-        'Unplug and reconnect USB, choose Mass Storage, then try again. No camera USB connection was found; no service authentication or sound write took place.',
+        'Unplug and reconnect USB, choose MassStorage (MSC), then try again. No camera USB connection was found; no service authentication or sound write took place.',
     '上一次声音操作（%s）中途停止，结果还没确认，所以没有开始新的操作，也没有连接相机。请点窗口底部“导出诊断包”发给作者核对；不要删除声音工作目录。（Previous operation is unresolved: %s）':
         'The last sound operation (%s) stopped partway and its result is unconfirmed, so nothing new started and the camera was not connected. Click "Export diagnostics…" at the bottom of the window and keep the sound folder. (Previous operation is unresolved: %s)',
     '旧声音任务已确认停在写入前，检查结果和临时清理均完整；已解除占用，原日志保留。':
