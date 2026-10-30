@@ -44,6 +44,11 @@ NOT_DISPLAYED = frozenset({'“%(title)s”，作者 %(author)s，%(licence)s，
 EXCEPTION = re.compile(r'^([A-Za-z_][\w.]*): (.*)$', re.S)
 JSON_STRING = re.compile(r'^((?:"(?:[^"\\]|\\.)*":\s*)?)"((?:[^"\\]|\\.)*)"(,?)$')
 CODE_LITERAL = re.compile(r"""(?P<quote>['"])(?P<text>(?:(?!(?P=quote))[^\\\n]|\\.)*)(?P=quote)""")
+# The Chinese label of each supported build, by key: refusals name a build by its key, the Connection page
+# by its label. A copy of looktool.buildprofile.BUILDS (test_engine_text keeps the two equal), so display()
+# never imports looktool, which a first source launch can import only after setup_runtime().
+BUILD_LABELS = {'public-2.01': 'Sony 2.01（公开更新）',
+                'body-2.01-20250923': 'Sony 2.01（机身版本，2025 年 9 月 23 日）'}
 
 
 def specifiers(text):
@@ -166,9 +171,8 @@ def _value(text, depth=0):
 def _build_label(text):
     """The English label of the supported build whose key `text` is (refusals name builds by key, the
     Connection page by label), or None for any other text."""
-    from looktool.buildprofile import by_key
-    build = by_key(text)
-    return None if build is None else STRINGS[build.label_zh]
+    label = BUILD_LABELS.get(text)
+    return None if label is None else STRINGS[label]
 
 
 def _spacing(text):

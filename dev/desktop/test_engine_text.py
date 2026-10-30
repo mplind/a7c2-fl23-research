@@ -1,7 +1,12 @@
 """engine_text shows data as it is, finds a message by one lookup, and reads only the specifiers the
 catalogues use. Offline; no window."""
+import json
+import os
 from pathlib import Path
 import re
+import subprocess
+import sys
+import textwrap
 
 import pytest
 
@@ -9,6 +14,7 @@ from desktopapp import engine_text
 from desktopapp.en import STRINGS
 from desktopapp.en_engine import ENGINE
 from desktopapp.engine_text import CJK, translate_line, translate_text
+from looktool.buildprofile import BUILDS, JOB_OTHER_BUILD
 
 ROOT = Path(__file__).resolve().parents[2]
 FREESOUND = '“%(title)s”，作者 %(author)s，%(licence)s，来自 <a href="%(url)s">Freesound</a>。'
@@ -73,3 +79,37 @@ def test_the_sound_credit_is_no_display_entry():
     assert FREESOUND not in engine_text.EXACT
     assert all(FREESOUND != found.source for found in engine_text.FORMATS)
     assert sorted(re.findall(r'%\((\w+)\)s', STRINGS[FREESOUND])) == ['author', 'licence', 'title', 'url']
+
+
+# A build's key is shown as its label, without looktool -------------------------------------------
+
+def test_the_build_labels_are_buildprofiles():
+    # engine_text keeps its own copy so display() never imports looktool (R63).
+    assert engine_text.BUILD_LABELS == {build.key: build.label_zh for build in BUILDS}
+
+
+def test_display_works_on_a_first_source_launch_before_looktool_is_importable():
+    # R63: on a first source launch only src/ is on the path until setup_runtime(); the window shows
+    # engine text before that (window.sound_presets while it opens, shell.warn). A catalogued format,
+    # with a build key as its value and with plain data, must read in English without looktool.
+    public, body = BUILDS
+    lines = [JOB_OTHER_BUILD % (body.key, public.key), '正在卸载相机磁盘（不拔线）：ディスク（１）']
+    script = textwrap.dedent('''
+        import importlib.util, json, sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.cwd() / 'src'))
+        assert importlib.util.find_spec('looktool') is None
+        from desktopapp import engine_text, i18n
+        i18n.configure('en')
+        print(json.dumps([engine_text.display(line) for line in json.loads(sys.argv[1])]))
+        assert 'looktool' not in sys.modules
+    ''')
+    environment = dict(os.environ)
+    environment.pop('PYTHONPATH', None)
+    result = subprocess.run([sys.executable, '-c', script, json.dumps(lines)], cwd=ROOT, env=environment,
+                            capture_output=True, text=True, encoding='utf-8', timeout=30)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert json.loads(result.stdout) == [
+        'This job was planned for Sony 2.01 (camera build, 23 Sep 2025), but the camera now runs Sony 2.01 '
+        '(public update). Nothing was verified or written.',
+        ENGINE['正在卸载相机磁盘（不拔线）：%s'] % 'ディスク（１）']
