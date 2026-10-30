@@ -35,10 +35,19 @@ def assets(tmp_path, monkeypatch):
     return tmp_path
 
 
+def scratch_pack_folder():
+    """Where presets looks for the personal pack, refused unless the `assets` fixture has moved presets off
+    this checkout: a test that forgot it would otherwise overwrite the owner's real pack."""
+    folder = presets.folder(presets.PERSONAL)
+    if folder == OWNER_PACK:
+        raise AssertionError("use the assets fixture: this would write the owner's real pack")
+    return folder
+
+
 def personal_pack(names=NAMES, thirds=(2, 0, 1, 1, 1, 0), files=False):
     """A personal pack of `names`, where presets looks for it; with `files`, its slot files are the public
     pack's, renamed to match."""
-    folder = write_pack(presets.folder(presets.PERSONAL), looks=pack_rows(names, thirds))
+    folder = write_pack(scratch_pack_folder(), looks=pack_rows(names, thirds))
     if files:
         for slot in range(1, 7):
             os.symlink(PUBLIC / ('slot%d.a7look' % slot), folder / ('slot%d.a7look' % slot))
@@ -111,7 +120,7 @@ def test_the_page_refreshes_its_line_from_the_active_pack(window, assets):
 
 
 def test_an_unreadable_personal_pack_says_why_and_stops_one_click_before_any_prompt(window, assets):
-    folder = write_pack(presets.folder(presets.PERSONAL), '{not json')
+    folder = write_pack(scratch_pack_folder(), '{not json')
     ui = window('en')
     expected = ENGINE[presets.INVALID] % (folder / 'pack.json')
     assert ui.setup_preset_summary.text() == expected
@@ -186,3 +195,9 @@ def test_the_one_click_page_and_confirmation_name_the_owners_six(window):
     new.assert_not_called()
     assert TARGET + line in asked[-1]
     assert [name for name in presets.NAMES if name != 'Classic Chrome' and name in asked[-1]] == []
+
+
+def test_the_scratch_pack_writer_refuses_the_owners_real_pack():
+    """Without the assets fixture, presets points at this checkout, and writing there is refused."""
+    with pytest.raises(AssertionError, match='assets fixture'):
+        scratch_pack_folder()
