@@ -30,8 +30,16 @@ HEX = re.compile(r'#[0-9A-Fa-f]{6}\Z')
 READ_ERRORS = (OSError, ValueError, KeyError, TypeError, AttributeError)
 
 
+# The open library every build ships, and the owner's personal library, which only his personal build ships
+# (dev/desktop/assets_check.PERSONAL). GOOD and ACCEPTED above come from neither: they are the paired
+# profile library's (desktop-assets/profile-library-v1), whatever library the app shows.
+PUBLIC = ROOT / 'desktop-assets/film-looks-v1'
+PERSONAL = ROOT / 'desktop-assets/film-looks-personal-v1'
+
+
 def location():
-    return ROOT / 'desktop-assets/film-looks-v1'
+    """The library the app shows: the personal library when its catalog is present, else the open one."""
+    return PERSONAL if (PERSONAL / 'catalog.json').is_file() else PUBLIC
 
 
 def rating(mae, p95):

@@ -331,3 +331,20 @@ def test_prepare_records_each_looks_camera_rendering_of_the_reference_colours(tm
     assert portra['swatches'] == expected
     assert np.allclose(seen[0], np.asarray([rgb for _, rgb in looklibrary.REFERENCE]) / 255)
     assert nofit['swatches'] is None
+
+
+# Which library the app shows -------------------------------------------------------------------------
+
+def test_the_app_shows_the_personal_library_when_its_catalog_is_present(tmp_path, monkeypatch):
+    monkeypatch.setattr(looklibrary, 'PUBLIC', tmp_path / 'film-looks-v1')
+    monkeypatch.setattr(looklibrary, 'PERSONAL', tmp_path / 'film-looks-personal-v1')
+    assert looklibrary.location() == tmp_path / 'film-looks-v1'
+    (tmp_path / 'film-looks-personal-v1').mkdir()  # a folder without its catalog is not a library
+    assert looklibrary.location() == tmp_path / 'film-looks-v1'
+    write_catalog(tmp_path / 'film-looks-personal-v1', [])
+    assert looklibrary.location() == tmp_path / 'film-looks-personal-v1'
+
+
+def test_the_libraries_are_the_desktop_assets():
+    assert looklibrary.PUBLIC == ROOT / 'desktop-assets/film-looks-v1'
+    assert looklibrary.PERSONAL == ROOT / 'desktop-assets/film-looks-personal-v1'
