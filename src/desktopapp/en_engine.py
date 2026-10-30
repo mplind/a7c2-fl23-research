@@ -112,6 +112,8 @@ ENGINE = {
     '内置六款外观文件缺失，请使用完整工具包；尚未连接相机：%s':
         'A built-in look file is missing: %s. Reinstall the complete app; nothing was written to the camera.',
     '内置外观名称／照片阶段不符：%s': "A built-in look file doesn't match its expected name or format: %s. Reinstall the complete app.",
+    '内置六款外观包描述无效，请使用完整工具包；尚未连接相机：%s':
+        'The built-in six-look pack’s description is not valid: %s. Reinstall the complete app; nothing was written to the camera.',
     '请至少添加一个操作项；未添加的槽位保持原样。': "Add at least one change. Slots you don't add stay as they are.",
     '每个目标槽位只能有一个操作，范围为 1–6。': 'Each slot, 1 to 6, takes one change only.',
     '外观名称必须是文字。': 'The look name must be text.',
@@ -603,6 +605,7 @@ NEXT_STEP = frozenset({
     'ExifTool 自动下载失败，本次未开始相机操作。请检查网络后再点同一按钮；完整错误：\n%s',
     '内置六款外观文件缺失，请使用完整工具包；尚未连接相机：%s',
     '内置外观名称／照片阶段不符：%s',
+    '内置六款外观包描述无效，请使用完整工具包；尚未连接相机：%s',
     '请至少添加一个操作项；未添加的槽位保持原样。',
     '请为自订 %s 选择 A7Look 文件。',
     # desktopapp.platforms.usb_drivers (Windows) and usbcheck

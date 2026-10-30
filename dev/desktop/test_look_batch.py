@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import Mock, patch
 from desktopapp import lookbatch, presets, worker
 
-AVAILABLE = Path(presets.catalog()[0]['path']).is_file()
+AVAILABLE = Path(presets.catalog(presets.PACK)[0]['path']).is_file()
 
 
 class LookBatchTests(unittest.TestCase):
@@ -58,8 +58,8 @@ class LookBatchTests(unittest.TestCase):
     def test_mixed_operations_keep_requested_order_and_one_backend_transaction(self):
         obj=Mock();obj.root=self.root/'mixed'
         obj.run_direct.return_value=dict(mode='install_all',phase='AWAITING_RELOAD')
-        rows=[dict(presets.catalog()[5],action='write',name='  My GR  '),
-              dict(slot=4,action='restore'),dict(presets.catalog()[1],action='write')]
+        rows=[dict(presets.catalog(presets.PACK)[5],action='write',name='  My GR  '),
+              dict(slot=4,action='restore'),dict(presets.catalog(presets.PACK)[1],action='write')]
         with patch('looktool.direct.DirectJob',return_value=obj):
             result=worker.run('direct_looks_import',dict(workspace=str(obj.root),firmware='2.01',
                 power_confirmed=True,operations=rows,options=dict(fl23=True,sound=True)),self.root)
@@ -81,14 +81,14 @@ class LookBatchTests(unittest.TestCase):
 
     @unittest.skipUnless(AVAILABLE,'Distribution preset asset')
     def test_defaults_keep_six_order_without_enabling_fl23_or_sound(self):
-        result=lookbatch.options(presets.catalog())
+        result=lookbatch.options(presets.catalog(presets.PACK))
         self.assertFalse(result['fl23']);self.assertFalse(result['sound'])
         self.assertEqual([r['name'] for r in result['looks']],list(presets.NAMES))
         self.assertEqual([r['slot'] for r in result['looks']],list(range(1,7)))
 
     @unittest.skipUnless(AVAILABLE,'Distribution preset asset')
     def test_sparse_selected_slots_and_custom_name_are_not_filled_in(self):
-        rows=[presets.catalog()[1],dict(presets.catalog()[4],name='My GR')]
+        rows=[presets.catalog(presets.PACK)[1],dict(presets.catalog(presets.PACK)[4],name='My GR')]
         result=lookbatch.options(rows)
         self.assertEqual([r['slot'] for r in result['looks']],[2,5])
         self.assertEqual(result['looks'][1]['name'],'My GR')
@@ -101,7 +101,7 @@ class LookBatchTests(unittest.TestCase):
         obj.run_direct.return_value=dict(mode='install_all',phase='AWAITING_RELOAD')
         with patch('looktool.direct.DirectJob',return_value=obj):
             result=worker.run('direct_looks_import',dict(workspace=str(obj.root),firmware='2.01',
-                power_confirmed=True,looks=presets.catalog(),options=dict(fl23=True,sound=True)),self.root)
+                power_confirmed=True,looks=presets.catalog(presets.PACK),options=dict(fl23=True,sound=True)),self.root)
         obj.run_direct.assert_called_once()
         obj.verify_direct.assert_not_called()
         args=obj.run_direct.call_args

@@ -238,11 +238,16 @@ def run():
     from looktool import device_layout
     assert bytes.fromhex('002c04d1132802d3142898bf002049f6f811c0f22011704700bf') in device_layout.fl23_previous_values(0x138832)
     assert len(device_layout.fl23_previous_values(0x1100b80))>=2
+    # The public six, which every package ships: their embedded DCPs feed the conversion check below.
     packed, selected = bundle.documents(presets.resolve(dict(preset_pack=presets.PACK)))
     assert [row['name'] for row in selected] == list(presets.NAMES)
-    defaults=lookbatch.options(presets.catalog())
+    # The pack One-click installs from this package: the owner's six in his personal build, else the public six.
+    six = presets.load(presets.active())
+    _, installed = bundle.documents(presets.resolve(dict(preset_pack=six.id)))
+    assert [row['name'] for row in installed] == list(six.names)
+    defaults=lookbatch.options(presets.catalog(presets.PACK))
     assert len(defaults['looks'])==6 and defaults['fl23'] is False and defaults['sound'] is False
-    mixed=lookbatch.options([dict(slot=4,action='restore'),dict(presets.catalog()[1],action='write')])
+    mixed=lookbatch.options([dict(slot=4,action='restore'),dict(presets.catalog(presets.PACK)[1],action='write')])
     assert mixed['reset_slots']==[4] and [r['slot'] for r in mixed['looks']]==[2]
     assert not mixed['fl23'] and not mixed['sound'] and not mixed['vertical_persistent']
     importlib.import_module('desktopapp.lookeditor')
@@ -257,12 +262,12 @@ def run():
                 if action == 'direct_install_all':
                     assert args['options']['vertical_persistent'] is True
                     _, rows = bundle.documents(args['options'])
-                    assert [r['name'] for r in rows] == list(presets.NAMES)
+                    assert [r['name'] for r in rows] == list(six.names)
                     assert all(Path(r['path']).parent.resolve() == (Path(temporary) / 'inputs').resolve() for r in rows)
                 return {'phase':'LOADED','mode':'install_all','workspace':args.get('workspace',''),
                     'vertical_result':dict(persistent=True,loaded_verified=True,saved='ON',running='ON',alias_count=3)}
             result=allinone.run(dict(workspace=temporary,firmware='2.01',power_confirmed=True,
-                options=dict(fl23=False,sound=False,vertical=True,plugin=False,preset_pack=presets.PACK)),dispatch=simulated)
+                options=dict(fl23=False,sound=False,vertical=True,plugin=False,preset_pack=six.id)),dispatch=simulated)
             assert result['phase']=='COMPLETE' and not result['physical_checks_accepted']
             assert calls==['usb_prepare','vertical_enable','direct_install_all']
             assert '电子快门声：本次未选择' in completion.text(result)
@@ -360,7 +365,7 @@ def run():
             'bundled_exiftool':exif_result.stdout.strip(), 'assets': 'passed', 'builtin_factory_reference': 'passed',
             'native_cross_compile': 'passed', 'native_assembler_disassembler':'passed',
             'one_click_offline_sequence':'passed','look_batch_defaults':'passed','streaming_names_compile':'passed',
-            'bundled_six_looks':list(presets.NAMES),'fl23_pr6_movie_routes':'passed',
+            'bundled_six_looks':list(six.names),'six_look_pack':six.id,'fl23_pr6_movie_routes':'passed',
             'completion_summary':'passed','persistent_vertical_plan':'passed','portrait_frames_compile_and_inverse':'passed',
             'audio_conversion':audio_conversion,'standalone_dcp_conversion':dcp_conversion,
             'sound_install_byte_planner':'passed','numpy': np.__version__}

@@ -49,6 +49,9 @@ class PowerProgressTests(unittest.TestCase):
 
     def test_home_defaults_to_six_looks_without_selecting_files(self):
         from desktopapp import presets
+        # The public pack, as on a checkout without the owner's personal pack (test_one_click_pack covers his).
+        active = patch.object(presets, 'active', return_value=presets.PACK)
+        active.start(); self.addCleanup(active.stop)
         window = self.window()
         args = window.setup_args()
         self.assertEqual(args['options']['preset_pack'], presets.PACK)
@@ -72,7 +75,7 @@ class PowerProgressTests(unittest.TestCase):
         window=self.window()
         self.assertEqual(window.look_batch_args()['operations'],[])
         first=window.look_editor.add_row(2);first.action.setCurrentIndex(1)
-        first.set_file(presets.catalog()[1]['path']);first.name.setText('My CC')
+        first.set_file(presets.catalog(presets.PACK)[1]['path']);first.name.setText('My CC')
         window.look_editor.add_row(5)
         rows=window.look_batch_args()['operations']
         self.assertEqual([r['slot'] for r in rows],[2,5])
@@ -89,7 +92,7 @@ class PowerProgressTests(unittest.TestCase):
         from desktopapp import presets
         window=self.window()
         window.look_editor.add_row(4)
-        write=window.look_editor.add_row(6);write.action.setCurrentIndex(1);write.set_file(presets.catalog()[5]['path'])
+        write=window.look_editor.add_row(6);write.action.setCurrentIndex(1);write.set_file(presets.catalog(presets.PACK)[5]['path'])
         with patch('desktopapp.window.ask', return_value=True) as question,patch('desktopapp.window.QtCore.QProcess'):
             next(b for b in window.buttons if b.objectName()=='action_direct_looks_import').click()
         request=json.loads((window.current_job/'request.private.json').read_text())

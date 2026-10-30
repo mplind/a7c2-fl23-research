@@ -261,7 +261,7 @@ class ReferencePlanningTests(unittest.TestCase):
         from desktopapp import lookbatch, presets
         from looktool import bundle
         self.current.update({k:self.stock[k] for k in ('appFw.so','cpapp-b.bin')})
-        options,rows=bundle.documents(lookbatch.options(presets.catalog()))
+        options,rows=bundle.documents(lookbatch.options(presets.catalog(presets.PACK)))
         before=copy.deepcopy(self.props)
         target,wanted,_=bundle.plan(self.current,self.props,options,rows)
         self.assertEqual(device_layout.structural(target['appFw.so'],target['cpapp-b.bin'])['mask'],63)
@@ -276,7 +276,7 @@ class ReferencePlanningTests(unittest.TestCase):
         from desktopapp import presets,lookbatch
         from looktool import bundle,resources
         # Begin with six installed looks, then replace only 2 and 5 together.
-        options,rows=bundle.documents(lookbatch.options(presets.catalog()))
+        options,rows=bundle.documents(lookbatch.options(presets.catalog(presets.PACK)))
         target,wanted,_=bundle.plan(self.current,self.props,options,rows)
         for chip in (0,1):
             for key,data in wanted[chip].items():self.props[chip][key]=self.props[chip][key]._replace(data=data)
@@ -306,7 +306,7 @@ class ReferencePlanningTests(unittest.TestCase):
         from desktopapp import presets,lookbatch
         from looktool import bundle,resources
         self.current.update({k:self.stock[k] for k in ('appFw.so','cpapp-b.bin')})
-        initial,rows=bundle.documents(dict(looks=presets.catalog(),fl23=True,sound=True))
+        initial,rows=bundle.documents(dict(looks=presets.catalog(presets.PACK),fl23=True,sound=True))
         self.current,fields,_=bundle.plan(self.current,self.props,initial,rows)
         for chip in (0,1):
             for key,data in fields[chip].items():self.props[chip][key]=self.props[chip][key]._replace(data=data)
@@ -346,7 +346,7 @@ class ReferencePlanningTests(unittest.TestCase):
         from desktopapp import presets,lookbatch
         from looktool import bundle
         self.current.update({k:self.stock[k] for k in ('appFw.so','cpapp-b.bin')})
-        options,rows=bundle.documents(lookbatch.options(presets.catalog()))
+        options,rows=bundle.documents(lookbatch.options(presets.catalog(presets.PACK)))
         before,fields,_=bundle.plan(self.current,self.props,options,rows)
         for chip in (0,1):
             for key,data in fields[chip].items():self.props[chip][key]=self.props[chip][key]._replace(data=data)

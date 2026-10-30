@@ -28,7 +28,7 @@ class LookEditorTests(unittest.TestCase):
 
     def pending(self,phase='AWAITING_RELOAD'):
         root=data_root()/'work'/'looks-pending'
-        operations=[dict(slot=4,action='restore'),dict(presets.catalog()[5],action='write')]
+        operations=[dict(slot=4,action='restore'),dict(presets.catalog(presets.PACK)[5],action='write')]
         operations[1]['name']='Custom GR'
         state=dict(mode='install_all',phase=phase,bundle_options=dict(
             slot_operations=operations,looks=[{k:v for k,v in operations[1].items() if k!='action'}],reset_slots=[4]))
@@ -49,7 +49,7 @@ class LookEditorTests(unittest.TestCase):
         self.assertFalse(two.slot.model().item(1).isEnabled())
         one.action.setCurrentIndex(1)
         self.assertFalse(window.look_button.isEnabled())
-        one.set_file(presets.catalog()[1]['path']);one.name.setText('My CC')
+        one.set_file(presets.catalog(presets.PACK)[1]['path']);one.name.setText('My CC')
         self.assertTrue(window.look_button.isEnabled())
         self.assertEqual(window.look_editor.values()[0]['name'],'My CC')
         self.assertEqual(one.details.currentIndex(),1)

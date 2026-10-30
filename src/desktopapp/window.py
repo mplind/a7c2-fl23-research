@@ -29,6 +29,17 @@ from .paths import APP_ICON, ROOT, data_root, load_settings, save_settings, writ
 SENTENCE_END = '.!?\u3002\uff01\uff1f'  # full stop, ! and ? in English and Chinese; compared, never shown
 
 
+def six_target(options):
+    """The six looks a one-click job of a built-in pack writes, for its confirmation: the line naming the
+    pack's six, or, when the pack can no longer be read, the looks the job saved (a job continues from its
+    saved copies), or why the pack can't be read."""
+    try:
+        return presets.summary(presets.load(options['preset_pack']), i18n.language())
+    except (ValueError, OSError) as exc:
+        saved = [row['name'] for row in options.get('looks', []) if row.get('name')]
+        return tr('、').join(saved) if saved else display(str(exc))
+
+
 def joined(text, rest):
     """`text` then `rest`, which starts by closing the sentence: without a second full stop when `text`
     already ends one, in either language."""
@@ -279,7 +290,7 @@ class Window(W.QMainWindow):
         options = dict(fl23=self.setup_fl23.isChecked(), sound=self.setup_sound.isChecked(),
             vertical=self.setup_vertical.isChecked(), plugin=self.setup_plugin.isChecked(),
             exiftool=str(tool), looks=[] if self.setup_presets.isChecked() else looks,
-            preset_pack=presets.PACK if self.setup_presets.isChecked() else None)
+            preset_pack=presets.active() if self.setup_presets.isChecked() else None)
         return dict(self.common(), workspace=root, options=options)
 
     def home_page(self):
@@ -294,7 +305,7 @@ class Window(W.QMainWindow):
         pending=bool(prior) and prior.get('phase')!='COMPLETE'
         if pending:
             options=prior['options']
-            self.setup_presets.setChecked(options.get('preset_pack') == presets.PACK)
+            self.setup_presets.setChecked(bool(options.get('preset_pack')))
             for box,key in ((self.setup_fl23,'fl23'),(self.setup_sound,'sound'),(self.setup_vertical,'vertical'),(self.setup_plugin,'plugin')):
                 box.setChecked(bool(options.get(key,key!='plugin')))
             for box in (self.setup_presets,self.setup_fl23,self.setup_sound,self.setup_vertical,self.setup_plugin):box.setEnabled(False)
@@ -304,7 +315,7 @@ class Window(W.QMainWindow):
         self.setup_note.setProperty('warning', True)
         self.show_setup_note(pending,refused)
         layout.addWidget(self.setup_note)
-        self.setup_preset_summary = W.QLabel(tr(presets.SUMMARY))
+        self.setup_preset_summary = W.QLabel(self.six_line())
         if pending:
             names = ['%s %s' % (r['slot'], r.get('name', Path(r['path']).stem)) for r in prior['options'].get('looks', [])]
             self.setup_preset_summary.setText(tr('本次已保存外观：') + (tr('、').join(names) if names else tr('未选择外观，不会新增六款')))
@@ -338,6 +349,17 @@ class Window(W.QMainWindow):
         compile_button.clicked.connect(self.compiler_dialog); look_section.addWidget(compile_button, 0, QtCore.Qt.AlignLeft); self.buttons.append(compile_button)
         layout.addWidget(shell.text_label(tr('恢复出厂、卸载驱动和删除外观不会混入安装流程。自定义声音请在“电子快门声音”中转换后直接保存，试听可选。'), 'callout'))
         layout.addStretch()
+
+    @staticmethod
+    def six_line():
+        """The line under Six built-in looks: the six looks of the pack One-click installs, in slot order,
+        and the exposure each look that renders dark needs; or why that pack can't be read."""
+        try:
+            pack = presets.load(presets.active())
+        except (ValueError, OSError) as exc:
+            return display(str(exc))
+        note = presets.exposure_note(pack.dark, i18n.language())
+        return presets.summary(pack, i18n.language()) + ('\n' + note if note else '')
 
     def drivers_first(self, arguments):
         """Suggest the connection page before a first one-click install on Windows."""
@@ -399,7 +421,7 @@ class Window(W.QMainWindow):
         self.show_setup_note(pending,refused)
         self.setup_custom_container.setEnabled(not pending and not self.setup_presets.isChecked() and self.process is None)
         if not state:
-            self.setup_preset_summary.setText(tr(presets.SUMMARY))
+            self.setup_preset_summary.setText(self.six_line())
             self.setup_preset_summary.setEnabled(self.setup_presets.isChecked())
         for box in (self.setup_presets,self.setup_fl23,self.setup_sound,self.setup_vertical,self.setup_plugin):
             box.setEnabled(not pending and self.process is None)
@@ -1334,8 +1356,10 @@ class Window(W.QMainWindow):
         if action in WRITE_TARGETS:
             return tr(WRITE_TARGETS[action])
         if action == 'setup_all':
-            return (tr('首页勾选的功能；替换自订 1–6：') + tr(presets.SUMMARY) if arguments.get('options', {}).get('preset_pack')
-                    else tr('首页勾选的功能及所选 A7Look 槽位'))
+            options = arguments.get('options', {})
+            if not options.get('preset_pack'):
+                return tr('首页勾选的功能及所选 A7Look 槽位')
+            return tr('首页勾选的功能；替换自订 1–6：') + six_target(options)
         if action == 'restore_auto':
             return tr('自动选择已连接机身最早可用的完整备份')
         if action == 'restore':

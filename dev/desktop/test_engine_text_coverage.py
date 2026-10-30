@@ -235,8 +235,9 @@ def test_the_scan_resolves_constants_passed_to_tr_and_translate():
     from desktopapp.platforms.macos_authorization import FINISHED, PROMPT
     from desktopapp.window import DRIVER_HINT
     from desktopapp import connectionguide, presets
-    assert {('src/desktopapp/window.py', DRIVER_HINT), ('src/desktopapp/window.py', presets.SUMMARY),
-            ('src/desktopapp/window.py', connectionguide.TITLE),
+    assert {('src/desktopapp/window.py', DRIVER_HINT), ('src/desktopapp/presets.py', presets.SUMMARY),
+            ('src/desktopapp/presets.py', presets.IN_ORDER), ('src/desktopapp/presets.py', presets.ONE_DARK),
+            ('src/desktopapp/presets.py', presets.SEVERAL_DARK), ('src/desktopapp/window.py', connectionguide.TITLE),
             ('src/desktopapp/platforms/macos_authorization.py', FINISHED)} <= found
     assert {('src/desktopapp/platforms/macos_authorization.py', line) for line in PROMPT} <= found
 
