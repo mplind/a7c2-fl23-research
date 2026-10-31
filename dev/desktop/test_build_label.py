@@ -431,7 +431,7 @@ def test_a_refused_look_job_keeps_the_list_editable_and_shows_the_refusal(window
     assert ui.look_editor.isEnabled()
     assert ui.look_editor.values() == [dict(slot=3, action='restore')]
     assert not ui.look_pending.isHidden() and ui.look_pending.text() == english(message)
-    assert ui.look_button.text() == i18n.tr('查看并应用这 %d 项更改') % 1
+    assert ui.look_button.text() == i18n.tr('查看并应用这 1 项更改') == 'Write 1 change…'
 
 
 def test_after_a_restart_no_page_offers_to_continue_a_refused_job(window, refused):
