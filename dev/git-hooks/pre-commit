@@ -1,10 +1,21 @@
 #!/bin/sh
-# Refuses a commit that stages anything under desktop-assets/. Those files are release inputs or
-# personal-use looks; .gitignore ignores the folder, and this stops a forced `git add -f`.
+# Stops a forced `git add -f` under desktop-assets/, which .gitignore ignores. The personal root
+# (desktop-assets/personal/, personal-use looks) is refused on every branch. The public release inputs are
+# allowed only on a build/release-* branch, whose last commit release.yml expects to add them.
 # Install once per clone: git config core.hooksPath dev/git-hooks
+personal=$(git diff --cached --name-only --diff-filter=ACMR -- desktop-assets/personal)
+if [ -n "$personal" ]; then
+    echo "Commit refused: desktop-assets/personal/ holds personal-use files and is never committed:" >&2
+    echo "$personal" >&2
+    echo "Unstage them with: git restore --staged desktop-assets/personal" >&2
+    exit 1
+fi
+case "$(git symbolic-ref --short -q HEAD)" in
+    build/release-*) exit 0 ;;
+esac
 staged=$(git diff --cached --name-only --diff-filter=ACMR -- desktop-assets)
 if [ -n "$staged" ]; then
-    echo "Commit refused: files under desktop-assets/ are never committed:" >&2
+    echo "Commit refused: files under desktop-assets/ are committed only on a build/release-* branch:" >&2
     echo "$staged" >&2
     echo "Unstage them with: git restore --staged desktop-assets" >&2
     exit 1

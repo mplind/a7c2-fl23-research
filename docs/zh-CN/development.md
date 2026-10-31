@@ -112,7 +112,7 @@ python desktop.py
 
 根目录的 `conftest.py` 在所有测试中禁止枚举实体 USB。其他测试：`python -m unittest discover -s src/looks/tests`，以及 `src/fl23/tests`、`src/camera_runtime/tests`、`dev/usb/tests`。私有样本（`A7C2_RESEARCH_FIXTURES`）是可选的，没有时相关测试会跳过。
 
-每个克隆安装一次提交检查：`git config core.hooksPath dev/git-hooks`。其 pre-commit 钩子会拒绝任何暂存了 `desktop-assets/` 下文件的提交，即使用了 `git add -f`。
+每个克隆安装一次提交检查：`git config core.hooksPath dev/git-hooks`。其 pre-commit 钩子会拒绝暂存了 `desktop-assets/personal/` 下任何文件的提交；`desktop-assets/` 下的其他文件只能在 `build/release-*` 分支提交（该分支最后一个提交携带发布输入），即使用了 `git add -f`。
 
 **打包：**
 1. 准备被 Git 忽略的发行资源：`python dev/desktop/prepare_assets.py`。用 `--preset-archive <zip>` 从导出的资源包或 Windows 安装包中导入默认六款和配对库；用 `--export-presets <zip>` 导出资源包。

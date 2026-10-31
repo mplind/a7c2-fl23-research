@@ -1,6 +1,7 @@
-"""The repository's pre-commit hook (dev/git-hooks/pre-commit) refuses anything staged under desktop-assets/,
-which .gitignore already ignores: release inputs and personal-use looks are never committed, even with
-`git add -f`. Each test runs git in a scratch repository with the hook installed through core.hooksPath."""
+"""The repository's pre-commit hook (dev/git-hooks/pre-commit). .gitignore ignores desktop-assets/; the hook
+stops a forced `git add -f`: the personal root never, and the public release inputs only on a build/release-*
+branch, where release.yml expects them in the last commit. Each test runs git in a scratch repository with
+the hook installed through core.hooksPath."""
 import os
 from pathlib import Path
 import shutil
@@ -38,14 +39,37 @@ def test_a_commit_without_desktop_assets_goes_through(repo):
     assert git(repo, 'commit', '-q', '-m', 'notes').returncode == 0
 
 
-@pytest.mark.parametrize('path', ['desktop-assets/personal/presets/personal-six-v1/slot1.a7look',
-                                  'desktop-assets/film-looks-v1/portra400.a7look'])
-def test_a_forced_add_under_desktop_assets_is_refused(repo, path):
+def stage(repo, path):
     target = repo / path
-    target.parent.mkdir(parents=True)
+    target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(b'look')
     assert git(repo, 'add', '-f', path).returncode == 0
+
+
+def refused(repo, path):
     result = git(repo, 'commit', '-q', '-m', 'oops')
-    assert result.returncode != 0
-    assert path in result.stderr and 'desktop-assets/' in result.stderr
+    return result.returncode != 0 and path in result.stderr
+
+
+PERSONAL = 'desktop-assets/personal/presets/personal-six-v1/slot1.a7look'
+PUBLIC = 'desktop-assets/film-looks-v1/portra400.a7look'
+
+
+@pytest.mark.parametrize('branch', ['main', 'build/release-3.0.3'])
+def test_the_personal_root_is_refused_on_every_branch(repo, branch):
+    git(repo, 'checkout', '-q', '-b', branch)
+    stage(repo, PERSONAL)
+    assert refused(repo, PERSONAL)
     assert git(repo, 'rev-parse', '--verify', '-q', 'HEAD').returncode != 0  # nothing was committed
+
+
+def test_public_release_inputs_are_refused_outside_a_release_branch(repo):
+    git(repo, 'checkout', '-q', '-b', 'main')
+    stage(repo, PUBLIC)
+    assert refused(repo, PUBLIC)
+
+
+def test_a_release_branch_commits_the_public_release_inputs(repo):
+    git(repo, 'checkout', '-q', '-b', 'build/release-3.0.3')
+    stage(repo, PUBLIC)
+    assert git(repo, 'commit', '-q', '-m', 'release inputs').returncode == 0

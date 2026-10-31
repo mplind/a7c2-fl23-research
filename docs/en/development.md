@@ -112,7 +112,7 @@ python desktop.py
 
 The root `conftest.py` blocks physical USB enumeration in every test. Other suites: `python -m unittest discover -s src/looks/tests`, `src/fl23/tests`, `src/camera_runtime/tests`, `dev/usb/tests`. Private fixtures (`A7C2_RESEARCH_FIXTURES`) are optional; without them those tests skip.
 
-Install the commit guard once per clone: `git config core.hooksPath dev/git-hooks`. Its pre-commit hook refuses any commit that stages files under `desktop-assets/`, even after `git add -f`.
+Install the commit guard once per clone: `git config core.hooksPath dev/git-hooks`. Its pre-commit hook refuses a commit that stages anything under `desktop-assets/personal/`, and anything else under `desktop-assets/` except on a `build/release-*` branch (whose last commit carries the release inputs), even after `git add -f`.
 
 **Packaging:**
 1. Prepare the ignored distribution assets: `python dev/desktop/prepare_assets.py`. Use `--preset-archive <zip>` to import the six defaults and the paired library from an exported pack or a Windows build; use `--export-presets <zip>` to create such a pack.
