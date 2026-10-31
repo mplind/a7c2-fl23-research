@@ -153,8 +153,7 @@ jobs:
           merge-multiple: true
       - name: Publish the untested pre-release
         # A rerun for the same tag replaces the pre-release, so its files and checksums always match, and
-        # keeps the tag. The workflow token cannot create a tag on a commit whose workflow files differ
-        # from the default branch's (an older release), so for one of those a maintainer pushes the tag.
+        # keeps the tag.
         run: |
           tag="$SOURCE_TAG-untested"
           repo="https://github.com/$GITHUB_REPOSITORY"
@@ -180,6 +179,6 @@ jobs:
           gh release create "$tag" --repo "$GITHUB_REPOSITORY" --prerelease --latest=false --target "$target" \
             --title "$SOURCE_TAG untested builds: Windows and Apple Silicon" --notes-file notes.md \
             packages/A7C2Tools-Windows-x64.zip packages/A7C2Tools-macOS-arm64.dmg || {
-            echo "::error title=Tag needed::If the tag $tag could not be created, push it, then rerun: git tag '"$tag"' $target && git push origin '"$tag"'"
+            echo "::error title=Pre-release not published::GitHub refused to create the pre-release $tag; the error from gh is above. The packages are in this run's artifacts."
             exit 1
           }
