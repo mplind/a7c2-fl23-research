@@ -67,8 +67,9 @@ def test_setup_reload_names_continue_button():
 
 # The next step after the cold restart matches what the job did: a feature turned off or a sound put
 # back is checked as gone, never as there. The window passes the sound action, or the job's mode.
-STEPS_EN = ('Only do this once the app shows "Reading and writing have ended".\n\n'
-            '1. Unplug the USB cable and any other power.\n'
+# A dialog after a job shows the restart alone: that job's reading and writing have ended (the Help guide
+# adds the wait for the cue; test_copy_truth).
+RESTART_EN = ('1. Unplug the USB cable and any other power.\n'
             '2. Wait for the access lamp to stop blinking. Don’t remove the battery while it blinks.\n'
             '3. Switch the camera OFF and wait until the screen and access lamp are dark.\n'
             '4. Take the battery out, so the camera has no battery, USB or other power, for at least 1 minute.\n'
@@ -77,8 +78,7 @@ OK_EN = '"OK" only closes these steps. It doesn’t power anything off or confir
 SOUND_CHECK = ('After switching on, shoot with the electronic shutter and check the sound, volume, shooting and '
                'playback. After saving a custom sound, you can verify it on the Shutter sound page.')
 LOOKS_CHECK = ('Switch between ST and the changed slots and check that live view updates at once, then shoot and play '
-               'back. A looks-only write needs no verify from the computer. If the name stage says programs aren’t '
-               'written yet, reconnect and click "Continue changes…".')
+               'back. A looks-only write needs no verify from the computer.')
 NEXT_EN = {
     'fl23_enable': 'On the camera, check that FL2 and FL3 can be chosen, shot and played back. That’s all; no need to '
                    'reconnect and verify. For troubleshooting, see Troubleshooting on the FL2 / FL3 page.',
@@ -99,8 +99,7 @@ NEXT_EN = {
     None: 'Check live view, menus and look previews, then shoot and play back. If this page shows a verify pending, '
           'reconnect USB and click the verify button it names.',
 }
-REASON_EN = {'fl23_enable': '\n\nTurning on FL2 and FL3 wrote program files. The restart after the earlier factory restore only '
-                              'loaded the factory state; this change needs another cold restart.',
+REASON_EN = {'fl23_enable': '\n\nTurning on FL2 and FL3 wrote program files; the camera loads them at the next cold restart.',
              'sound_on': '\n\nElectronic shutter sound turned on; it takes effect after the cold restart.',
              'sound_off': '\n\nElectronic shutter sound turned off; it takes effect after the cold restart.',
              'sound_restore_sound': '\n\nFactory shutter sound restored; it takes effect after the cold restart.'}
@@ -116,7 +115,7 @@ def english(monkeypatch):
 @pytest.mark.parametrize('mode', list(NEXT_EN), ids=[str(mode) for mode in NEXT_EN])
 def test_each_modes_full_text_in_english(english, mode):
     verify = VERIFY_EN if mode in ('sound_on', 'sound_install') else ''
-    expected = STEPS_EN + REASON_EN.get(mode, '') + '\n\nNext: ' + NEXT_EN[mode] + '\n\n' + verify + OK_EN
+    expected = RESTART_EN + REASON_EN.get(mode, '') + '\n\nNext: ' + NEXT_EN[mode] + '\n\n' + verify + OK_EN
     assert reloadguide.text(mode=mode) == expected
 
 
@@ -136,4 +135,4 @@ def test_an_off_or_remove_mode_never_asks_to_check_what_it_removed(english, mode
                      '不必再接电脑点击核对。\n\n'),
 ], ids=['sound_off', 'sound_restore_sound', 'fl23_disable'])
 def test_each_off_modes_full_text_in_chinese(mode, chinese):
-    assert reloadguide.text(mode=mode) == reloadguide.STEPS + chinese + '点“确定”只关闭说明，不会自动断电或代替你确认测试。'
+    assert reloadguide.text(mode=mode) == reloadguide.RESTART + chinese + '点“确定”只关闭说明，不会自动断电或代替你确认测试。'

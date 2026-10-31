@@ -214,7 +214,7 @@ ENGINE = {
     '相机 /usr 分区仍处于可写挂载，通常是上一次操作后还没有完整断电重开；本次没有写入。%s':
         "The camera's /usr partition is still writable, usually because it hasn't had a cold restart since the last job, so no programs, names or settings were written. %s",
     '名称内容已完成，但只读挂载忙碌；需要完成设置与重新加载准备后再重开核对。':
-        'Names are written, but /usr is still in use, so the job stopped before the settings. Do a cold restart, then click the same button; finished parts are not written again.',
+        'Names are written, but /usr is still in use, so the job stopped before the settings. Do a cold restart, then click Continue; finished parts are not written again.',
     '旧任务名称备份清理未完成，相机名称文件没有改动；请完整断电重开后再点恢复。Backup cleanup incomplete: %s':
         "The old job's name backup cleanup didn't finish; the camera's name files are unchanged. Do a cold restart, then click restore again. Backup cleanup incomplete: %s",
 
@@ -226,7 +226,7 @@ ENGINE = {
     '相机 /usr 分区仍处于可写挂载，通常是上一次操作后还没有完整断电重开；本次没有写入。%sCheckpoint name operation incomplete: %s':
         "The camera's /usr partition is still writable, usually because it hasn't had a cold restart since the last job, so no programs, names or settings were written. %s Checkpoint name operation incomplete: %s",
     '名称内容已完成，但只读挂载忙碌；需要完成设置与重新加载准备后再重开核对。Checkpoint name operation incomplete: %s':
-        'Names are written, but /usr is still in use, so the job stopped before the settings. Do a cold restart, then click the same button; finished parts are not written again. Checkpoint name operation incomplete: %s',
+        'Names are written, but /usr is still in use, so the job stopped before the settings. Do a cold restart, then click Continue; finished parts are not written again. Checkpoint name operation incomplete: %s',
 
     # looktool.compilelook, coupledfit: making an A7Look on the computer.
     '已生成近似结果；最终优化未完全收敛。验证色样平均预测误差 %.2f / 255，不能代表实机色彩准确度。':
@@ -271,20 +271,20 @@ ENGINE = {
     '正在写入程序窗口批次 %d/%d': 'Writing programs: batch %d of %d',
     '名称内容已完成；只读挂载忙碌。完成设置与重新加载准备后，需要断电重开核对挂载状态。':
         "Names restored, but /usr is still in use and can't return to read-only yet. Continuing with the settings; the cold restart at the end clears this.",
-    '所有读写已结束。68 个名称已完整核对，程序和配方尚未写入。旧资源仍被占用，需要断电重开释放后，再点同一按钮继续；不重复写名称。':
-        'Reading and writing have ended. Do the cold restart shown in the dialog to release the old resources, then click the same button to install the programs and recipes. Names are not written again.',
+    '所有读写已结束。68 个名称已完整核对，程序和外观设置尚未写入。旧资源仍被占用：请按弹窗断电重开释放，再点“继续”（自定义外观页“继续槽位更改”或首页“继续安装”）；不重复写名称。':
+        'Reading and writing have ended. All 68 names are written and checked; the programs and look settings are not. The old resources are still in use: do the cold restart shown in the dialog, then click Continue ("Continue changes…" on Custom looks, or "Continue installation" on One-click). Names are not written again.',
     '安装／关闭任务已结束，没有后续待写入步骤。以下断电仅用于让相机加载已写入的程序，电脑端核对可选。':
         'Nothing is left to write. The cold restart only makes the camera load the new programs; verifying from the computer is optional.',
-    '所有读写已结束。拔 USB 和其他外部供电，等存取灯停止闪烁，再正常关机并等屏幕和灯完全熄灭；取下电池至少一分钟，再装回开机、检查功能并核对。':
-        'Reading and writing have ended. Do the cold restart shown in the dialog, then check the camera.',
+    '所有读写已结束。请按弹窗断电重开，再按弹窗中的下一步操作。':
+        'Reading and writing have ended. Do the cold restart shown in the dialog, then its next step.',
     '磁盘与设置已符合目标，本次没有重复写入；实际预览、照片和声音仍需在机身检查。':
         'The camera already matches the target, so nothing was written again. Check live view, photos and sound on the camera.',
     '所有读写已结束。名称已核对，程序未写入。请按弹窗断电重开后接回，继续剩余程序安装。':
-        'Reading and writing have ended. Do the cold restart shown in the dialog, reconnect USB and click the same button to install the programs.',
+        'Reading and writing have ended. Do the cold restart shown in the dialog, reconnect USB and click Continue to install the programs.',
     '无需断电重开。接下来安装程序，请保持 USB 连接。':
         'No cold restart needed. Installing the programs next; keep USB connected.',
     '尚未确认新的冷启动与只读挂载；没有重复写入。请按弹窗完成断电重开、接回。':
-        'No cold restart detected since the names were written, or /usr is still writable, so nothing was written. Do the cold restart shown in the dialog, reconnect USB and click the same button.',
+        'No cold restart detected since the names were written, or /usr is still writable, so nothing was written. Do the cold restart shown in the dialog, reconnect USB and click Continue again.',
     '尚未确认新的冷启动。完成断电重开后再核对，不要重复写入。':
         "No cold restart detected since the write. Do the cold restart, then verify again; don't run the write again.",
     '恢复写入已结束，请核对重新加载状态，不重复写入': 'Restore writing finished. Verify the reload; nothing is written again',
@@ -332,8 +332,8 @@ ENGINE = {
     # looktool.namespause, portraitjob, verticalpersist
     '正在读取原程序，核对尚未写入的程序窗口。': "Reading the camera's programs to confirm they haven't been changed yet.",
     '名称完整读回：%d/%d': 'Name files read back and checked: %d/%d',
-    '所有读写已结束。按弹窗完整断电重开后，检查横握／两侧竖握的 Fn 网格、创意外观选择页和参数调整页。':
-        'Reading and writing have ended. After the cold restart shown in the dialog, check the Fn grid, the Creative Look list and its adjustment page, holding the camera level and upright both ways.',
+    '所有读写已结束。请按弹窗断电重开，再按弹窗列出的项目检查横握和竖握显示。':
+        'Reading and writing have ended. Do the cold restart shown in the dialog, then the checks it lists, holding the camera level and upright.',
     '当前内容已符合所选状态，没有重复写入。': 'The camera already matches the selected state; nothing was written again.',
     '竖屏开关和线框步骤已写好，继续安装其余所选功能。':
         'Vertical display switch and frames are in place. Installing the other selected features.',

@@ -471,7 +471,7 @@ class Window(W.QMainWindow):
         alone under their own title: the Help menu and the "How to cold restart…" buttons open it at any
         time, even while a write runs, so it never says that reading and writing have ended."""
         if manual:
-            W.QMessageBox.information(self, tr('断电重开步骤'), tr(reloadguide.STEPS))
+            W.QMessageBox.information(self, tr('断电重开步骤'), reloadguide.manual())
             return
         title = (tr('恢复尚未开始，请断电后重试') if mode=='factory_prewrite_temporary' else
                  tr('恢复尚未完成，请重启后核对') if mode=='factory_reset' else
@@ -1463,12 +1463,12 @@ class Window(W.QMainWindow):
         resource_wait=status.get('result',{}).get('phase') in ('WAIT_RESOURCE_RELOAD','AWAITING_RESOURCE_RELOAD')
         resource_ready=success and status.get('result',{}).get('phase')=='RESOURCE_RELOAD_VERIFIED'
         setup_wait=waiting and status.get('action')=='setup_all'
-        self.status.setText((tr('名称已写好，程序尚未写入。按弹窗断电重开、接回 USB，再点击首页“继续安装”。') if resource_wait and setup_wait else
-                             tr('名称已写好，程序尚未写入。按弹窗断电重开、接回 USB，再点自定义外观页“继续槽位更改”。') if resource_wait else
-                             tr('批量外观写入完成，已完整读回；按弹窗统一断电重开即可加载。') if status.get('action')=='direct_looks_import' else
-                             tr('FL2／FL3 已启用：写入并完整读回。重开相机后生效，无需再点核对。') if
+        self.status.setText((tr('读写已结束。名称已写好，程序尚未写入。按弹窗断电重开、接回 USB，再点击首页“继续安装”。') if resource_wait and setup_wait else
+                             tr('读写已结束。名称已写好，程序尚未写入。按弹窗断电重开、接回 USB，再点自定义外观页“继续槽位更改”。') if resource_wait else
+                             tr('读写已结束。外观已写入并完整读回；按弹窗断电重开即可加载。') if status.get('action')=='direct_looks_import' else
+                             tr('读写已结束。FL2／FL3 已启用，写入并完整读回。按弹窗断电重开后生效，无需再点核对。') if
                              status.get('result',{}).get('mode')=='fl23_enable' else
-                             tr('FL2／FL3 已从列表移除：写入并完整读回。重开相机后生效，无需再点核对。') if
+                             tr('读写已结束。FL2／FL3 已从列表移除，写入并完整读回。按弹窗断电重开后生效，无需再点核对。') if
                              status.get('result',{}).get('mode')=='fl23_disable' else
                              tr('读写已结束。拔 USB → 等灯停 → 关机并等灯灭 → 取电池至少 1 分钟 → 开机 → 接回 USB → 点击首页“继续安装”。详见弹窗。') if setup_wait else
                              tr('读写已结束。拔 USB → 等灯停 → 关机并等灯灭 → 取电池至少 1 分钟 → 开机；详见弹窗。')) if waiting else

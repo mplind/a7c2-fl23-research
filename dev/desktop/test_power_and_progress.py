@@ -416,7 +416,8 @@ class PowerProgressTests(unittest.TestCase):
                  '4. 取下电池', '5. 装回电池并开机']
         self.assertEqual(sorted(text.index(step) for step in steps), [text.index(step) for step in steps])
         self.assertIn('至少等待 1 分钟', text)
-        self.assertIn('此前恢复原厂', text)
+        self.assertIn('相机在下次断电重开时加载', text)  # why it needs the restart, without assuming an earlier restore
+        self.assertNotIn('此前恢复原厂', text)
         self.assertIn('不会再刷一次', reloadguide.text(setup=True))
         self.assertIn('不必再接电脑点击核对', text)
         self.assertIn('继续安装', reloadguide.text(setup=True))

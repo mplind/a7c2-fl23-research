@@ -19,7 +19,7 @@ import trial
 from replacement import replace_request,optional_job,command_lock,supersede_pending
 
 SCHEMA = 'a7c2-sound-workspace/1'
-# The steps of the app's cold-restart guide (desktopapp.reloadguide.STEPS), in its order; its English is
+# The steps of the app's cold-restart guide (desktopapp.reloadguide.RESTART), in its order; its English is
 # in desktopapp/en_engine.py, as for every other line the engine prints.
 RELOAD = ('所有读写已结束。拔 USB 和其他外部供电，等存取灯停止闪烁，再关机并等屏幕和灯完全熄灭；'
           '取下电池至少一分钟，再装回、开机并测试。磁盘读回不等于加载状态测试。')

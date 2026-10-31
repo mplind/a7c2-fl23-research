@@ -177,7 +177,10 @@ def run(arguments, *, dispatch):
             state['install_result']=result
             state['completed_steps'].append('persistent_features')
             if result['phase']=='AWAITING_RELOAD':
-                save('WAIT_RELOAD');return state
+                save('WAIT_RELOAD')
+                from .reloadguide import text
+                print('所有读写已结束。\n'+text(setup=True),flush=True)  # the dialog's guide, as the first install prints it
+                return state
             save('FINALIZING')
         if state['phase'] == 'READY':
             save('DRIVERS')

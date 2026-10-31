@@ -8,6 +8,9 @@ from .power import require_power
 from .nativebuild import ROOT
 from .checkpointjob import Rollback
 
+# The Terminal's last line after a change: the dialog that opens then gives the restart and the checks.
+VERTICAL_END = '所有读写已结束。请按弹窗断电重开，再按弹窗列出的项目检查横握和竖握显示。'
+
 
 def vertical_modules():
     sys.path.insert(0,str(ROOT/'src/vertical'))
@@ -81,8 +84,7 @@ class PortraitJob(DirectJob):
                     self.state['portrait_result']=frames.restore()
                     changed=bool(self.state['portrait_result'].get('cleanup',{}).get('cleanup_deferred'))
             self.save('AWAITING_RELOAD' if changed else 'LOADED')
-            message=('所有读写已结束。按弹窗完整断电重开后，检查横握／两侧竖握的 Fn 网格、创意外观选择页和参数调整页。'
-                     if changed else '当前内容已符合所选状态，没有重复写入。')
+            message=(VERTICAL_END if changed else '当前内容已符合所选状态，没有重复写入。')
             print('竖屏开关和线框步骤已写好，继续安装其余所选功能。' if combined else message,flush=True)
             return dict(workspace=str(self.root),phase=self.state['phase'],mode=self.state['mode'],
                         reload_required=changed,

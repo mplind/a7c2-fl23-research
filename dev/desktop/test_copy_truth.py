@@ -51,7 +51,7 @@ def test_the_help_menu_cold_restart_steps_have_their_own_title_and_only_the_step
     after_task = shown_information(ui, lambda: ui.show_reload_guide())
     assert manual[0] == 'How to cold restart' != after_task[0]
     assert 'Reading and writing have ended. Cold restart' in after_task[0]
-    assert manual[1] == i18n.tr(reloadguide.STEPS)
+    assert manual[1] == reloadguide.manual()
     assert 'Next:' not in manual[1]
 
 
@@ -60,7 +60,7 @@ def test_every_how_to_cold_restart_button_opens_the_same_steps(window):
     guides = [b for b in ui.findChildren(W.QPushButton) if b.text() == 'How to cold restart…']
     assert len(guides) == 4  # Factory restore, FL2 / FL3, Shutter sound, backup restore
     for guide in guides:
-        assert shown_information(ui, guide.click) == ('How to cold restart', i18n.tr(reloadguide.STEPS))
+        assert shown_information(ui, guide.click) == ('How to cold restart', reloadguide.manual())
 
 
 # 2. The banner while a task runs ---------------------------------------------------------------------
@@ -453,8 +453,8 @@ def test_no_row_title_repeats_another_on_its_page_or_the_page_title(window):
 def test_no_english_label_drops_a_safety_fact_the_chinese_states():
     # L258: the Chinese says the summary doesn't connect to the camera and FL2/FL3 is read back in full.
     assert STRINGS['查看上次安装结果（不连接相机）'] == 'Show saved summary (doesn’t use the camera)'
-    for source in ('FL2／FL3 已启用：写入并完整读回。重开相机后生效，无需再点核对。',
-                   'FL2／FL3 已从列表移除：写入并完整读回。重开相机后生效，无需再点核对。'):
+    for source in ('读写已结束。FL2／FL3 已启用，写入并完整读回。按弹窗断电重开后生效，无需再点核对。',
+                   '读写已结束。FL2／FL3 已从列表移除，写入并完整读回。按弹窗断电重开后生效，无需再点核对。'):
         assert 'written and read back in full' in STRINGS[source]
 
 
@@ -471,3 +471,81 @@ def test_every_write_scope_belongs_to_a_write():
     from desktopapp import jobs, window as window_module
     assert set(window_module.WRITE_SCOPES) <= jobs.POWER_ACTIONS
     assert set(window_module.WRITE_TARGETS) <= jobs.POWER_ACTIONS
+
+
+# After a write: the pop-up, the Terminal's last line and the status line agree -------------------------
+# Field report, 31 Oct 2026: the pop-up asked to wait for "Reading and writing have ended" when the status
+# line said something else, and the Terminal's next step differed from the pop-up's.
+
+POPUPS = [dict(mode='fl23_enable'), dict(mode='fl23_disable'), dict(mode='install_all'), dict(mode='look_import'),
+          dict(mode='slot_default'), dict(mode='vertical_enable'), dict(mode='vertical_disable'),
+          dict(mode='resource_reload'), dict(setup=True, mode='resource_reload'), dict(setup=True),
+          dict(mode='sound_on'), dict(mode='sound_off'), dict(mode='sound_install'), dict(mode='sound_restore_sound'),
+          dict(mode='factory_reset'), dict(mode='factory_prewrite_temporary'), dict()]
+
+
+@pytest.mark.parametrize('popup', POPUPS, ids=[str(sorted(p.items())) for p in POPUPS])
+def test_a_popup_after_a_write_never_asks_to_wait_for_the_end(popup):
+    # It shows only once reading and writing have ended; the Help guide, open at any time, keeps the wait.
+    with patch.object(i18n, '_language', 'en'):
+        assert 'Only do this once' not in reloadguide.text(**popup)
+
+
+def test_the_help_guide_waits_for_the_cue_the_status_lines_give(window):
+    ui = window('en')
+    action = next(a for a in menu_actions(ui, 'Help') if a.text() == 'How to cold restart…')
+    assert shown_information(ui, action.trigger)[1].startswith('Only do this once the app shows "Reading and writing have ended".')
+
+
+@pytest.mark.parametrize('action, result', [
+    ('direct_fl23_enable', dict(phase='COMPLETED', mode='fl23_enable', reload_required=True, verification_optional=True)),
+    ('direct_fl23_disable', dict(phase='COMPLETED', mode='fl23_disable', reload_required=True, verification_optional=True)),
+    ('direct_looks_import', dict(phase='COMPLETED', mode='install_all', reload_required=True, slots=[6], operations=[], workspace='w')),
+    ('direct_looks_import', dict(phase='AWAITING_RESOURCE_RELOAD', mode='install_all', workspace='w')),
+    ('direct_resume_looks', dict(phase='AWAITING_RESOURCE_RELOAD', mode='install_all', workspace='w')),
+    ('setup_all', dict(phase='WAIT_RESOURCE_RELOAD')),
+    ('setup_all', dict(phase='WAIT_RELOAD')),
+    ('vertical_enable', dict(phase='AWAITING_RELOAD', mode='vertical_enable')),
+], ids=['fl23 on', 'fl23 off', 'looks written', 'looks names paused', 'continue not ready', 'one-click names paused',
+        'one-click written', 'vertical on'])
+def test_every_status_after_a_write_that_needs_a_restart_starts_with_the_cue(window, action, result):
+    ui = window('en')
+    with patch.object(W.QMessageBox, 'information'):
+        finish_job(ui, action, result)
+    assert ui.status.text().startswith('Reading and writing have ended.'), ui.status.text()
+
+
+def terminal_endings():
+    from looktool import direct, portraitjob
+    return [direct.NAMES_PAUSED_END, direct.PROGRAMS_WRITTEN_END, portraitjob.VERTICAL_END]
+
+
+@pytest.mark.parametrize('index', range(3), ids=['names paused', 'programs written', 'vertical'])
+def test_the_terminals_last_line_leaves_the_next_step_to_the_popup(index):
+    from desktopapp.en_engine import ENGINE
+    english = ENGINE[terminal_endings()[index]]
+    assert english.startswith('Reading and writing have ended.')
+    assert 'dialog' in english and 'check the camera' not in english
+
+
+def test_only_a_job_that_never_started_points_to_the_same_button():
+    # Once a job pauses, the button that started it reads "Continue changes…" or "Continue installation".
+    from desktopapp.en_engine import ENGINE
+    lines = [e for e in list(ENGINE.values()) + list(STRINGS.values()) if isinstance(e, str) and 'same button' in e]
+    assert lines and [e for e in lines if 'never started' not in e and "doesn't use the camera" not in e] == []
+
+
+def test_the_fl23_popup_does_not_assume_an_earlier_factory_restore():
+    with patch.object(i18n, '_language', 'en'):
+        text = reloadguide.text(mode='fl23_enable')
+    assert 'factory restore' not in text and 'next cold restart' in text
+
+
+def test_the_popup_after_a_finished_look_write_has_no_names_stage_step():
+    with patch.object(i18n, '_language', 'en'):
+        assert 'name stage' not in reloadguide.text(mode='install_all')
+
+
+def test_terms_the_look_settings_never_recipes_outside_film_recipes():
+    from desktopapp.en_engine import ENGINE
+    assert [e for e in ENGINE.values() if isinstance(e, str) and 'programs and recipes' in e] == []

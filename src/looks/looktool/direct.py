@@ -35,6 +35,10 @@ class JobOtherBuild(ContentChanged, buildprofile.OtherBuild):
 
 
 RELOAD_PENDING = '尚未确认新的冷启动与只读挂载；没有重复写入。请按弹窗完成断电重开、接回。'
+# The Terminal's last line when a job stops for a cold restart. The dialog that opens then gives the restart
+# and the next step, so these leave both to it.
+NAMES_PAUSED_END = '所有读写已结束。68 个名称已完整核对，程序和外观设置尚未写入。旧资源仍被占用：请按弹窗断电重开释放，再点“继续”（自定义外观页“继续槽位更改”或首页“继续安装”）；不重复写名称。'
+PROGRAMS_WRITTEN_END = '所有读写已结束。请按弹窗断电重开，再按弹窗中的下一步操作。'
 
 
 class ResourceReloadPending(ValueError):
@@ -674,12 +678,12 @@ class DirectJob(Rollback):
                         self.state['readonly_after_reload_verified']=True
             if resource_pause:
                 self.save('AWAITING_RESOURCE_RELOAD')
-                print('所有读写已结束。68 个名称已完整核对，程序和配方尚未写入。旧资源仍被占用，需要断电重开释放后，再点同一按钮继续；不重复写名称。',flush=True)
+                print(NAMES_PAUSED_END,flush=True)
                 return self.state
             self.save('AWAITING_RELOAD' if changed else 'LOADED', raw_profile_effective_since=datetime.now().isoformat(timespec='microseconds'))
             if changed and mode in ('fl23_enable','fl23_disable'):
                 print('安装／关闭任务已结束，没有后续待写入步骤。以下断电仅用于让相机加载已写入的程序，电脑端核对可选。',flush=True)
-            print('所有读写已结束。拔 USB 和其他外部供电，等存取灯停止闪烁，再正常关机并等屏幕和灯完全熄灭；取下电池至少一分钟，再装回开机、检查功能并核对。' if changed else '磁盘与设置已符合目标，本次没有重复写入；实际预览、照片和声音仍需在机身检查。', flush=True)
+            print(PROGRAMS_WRITTEN_END if changed else '磁盘与设置已符合目标，本次没有重复写入；实际预览、照片和声音仍需在机身检查。', flush=True)
             return self.state
         except BaseException as exc:
             self.stopped(exc)

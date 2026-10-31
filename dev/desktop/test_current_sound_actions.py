@@ -109,7 +109,7 @@ def test_optional_confirmation_does_not_require_a_previous_task(tmp_path,command
 
 
 def test_the_sound_jobs_cold_restart_line_follows_the_guides_order():
-    # Task 8c, engine F3: unplug first, wait for the lamp, switch off, then the battery, as reloadguide.STEPS.
+    # Task 8c, engine F3: unplug first, wait for the lamp, switch off, then the battery, as reloadguide.RESTART.
     # R57 M-8: the line is Chinese source text with its English in the engine catalogue, like every other.
     import sound_cli
     from desktopapp.en_engine import ENGINE

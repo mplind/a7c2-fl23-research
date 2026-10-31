@@ -279,6 +279,22 @@ class AllInOneTests(unittest.TestCase):
         self.assertEqual([a for a,_ in self.calls].count('direct_install_all'),1)
         self.assertEqual([a for a,_ in self.calls][-2:], ['direct_verify','sound_on'])
 
+    def test_programs_written_after_the_names_pause_print_the_same_guide_as_the_popup(self):
+        # The Terminal's next step must be the pop-up's: reconnect and click Continue installation.
+        import contextlib, io
+        from desktopapp.reloadguide import text
+        def dispatch(action,args,folder):
+            if action=='direct_install_all':
+                self.calls.append((action,args));return dict(phase='AWAITING_RESOURCE_RELOAD',workspace=args['workspace'])
+            if action=='direct_resume_looks':
+                self.calls.append((action,args));return dict(phase='AWAITING_RELOAD',workspace=args['workspace'])
+            return self.dispatch(action,args,folder)
+        self.assertEqual(allinone.run(self.args,dispatch=dispatch)['phase'],'WAIT_RESOURCE_RELOAD')
+        output=io.StringIO()
+        with contextlib.redirect_stdout(output):
+            self.assertEqual(allinone.run(self.args,dispatch=dispatch)['phase'],'WAIT_RELOAD')
+        self.assertIn(text(setup=True),output.getvalue())
+
     def test_recorded_v7_busy_goes_to_name_reload_instead_of_replaying_install(self):
         allinone.run(self.args,dispatch=self.dispatch)
         root=Path(self.args['workspace']);path=root/'setup.private.json'
