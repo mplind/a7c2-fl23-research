@@ -62,6 +62,14 @@ def test_untested_builds_go_out_as_a_prerelease_and_never_as_the_latest_release(
         assert 'packages/' + package in run
 
 
+def test_a_rerun_replaces_the_prerelease_but_keeps_its_tag():
+    # The workflow token cannot create a tag on a commit whose workflow files differ from the default
+    # branch's (an older release); a maintainer pushes <tag>-untested once, and reruns must keep it.
+    run = step('untested-prerelease', 'Publish the untested pre-release')['run']
+    assert 'gh release delete "$tag"' in run and '--cleanup-tag' not in run
+    assert 'git push origin' in run  # the error names the fix when the tag can't be created
+
+
 def test_a_prerelease_never_starts_another_build():
     # Publishing the untested pre-release is itself a release event; only full releases build.
     condition = workflow()['jobs']['package']['if']
