@@ -1,0 +1,66 @@
+name: Build report
+description: How a build went on Windows, an Apple Silicon Mac or anything this fork hasn't been tested on.
+title: "Build report: "
+labels: ["build report"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This fork is built and tested only on an Intel Mac, so a report like yours is the only testing other builds get. Fill in what you know and leave the rest blank.
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Computer
+      options:
+        - Windows (x64)
+        - Apple Silicon Mac
+        - Intel Mac
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system and version
+      placeholder: Windows 11 24H2, macOS 15.1
+    validations:
+      required: true
+  - type: dropdown
+    id: build
+    attributes:
+      label: Did it build?
+      options:
+        - Built with the README steps, no changes
+        - Built after I changed something (describe below)
+        - Didn't build
+    validations:
+      required: true
+  - type: textarea
+    id: build-notes
+    attributes:
+      label: What you changed, or the error you got
+      description: Paste the end of the build output if it failed. If you changed code to make it build, a pull request is welcome.
+      render: text
+  - type: checkboxes
+    id: tried
+    attributes:
+      label: What you tried
+      options:
+        - label: Opened the app
+        - label: Ran the read-only Test on Connection and drivers
+        - label: Wrote a custom look
+        - label: FL2 / FL3
+        - label: Vertical display
+        - label: Shutter sound
+        - label: Factory restore
+  - type: input
+    id: camera-build
+    attributes:
+      label: Camera firmware build
+      description: The Camera firmware build row after Test.
+      placeholder: Sony 2.01 (camera build, 23 Sep 2025)
+  - type: textarea
+    id: camera-notes
+    attributes:
+      label: What happened on the camera
+      description: If something failed, click Export diagnostics… in the app and attach the bundle here.

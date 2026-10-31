@@ -18,7 +18,7 @@
 
 <div align="center">
 
-[![License: PolyForm Noncommercial][license-shield]][license-url] [![Camera: ILCE-7CM2 firmware 2.01][camera-shield]][camera-url] [![macOS: Intel][macos-shield]][install-url]
+[![Latest release][release-shield]][release-url] [![License: PolyForm Noncommercial][license-shield]][license-url] [![Camera: ILCE-7CM2 firmware 2.01][camera-shield]][camera-url] [![macOS: Intel][macos-shield]][install-url]
 
 </div>
 
@@ -84,7 +84,7 @@ You need a Sony A7C II (ILCE-7CM2) on firmware 2.01, an Intel Mac (tested on mac
 > [!WARNING]
 > This is unofficial research software, not made or endorsed by Sony. Writing to the camera can stop it booting, make it restart over and over or lose images and settings, and can affect official updates, warranty and repair. A complete read-back doesn't prove the camera will boot, and Factory restore may not recover it. Use it only on a camera you own or have the owner's permission to change, back up your images first, and read the full [risk notice](docs/en/notices.md#risk-notice-and-use-statement).
 
-1. Download `A7C2Tools-macOS-x86_64.dmg` from [Releases](https://github.com/mplind/a7c2-fl23-research/releases).
+1. Download [`A7C2Tools-macOS-x86_64.dmg`](https://github.com/mplind/a7c2-fl23-research/releases/latest/download/A7C2Tools-macOS-x86_64.dmg) from the [latest release](https://github.com/mplind/a7c2-fl23-research/releases/latest).
 2. Open it and drag **A7C II Tools** to Applications.
 3. The app has no Developer ID signature. On first launch, allow it under **System Settings → Privacy & Security → Open Anyway**.
 
@@ -100,7 +100,7 @@ This fork has been built and tested only on an Intel Mac, because that is the on
     python -m pip install --no-build-isolation -r desktop-requirements.txt pyinstaller==6.16.0
     ```
 
-2. Download `A7C2Tools-desktop-assets.zip` from [Releases](https://github.com/mplind/a7c2-fl23-research/releases) and unzip it in that folder. It holds the six built-in looks, the film-look library, the paired DCP profiles and the shutter sounds, the same files the macOS package carries.
+2. Download [`A7C2Tools-desktop-assets.zip`](https://github.com/mplind/a7c2-fl23-research/releases/latest/download/A7C2Tools-desktop-assets.zip) from the [latest release](https://github.com/mplind/a7c2-fl23-research/releases/latest) and unzip it in that folder. It holds the six built-in looks, the film-look library, the paired DCP profiles and the shutter sounds, the same files the macOS package carries.
 3. Add your platform's helpers and build:
 
     ```sh
@@ -111,7 +111,7 @@ This fork has been built and tested only on an Intel Mac, because that is the on
 4. The package lands in `dist/`: `A7C2Tools-Windows-x64.zip` on Windows, `A7C2Tools-macOS-arm64.dmg` on an Apple Silicon Mac. On Windows, the **Connection and drivers** page also sets up the camera's USB drivers.
 
 > [!TIP]
-> If you build it on Windows or Apple Silicon, open an [issue](https://github.com/mplind/a7c2-fl23-research/issues) with your package, your operating system and what you tried on the camera, even if that was only the read-only **Test**. If you had to change anything to make it build, a pull request is welcome. Your report is the only testing those builds get.
+> If you build it on Windows or Apple Silicon, open a [build report](https://github.com/mplind/a7c2-fl23-research/issues/new?template=build-report.yml) with your package, your operating system and what you tried on the camera, even if that was only the read-only **Test**. If you had to change anything to make it build, a pull request is welcome. Your report is the only testing those builds get.
 
 ## First run
 
@@ -221,6 +221,8 @@ For other cameras: [lzh2016zzz/a7cr-fl23-research](https://github.com/lzh2016zzz
 
 Upstream versions from before 25 Oct 2026 keep their [MIT terms](docs/licenses/project-legacy-MIT.txt). Bundled looks, DCP profiles and third-party components keep their own licences, and the required notices are in the [notices](docs/en/notices.md).
 
+[release-shield]: https://img.shields.io/github/v/release/mplind/a7c2-fl23-research?style=flat-square&color=c4732b&label=release
+[release-url]: https://github.com/mplind/a7c2-fl23-research/releases/latest
 [license-shield]: https://img.shields.io/badge/license-PolyForm%20Noncommercial-c4732b?style=flat-square
 [license-url]: LICENSE
 [camera-shield]: https://img.shields.io/badge/camera-ILCE--7CM2%20firmware%202.01-c4732b?style=flat-square

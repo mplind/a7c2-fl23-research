@@ -18,7 +18,7 @@
 
 <div align="center">
 
-[![License: PolyForm Noncommercial][license-shield]][license-url] [![Camera: ILCE-7CM2 firmware 2.01][camera-shield]][camera-url] [![macOS: Intel][macos-shield]][install-url]
+[![Latest release][release-shield]][release-url] [![License: PolyForm Noncommercial][license-shield]][license-url] [![Camera: ILCE-7CM2 firmware 2.01][camera-shield]][camera-url] [![macOS: Intel][macos-shield]][install-url]
 
 </div>
 
@@ -84,7 +84,7 @@ A7C II Tools 把照片 LUT、Adobe DCP 配置文件，或修图软件中某个�
 > [!WARNING]
 > 这是非官方的研究软件，与 Sony 无关，也未获 Sony 认可。写入相机可能导致无法开机、反复重启、丢失照片或设置，并可能影响官方更新、保修和维修。完整读回不代表相机一定能正常启动，恢复原厂功能也不保证能救回相机。只在你自己拥有、或已获机主许可的相机上使用，先备份照片，并阅读完整的[风险告知](docs/zh-CN/notices.md#风险告知与使用声明)。
 
-1. 从 [Releases](https://github.com/mplind/a7c2-fl23-research/releases) 下载 `A7C2Tools-macOS-x86_64.dmg`。
+1. 从[最新版本](https://github.com/mplind/a7c2-fl23-research/releases/latest)下载 [`A7C2Tools-macOS-x86_64.dmg`](https://github.com/mplind/a7c2-fl23-research/releases/latest/download/A7C2Tools-macOS-x86_64.dmg)。
 2. 打开后把 **A7C II Tools** 拖进“应用程序”。
 3. 应用没有开发者签名。首次打开时，在 **系统设置 → 隐私与安全性 → 仍要打开** 中允许。
 
@@ -100,7 +100,7 @@ A7C II Tools 把照片 LUT、Adobe DCP 配置文件，或修图软件中某个�
     python -m pip install --no-build-isolation -r desktop-requirements.txt pyinstaller==6.16.0
     ```
 
-2. 从 [Releases](https://github.com/mplind/a7c2-fl23-research/releases) 下载 `A7C2Tools-desktop-assets.zip`，解压到该文件夹。其中包含六款内置外观、胶片外观库、配对 DCP 配置文件和快门声，与 macOS 安装包中的文件相同。
+2. 从[最新版本](https://github.com/mplind/a7c2-fl23-research/releases/latest)下载 [`A7C2Tools-desktop-assets.zip`](https://github.com/mplind/a7c2-fl23-research/releases/latest/download/A7C2Tools-desktop-assets.zip)，解压到该文件夹。其中包含六款内置外观、胶片外观库、配对 DCP 配置文件和快门声，与 macOS 安装包中的文件相同。
 3. 加入所在平台的辅助文件并构建：
 
     ```sh
@@ -111,7 +111,7 @@ A7C II Tools 把照片 LUT、Adobe DCP 配置文件，或修图软件中某个�
 4. 安装包位于 `dist/`：Windows 上为 `A7C2Tools-Windows-x64.zip`，Apple Silicon Mac 上为 `A7C2Tools-macOS-arm64.dmg`。在 Windows 上，**连接与驱动** 页面还会为相机安装 USB 驱动。
 
 > [!TIP]
-> 如果你在 Windows 或 Apple Silicon 上构建了它，请提交一个 [issue](https://github.com/mplind/a7c2-fl23-research/issues)，写明安装包、操作系统，以及在相机上试过什么，哪怕只是只读的 **测试**。如果需要改动才能构建，也欢迎提交 pull request。你的反馈是这些版本唯一的测试。
+> 如果你在 Windows 或 Apple Silicon 上构建了它，请提交一份[构建报告](https://github.com/mplind/a7c2-fl23-research/issues/new?template=build-report.yml)，写明安装包、操作系统，以及在相机上试过什么，哪怕只是只读的 **测试**。如果需要改动才能构建，也欢迎提交 pull request。你的反馈是这些版本唯一的测试。
 
 ## 首次使用
 
@@ -221,6 +221,8 @@ A7C II Tools 由 [QAQLeonard](https://github.com/QAQLeonard) 和原项目的贡�
 
 上游在 2026 年 10 月 25 日之前的版本保留其 [MIT 条款](docs/licenses/project-legacy-MIT.txt)。内置外观、DCP 配置文件和第三方组件保留各自的许可，必需声明见[声明](docs/zh-CN/notices.md)。
 
+[release-shield]: https://img.shields.io/github/v/release/mplind/a7c2-fl23-research?style=flat-square&color=c4732b&label=release
+[release-url]: https://github.com/mplind/a7c2-fl23-research/releases/latest
 [license-shield]: https://img.shields.io/badge/license-PolyForm%20Noncommercial-c4732b?style=flat-square
 [license-url]: LICENSE
 [camera-shield]: https://img.shields.io/badge/camera-ILCE--7CM2%20firmware%202.01-c4732b?style=flat-square
