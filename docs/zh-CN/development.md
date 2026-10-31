@@ -7,7 +7,7 @@
 ## 范围
 
 - 相机：只支持 Sony ILCE-7CM2、固件 2.01。
-- 产品：3.0 桌面程序（`desktop.py`），支持 Windows 10／11 x64 和 macOS 14+ Apple Silicon。两个平台共用界面、规划、相机写入和恢复；只有 USB 驱动、提权和存储卷处理因系统而异。
+- 产品：3.0 桌面程序（`desktop.py`），支持 Windows 10／11 x64、macOS 14+ Apple Silicon，以及 Intel Mac（在 macOS 15 上构建并实机测试）。两个平台共用界面、规划、相机写入和恢复；只有 USB 驱动、提权和存储卷处理因系统而异。
 - 旧版命令行工具（`FL23.cmd`、`lut.py`、`recovery.py`、`shutter.py`、`vertical.py`、`a7look_*.py`、`raw_*.py`）保留给高级用户。它们基于备份的流程，与桌面版不需要备份的直接操作相互独立。
 
 ## 目录
@@ -112,6 +112,8 @@ python desktop.py
 
 根目录的 `conftest.py` 在所有测试中禁止枚举实体 USB。其他测试：`python -m unittest discover -s src/looks/tests`，以及 `src/fl23/tests`、`src/camera_runtime/tests`、`dev/usb/tests`。私有样本（`A7C2_RESEARCH_FIXTURES`）是可选的，没有时相关测试会跳过。
 
+每个克隆安装一次提交检查：`git config core.hooksPath dev/git-hooks`。其 pre-commit 钩子会拒绝任何暂存了 `desktop-assets/` 下文件的提交，即使用了 `git add -f`。
+
 **打包：**
 1. 准备被 Git 忽略的发行资源：`python dev/desktop/prepare_assets.py`。用 `--preset-archive <zip>` 从导出的资源包或 Windows 安装包中导入默认六款和配对库；用 `--export-presets <zip>` 导出资源包。
 2. 构建：凡要发布的包都用 `python dev/desktop/build.py --edition public`。`--edition` 决定 `desktop-assets/` 中哪些内容进包：
@@ -121,7 +123,7 @@ python desktop.py
 
 产物：
 - **Windows**：`dist/A7C2Tools-Windows-x64.zip`，包含 `A7C2Tools.exe`、`_internal/`、`Profiles/`（配对库）、两份 README 和 `LICENSE`。
-- **macOS（仅 Apple Silicon）**：`dist/A7C2Tools-macOS-arm64.dmg`，配对库在 APP 内部（`desktop-assets/profile-library-v1`）。
+- **macOS**：`dist/A7C2Tools-macOS-<架构>.dmg`，按构建所用的 Mac 命名：Apple Silicon 为 `arm64`，Intel 为 `x86_64`。在目标类型的 Mac 上构建。配对库在 APP 内部（`desktop-assets/profile-library-v1`）。
 - `profilepack.py` 要求富士 11 组、理光彩色 4 组配对全部齐全，否则拒绝打包。黑白配对只有满足独立误差标准（MAE ≤3/255、P95 ≤12/255）才能加入。
 
 CI：`.github/workflows/desktop-preview.yml` 在原生 Windows 和 `macos-15` runner 上构建并上传产物，不发布 Release。修改 `dev/desktop/native-build-request.json` 会触发 Apple Silicon 构建。ARM64 上 Keystone／Unicorn 从源码编译（需要 Xcode 命令行工具和 CMake 3.31.6）；Zig 版本为 0.13.0。

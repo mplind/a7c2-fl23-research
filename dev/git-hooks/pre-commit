@@ -1,0 +1,11 @@
+#!/bin/sh
+# Refuses a commit that stages anything under desktop-assets/. Those files are release inputs or
+# personal-use looks; .gitignore ignores the folder, and this stops a forced `git add -f`.
+# Install once per clone: git config core.hooksPath dev/git-hooks
+staged=$(git diff --cached --name-only --diff-filter=ACMR -- desktop-assets)
+if [ -n "$staged" ]; then
+    echo "Commit refused: files under desktop-assets/ are never committed:" >&2
+    echo "$staged" >&2
+    echo "Unstage them with: git restore --staged desktop-assets" >&2
+    exit 1
+fi

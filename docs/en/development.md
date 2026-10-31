@@ -7,7 +7,7 @@ One overview for maintainers and AI agents. Read [AGENTS.md](../../AGENTS.md) fi
 ## Scope
 
 - Camera: Sony ILCE-7CM2, firmware 2.01 only.
-- Product: the 3.0 desktop app (`desktop.py`), on Windows 10/11 x64 and macOS 14+ Apple Silicon. Windows and macOS share the GUI, planners, camera writes and recovery. Only USB drivers, privilege elevation and media handling differ per host.
+- Product: the 3.0 desktop app (`desktop.py`), on Windows 10/11 x64, macOS 14+ on Apple Silicon, and Intel Macs (built and camera-tested on macOS 15). Windows and macOS share the GUI, planners, camera writes and recovery. Only USB drivers, privilege elevation and media handling differ per host.
 - Legacy command-line tools (`FL23.cmd`, `lut.py`, `recovery.py`, `shutter.py`, `vertical.py`, `a7look_*.py`, `raw_*.py`) remain for advanced use. Their backup-based workflows are separate from the desktop's backup-free direct operations.
 
 ## Repository map
@@ -112,6 +112,8 @@ python desktop.py
 
 The root `conftest.py` blocks physical USB enumeration in every test. Other suites: `python -m unittest discover -s src/looks/tests`, `src/fl23/tests`, `src/camera_runtime/tests`, `dev/usb/tests`. Private fixtures (`A7C2_RESEARCH_FIXTURES`) are optional; without them those tests skip.
 
+Install the commit guard once per clone: `git config core.hooksPath dev/git-hooks`. Its pre-commit hook refuses any commit that stages files under `desktop-assets/`, even after `git add -f`.
+
 **Packaging:**
 1. Prepare the ignored distribution assets: `python dev/desktop/prepare_assets.py`. Use `--preset-archive <zip>` to import the six defaults and the paired library from an exported pack or a Windows build; use `--export-presets <zip>` to create such a pack.
 2. Build: `python dev/desktop/build.py --edition public` for anything you publish. `--edition` chooses what ships from `desktop-assets/`:
@@ -121,7 +123,7 @@ The root `conftest.py` blocks physical USB enumeration in every test. Other suit
 
 Outputs:
 - **Windows:** `dist/A7C2Tools-Windows-x64.zip`. It contains `A7C2Tools.exe`, `_internal/`, `Profiles/` (paired library), both READMEs and `LICENSE`.
-- **macOS (Apple Silicon only):** `dist/A7C2Tools-macOS-arm64.dmg`. The paired library lives inside the app (`desktop-assets/profile-library-v1`).
+- **macOS:** `dist/A7C2Tools-macOS-<arch>.dmg`, named after the Mac that builds it: `arm64` on Apple Silicon, `x86_64` on Intel. Build on the kind of Mac it is for. The paired library lives inside the app (`desktop-assets/profile-library-v1`).
 - `profilepack.py` refuses to package unless all 11 Fujifilm and 4 Ricoh color pairs are present. Monochrome pairs are allowed only if they meet the independent error limits (MAE ≤3/255, P95 ≤12/255).
 
 CI: `.github/workflows/desktop-preview.yml` builds on native Windows and `macos-15` runners and uploads artifacts without publishing a Release. Updating `dev/desktop/native-build-request.json` triggers an Apple Silicon build. Keystone/Unicorn build from source on ARM64 (Xcode CLT, CMake 3.31.6); Zig is 0.13.0.
