@@ -161,6 +161,43 @@ class AllInOneTests(unittest.TestCase):
         self.assertEqual(result['phase'],'WAIT_RESOURCE_RELOAD')
         self.assertEqual([a for a,_ in self.calls[before:]],['direct_resume_looks'])
 
+    def stopped_continuation_child(self,error_type='BodyMismatch',paused_record=True):
+        """After a full run, One-click's state as a continuation of a names-paused child leaves it when it
+        stops before writing: (setup state path, the paused child, the stopped continuation)."""
+        allinone.run(self.args,dispatch=self.dispatch)
+        root=Path(self.args['workspace']);path=root/'setup.private.json'
+        paused=root/'resource-checkpoint';paused.mkdir()
+        if paused_record:(paused/'direct.private.json').write_text('{"phase":"AWAITING_RESOURCE_RELOAD","mode":"install_all"}')
+        stopped=root/'install-continue-x';stopped.mkdir()
+        (stopped/'direct.private.json').write_text(json.dumps(dict(schema='a7c2-direct-job/1',mode='install_all',
+            phase='NEEDS_REVIEW',failed_during='READING',journal=[],names_resume_from=str(paused),error_type=error_type)))
+        state=json.loads(path.read_text())
+        state.update(phase='NEEDS_REVIEW',install_workspace=str(stopped),resume_resource_from=str(paused))
+        path.write_text(json.dumps(state))
+        return path,paused,stopped
+
+    def test_a_continuation_that_stopped_before_writing_continues_the_paused_names_job(self):
+        # Another body, a refused connection or no cold restart: never a fresh install over the paused job.
+        path,paused,stopped=self.stopped_continuation_child();before=len(self.calls)
+        def dispatch(action,args,folder):
+            self.calls.append((action,args))
+            self.assertEqual(action,'direct_resume_looks')
+            self.assertEqual(args['failed_workspace'],str(paused))
+            return dict(phase='AWAITING_RESOURCE_RELOAD',workspace=str(paused))
+        result=allinone.run(self.args,dispatch=dispatch)
+        self.assertEqual(result['phase'],'WAIT_RESOURCE_RELOAD')
+        self.assertEqual([a for a,_ in self.calls[before:]],['direct_resume_looks'])
+        self.assertIn(str(stopped),json.loads(path.read_text())['failed_install_workspaces'])
+
+    def test_a_paused_child_that_cannot_continue_gets_a_fresh_plan(self):
+        for error_type,record in (('PausedJobChanged',True),('BodyMismatch',False)):
+            with self.subTest(error_type=error_type,record=record):
+                self.setUp()
+                path,paused,stopped=self.stopped_continuation_child(error_type,record);before=len(self.calls)
+                allinone.run(self.args,dispatch=self.dispatch)
+                actions=[a for a,_ in self.calls[before:]]
+                self.assertNotIn('direct_resume_looks',actions);self.assertIn('direct_install_all',actions)
+
     def test_nested_program_child_is_verified_after_resource_parent_interruption(self):
         allinone.run(self.args,dispatch=self.dispatch)
         root=Path(self.args['workspace']);candidate=root/'resource-child'

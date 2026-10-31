@@ -838,6 +838,11 @@ class Window(W.QMainWindow):
                 prior=self.settings.get('look_resume_source')
                 if not prior or not Path(prior,'direct.private.json').is_file():return None
             state=json.loads(Path(prior,'direct.private.json').read_text(encoding='utf-8'))
+            from .lookbatch import stopped_continuation
+            paused=stopped_continuation(state)
+            if paused and Path(paused,'direct.private.json').is_file():
+                # A continuation stopped before writing: offer its paused job's Continue again, not a fresh retry.
+                prior=paused;state=json.loads(Path(paused,'direct.private.json').read_text(encoding='utf-8'))
             nested=Path(prior,'program-install/direct.private.json')
             if state.get('phase')=='RESOURCE_RELOAD_VERIFIED' and nested.is_file():
                 prior=str(nested.parent);state=json.loads(nested.read_text(encoding='utf-8'))

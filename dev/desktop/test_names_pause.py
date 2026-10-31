@@ -1,5 +1,5 @@
 """Complete names + EBUSY pauses before programs and supports cold continuation."""
-import copy,json,struct,tempfile
+import contextlib,copy,json,struct,tempfile
 from pathlib import Path
 import unittest
 from unittest.mock import patch
@@ -11,6 +11,7 @@ from test_direct import SimDirect
 class NamesPauseTests(unittest.TestCase):
     def setUp(self):
         tmp=tempfile.TemporaryDirectory();self.addCleanup(tmp.cleanup)
+        self.forward_calls=[]  # the modes of each forward_names call look_write sees
         self.root=Path(tmp.name);self.failed=self.root/'failed';(self.failed/'evidence').mkdir(parents=True)
         self.current=values();self.camera=Camera(self.current)
         self.camera.usr_mount_readonly=False;self.camera.boot='boot-old'
@@ -119,25 +120,156 @@ class NamesPauseTests(unittest.TestCase):
             v=list(nameworker.REPORT.unpack(self.raw));v[index]=value
             with self.assertRaises(ValueError):nameworker.validate(nameworker.REPORT.pack(*v),1,self.build,allow_completed_busy=True)
 
-    def test_fresh_writer_pauses_after_full_name_readback_before_programs(self):
-        camera=Camera(self.current);camera.usr_mount_readonly=False;camera.boot='boot-old'
-        job=SimDirect(self.root/'fresh',factory=camera)
+    @contextlib.contextmanager
+    def look_write(self,job):
+        """What a look write of 'CC' into Custom 1 needs on the simulated camera: its plan (the stand-in
+        programs' change and the renamed name files), the worker compiler, and a session opener that
+        binds the body only when asked to. The names are written as a busy, complete stream install."""
+        renamed={n:self.camera.files['/usr/share/app/'+n] for n in nameworker.filenames()}
         def plan(current,*args,**kwargs):
             target=dict(current);target['appFw.so']=self.target['appFw.so']
-            for n in nameworker.filenames():target['resources/'+n]=self.camera.files['/usr/share/app/'+n]
+            for n in nameworker.filenames():target['resources/'+n]=renamed[n]
             return target,[{},{}],({1:'CC'},resources.LABEL_IDS)
+        def prepare(sources,*args,**kwargs):
+            # The names are already as planned when a continuation reads them back.
+            return dict(renamed),({'unchanged':True,'AP':None} if sources==renamed else self.build)
         def forward(cam,build,mode):
+            self.forward_calls.append(mode)
             if mode==1:
-                for n in nameworker.filenames():cam.files['/usr/share/app/'+n]=self.camera.files['/usr/share/app/'+n]
+                for n in nameworker.filenames():cam.files['/usr/share/app/'+n]=renamed[n]
                 job.raw('names-forward-1.bin',self.raw)
                 return dict(readonly_deferred_busy=True)
         original_call=Camera.__call__
         with patch.object(Camera,'__call__',lambda c,expected=None:c if expected is None else original_call(c,expected)), \
              patch.object(direct,'plan',side_effect=plan),patch.object(checkpointworker,'compile_worker',side_effect=fake_compile), \
-             patch.object(nameworker,'prepare',return_value=({n:self.camera.files['/usr/share/app/'+n] for n in nameworker.filenames()},self.build)), \
-             patch.object(job,'forward_names',side_effect=forward):
+             patch.object(nameworker,'prepare',side_effect=prepare),patch.object(job,'forward_names',side_effect=forward):
+            yield
+
+    def paused_look_write(self,folder='fresh'):
+        """A fresh camera and the look write that paused on it after the names: (camera, job)."""
+        camera=Camera(self.current);camera.usr_mount_readonly=False;camera.boot='boot-old'
+        job=SimDirect(self.root/folder,factory=camera)
+        with self.look_write(job):
             result=job.run_direct('look_import',version='2.01',power_confirmed=True,slot=1,look_path=self.failed/'reference.a7look')
         self.assertEqual(result['phase'],namespause.WAIT)
+        return camera,job
+
+    def test_fresh_writer_pauses_after_full_name_readback_before_programs(self):
+        camera,_=self.paused_look_write()
         self.assertFalse(any(kind=='program' and mode==1 for kind,mode in camera.native_calls))
         self.assertEqual(camera.files['/usr/lib/appFw.so'],self.current['appFw.so'])
         self.assertEqual(camera.saves,[]);self.assertEqual(camera.mode,'0\n')
+
+    # Continuing after the cold restart, in one service connection ------------------------------------
+
+    def camera_state(self,camera):
+        """Everything the simulated camera holds: files (programs, names, temporaries), settings in RAM and
+        saved, and its setting saves."""
+        return copy.deepcopy((camera.files,camera.ram,camera.saved,camera.saves))
+
+    def continue_look_write(self,camera,paused,folder='continue'):
+        """Continue `paused` as the worker does, in a fresh writer whose one session runs the paused job's
+        checks before it writes. (outcome: the result or the ValueError, sessions opened, the camera and the
+        name writes as they were when the readiness check ran, or None when it never ran)."""
+        job=SimDirect(self.root/folder,factory=camera)
+        sessions,at_check=[],[]
+        ready=paused.names_reload_ready
+        def check(runtime):
+            at_check.append((self.camera_state(camera),list(self.forward_calls)))
+            return ready(runtime)
+        camera.native_calls.clear();self.forward_calls.clear()
+        with self.look_write(job),patch.object(Camera,'__enter__',lambda c:(sessions.append(c),c)[1]), \
+             patch.object(paused,'names_reload_ready',side_effect=check):
+            try:
+                outcome=job.run_direct('look_import',version='2.01',power_confirmed=True,slot=1,
+                                       look_path=str(paused.root/'reference.a7look'),paused=paused)
+            except ValueError as exc:
+                outcome=exc
+        return job,outcome,sessions,(at_check[0] if at_check else None)
+
+    def paused_record(self,paused):
+        return paused.state_path.read_bytes()
+
+    def test_after_the_cold_restart_one_connection_checks_the_names_and_writes_the_programs(self):
+        camera,paused=self.paused_look_write()
+        camera.boot='boot-new';camera.usr_mount_readonly=True
+        before,record=self.camera_state(camera),self.paused_record(paused)
+        job,result,sessions,at_check=self.continue_look_write(camera,paused)
+        self.assertEqual(result['phase'],'AWAITING_RELOAD')
+        self.assertEqual(len(sessions),1)
+        self.assertEqual(camera.files['/usr/lib/appFw.so'],self.target['appFw.so'])
+        self.assertEqual(at_check,(before,[]))  # nothing on the camera had changed when the check ran
+        self.assertNotIn(1,self.forward_calls)  # no name write: they were already written (forward_names skips them)
+        self.assertEqual(job.state['names_resume_from'],str(paused.root))
+        self.assertIn('names_reload_verified',[event['event'] for event in job.state['journal']])
+        self.assertEqual(self.paused_record(paused),record)  # the paused job's record is evidence; left as it was
+
+    def test_without_the_cold_restart_nothing_is_written_and_the_paused_job_stays(self):
+        for boot,readonly in (('boot-old',True),('boot-new',False),('',True)):
+            with self.subTest(boot=boot,readonly=readonly):
+                camera,paused=self.paused_look_write('paused-%s-%s'%(boot,readonly))
+                camera.boot,camera.usr_mount_readonly=boot,readonly
+                before,record=self.camera_state(camera),self.paused_record(paused)
+                job,outcome,sessions,_=self.continue_look_write(camera,paused,'continue-%s-%s'%(boot,readonly))
+                self.assertIsInstance(outcome,direct.ResourceReloadPending)
+                self.assertEqual(len(sessions),1)
+                self.assertEqual(self.camera_state(camera),before)
+                self.assertEqual(self.paused_record(paused),record)
+                self.assertEqual(job.state['names_resume_from'],str(paused.root))
+
+    def test_changed_names_stop_the_continuation_before_any_write(self):
+        name='/usr/share/app/'+nameworker.filenames()[0]
+        for change,reason in (('appended',r'inverse size'),('same length','Complete name readback differs')):
+            with self.subTest(change=change):
+                camera,paused=self.paused_look_write('paused-'+change)
+                camera.boot='boot-new';camera.usr_mount_readonly=True
+                data=camera.files[name]
+                camera.files[name]=data+b'bad!' if change=='appended' else data[:-1]+bytes([data[-1]^1])
+                before,record=self.camera_state(camera),self.paused_record(paused)
+                job,outcome,sessions,at_check=self.continue_look_write(camera,paused,'continue-'+change)
+                # The paused job no longer holds: it can never continue, so the page offers a fresh retry.
+                self.assertIsInstance(outcome,direct.PausedJobChanged)
+                self.assertRegex(str(outcome),reason)
+                self.assertIsNone(at_check)  # refused before the readiness check
+                self.assertEqual(camera.native_calls,[])  # and before the plan's probe: right after the camera was read
+                self.assertEqual(job.state['failed_during'],'READING')
+                self.assertEqual(self.camera_state(camera),before)
+                self.assertEqual(self.paused_record(paused),record)
+
+    def test_another_body_is_refused_when_the_session_opens(self):
+        camera,paused=self.paused_look_write()
+        camera.boot='boot-new';camera.usr_mount_readonly=True
+        camera.identity=dict(camera.identity,serial_sha256='another-body')
+        before,record=self.camera_state(camera),self.paused_record(paused)
+        job,outcome,sessions,at_check=self.continue_look_write(camera,paused)
+        # The fake binds in its opener; the real session refuses in __enter__ (BodyMismatch), also a ValueError.
+        self.assertIsInstance(outcome,ValueError);self.assertNotIsInstance(outcome,direct.PausedJobChanged)
+        self.assertEqual(sessions,[]);self.assertIsNone(at_check)
+        self.assertEqual(camera.native_calls,[]);self.assertEqual(job.state['failed_during'],'READING')
+        self.assertEqual(self.camera_state(camera),before)
+        self.assertEqual(self.paused_record(paused),record)
+
+    def test_only_a_look_write_continues_a_names_paused_job(self):
+        camera,paused=self.paused_look_write()
+        for mode in ('fl23_enable','factory_reset','sound_enable'):
+            with self.subTest(mode=mode):
+                job=SimDirect(self.root/('other-'+mode),factory=camera)
+                with self.assertRaisesRegex(ValueError,'names-paused'):
+                    job.run_direct(mode,version='2.01',power_confirmed=True,paused=paused)
+                self.assertFalse(job.root.exists())
+
+    def test_a_recovered_names_job_installs_its_programs_checked_in_the_writers_session(self):
+        # The rarer path: names stopped busy (NEEDS_REVIEW), prepare_names_reload found /usr read-only and
+        # verified it; its program-install child checks the recovery job again and records where it came from.
+        self.camera.usr_mount_readonly=True;self.camera.boot='boot-new'
+        recovery=self.job()
+        self.assertEqual(recovery.prepare_names_reload(self.failed,power_confirmed=True)['phase'],'RESOURCE_RELOAD_VERIFIED')
+        record=self.paused_record(recovery)
+        job=SimDirect(recovery.root/'program-install',factory=self.camera)
+        with self.look_write(job):
+            result=job.run_direct('look_import',version='2.01',power_confirmed=True,slot=1,
+                                  look_path=str(recovery.root/'reference.a7look'),paused=recovery)
+        self.assertEqual(result['phase'],'AWAITING_RELOAD')
+        self.assertEqual(self.camera.files['/usr/lib/appFw.so'],self.target['appFw.so'])
+        self.assertEqual(job.state['names_resume_from'],str(recovery.root))
+        self.assertEqual(self.paused_record(recovery),record)

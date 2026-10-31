@@ -82,6 +82,7 @@ def run(arguments, *, dispatch):
             install=nested.parent
             child_state=json.loads(nested.read_text(encoding='utf-8'))
             state['install_workspace']=str(install)
+        paused=lookbatch.stopped_continuation(child_state)
         if (state['phase'] in ('RESUMING_SETTINGS','NEEDS_REVIEW') and state.get('resume_settings_from') and not child_state and
                 (not install.exists() or not any(install.iterdir()))):
             install=Path(state['resume_settings_from'])
@@ -94,6 +95,12 @@ def run(arguments, *, dispatch):
             save('WAIT_RESOURCE_RELOAD',install_workspace=str(install))
         elif child_state.get('phase') in ('AWAITING_RESOURCE_RELOAD','RESOURCE_RELOAD_VERIFIED'):
             save('WAIT_RESOURCE_RELOAD')
+        elif paused and Path(paused,'direct.private.json').is_file():
+            # A continuation stopped before writing (no cold restart yet, another body, a refused connection):
+            # continue its paused job again; a fresh install would orphan it.
+            state.setdefault('failed_install_workspaces',[]).append(str(install))
+            install=Path(paused)
+            save('WAIT_RESOURCE_RELOAD',install_workspace=str(install))
         elif child_state.get('phase') in ('AWAITING_RELOAD', 'LOADED', 'COMPLETE'):
             # Re-read device proof even when the child finished before the
             # parent saved its result. LOADED children need no further reboot.

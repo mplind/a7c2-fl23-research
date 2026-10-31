@@ -104,27 +104,79 @@ class IntegrationTests(unittest.TestCase):
             obj.run_direct.assert_called_once()
             obj.verify_direct.assert_not_called()
 
-    def test_names_resume_before_cold_boot_never_starts_program_writer(self):
-        old=self.root/'old';old.mkdir();path=old/'direct.private.json';path.write_text('{"phase":"AWAITING_RESOURCE_RELOAD"}')
+    def names_checkpoint(self, **state):
+        """A names-paused job at self.root/'old', the fresh continuation job, and the paused job's own
+        DirectJob, as the worker makes them (the continuation first)."""
+        old=self.root/'old';old.mkdir();path=old/'direct.private.json'
+        path.write_text(json.dumps(dict(dict(phase='AWAITING_RESOURCE_RELOAD',mode='install_all'),**state)))
         fresh=Mock();fresh.root=self.root/'fresh'
         prior=Mock();prior.root=old;prior.state_path=path
-        prior.verify_names_reload.return_value=dict(phase='AWAITING_RESOURCE_RELOAD',mode='install_all')
-        with patch('looktool.direct.DirectJob',side_effect=[fresh,prior]):
-            result=worker.run('direct_resume_looks',dict(workspace=str(fresh.root),failed_workspace=str(old),firmware='2.01',power_confirmed=True),self.root)
-        self.assertEqual(result['workspace'],str(old));self.assertEqual(result['phase'],'AWAITING_RESOURCE_RELOAD')
-        fresh.run_direct.assert_not_called();prior.verify_names_reload.assert_called_once()
+        return old,fresh,prior
 
-    def test_names_resume_after_verification_uses_frozen_plan_for_one_program_install(self):
-        old=self.root/'old';old.mkdir();path=old/'direct.private.json';path.write_text('{"phase":"AWAITING_RESOURCE_RELOAD"}')
+    def resume(self, old, fresh, prior, source=None):
+        source=source or (lambda folder:(Path(folder),json.loads((Path(folder)/'direct.private.json').read_text()),b''))
+        with patch('looktool.direct.DirectJob',side_effect=[fresh,prior]),patch('looktool.namespause.source',side_effect=source):
+            return worker.run('direct_resume_looks',dict(workspace=str(fresh.root),failed_workspace=str(old),firmware='2.01',
+                                                         power_confirmed=True,options={}),self.root)
+
+    def test_names_resume_checks_and_writes_in_one_connection_with_the_frozen_plan(self):
+        # Field case, 31 Oct 2026: a separate check connection, then the write's own, and the camera refused
+        # service mode for the second. The writer now runs the paused job's check inside its own connection.
         frozen=dict(fl23=True,sound=False,looks=[dict(slot=2,path='saved.a7look')])
-        fresh=Mock();fresh.root=self.root/'fresh';fresh.run_direct.return_value=dict(phase='AWAITING_RELOAD',mode='install_all')
-        prior=Mock();prior.root=old;prior.state_path=path
-        prior.verify_names_reload.return_value=dict(phase='RESOURCE_RELOAD_VERIFIED',mode='install_all',bundle_options=frozen)
-        with patch('looktool.direct.DirectJob',side_effect=[fresh,prior]):
-            result=worker.run('direct_resume_looks',dict(workspace=str(fresh.root),failed_workspace=str(old),firmware='2.01',power_confirmed=True,options={}),self.root)
-        self.assertEqual(result['phase'],'AWAITING_RELOAD')
+        old,fresh,prior=self.names_checkpoint(bundle_options=frozen)
+        fresh.run_direct.return_value=dict(phase='AWAITING_RELOAD',mode='install_all')
+        result=self.resume(old,fresh,prior)
+        self.assertEqual(result['phase'],'AWAITING_RELOAD');self.assertEqual(result['workspace'],str(fresh.root))
         fresh.run_direct.assert_called_once()
+        self.assertEqual(fresh.run_direct.call_args.args,('install_all',))
         self.assertEqual(fresh.run_direct.call_args.kwargs['bundle_options'],frozen)
+        self.assertIs(fresh.run_direct.call_args.kwargs['paused'],prior)
+        prior.verify_names_reload.assert_not_called()  # no connection of its own
+
+    def test_a_paused_look_import_continues_with_its_own_look(self):
+        old,fresh,prior=self.names_checkpoint(mode='look_import',slot=3,name='Mine')
+        fresh.run_direct.return_value=dict(phase='AWAITING_RELOAD',mode='look_import')
+        self.resume(old,fresh,prior)
+        kwargs=fresh.run_direct.call_args.kwargs
+        self.assertEqual(fresh.run_direct.call_args.args,('look_import',))
+        self.assertEqual((kwargs['slot'],kwargs['name'],kwargs['look_path']),(3,'Mine',str(old/'reference.a7look')))
+
+    def test_names_resume_before_cold_boot_routes_back_to_the_paused_job(self):
+        from looktool.direct import ResourceReloadPending
+        old,fresh,prior=self.names_checkpoint()
+        fresh.run_direct.side_effect=ResourceReloadPending('尚未确认新的冷启动与只读挂载；没有重复写入。请按弹窗完成断电重开、接回。')
+        result=self.resume(old,fresh,prior)
+        # The paused job stays the one to continue, so the page keeps its Continue button.
+        self.assertEqual(result['workspace'],str(old));self.assertEqual(result['phase'],'AWAITING_RESOURCE_RELOAD')
+        prior.verify_names_reload.assert_not_called()
+
+    def test_a_verified_paused_job_not_ready_now_is_reported_as_waiting(self):
+        # Verify recorded the cold restart earlier; Continue now finds /usr not read-only. The record stays,
+        # and the result must not read as ready (One-click would continue again at once).
+        from looktool.direct import ResourceReloadPending
+        old,fresh,prior=self.names_checkpoint(phase='RESOURCE_RELOAD_VERIFIED')
+        before=(old/'direct.private.json').read_bytes()
+        fresh.run_direct.side_effect=ResourceReloadPending('尚未确认新的冷启动与只读挂载；没有重复写入。请按弹窗完成断电重开、接回。')
+        result=self.resume(old,fresh,prior)
+        self.assertEqual(result['phase'],'AWAITING_RESOURCE_RELOAD');self.assertEqual(result['workspace'],str(old))
+        self.assertEqual((old/'direct.private.json').read_bytes(),before)
+
+    def test_a_recovered_names_job_hands_itself_to_its_program_install(self):
+        old,fresh,prior=self.names_checkpoint(phase='NEEDS_REVIEW')
+        fresh.prepare_names_reload.return_value=dict(phase='RESOURCE_RELOAD_VERIFIED',mode='install_all',bundle_options={})
+        child=Mock();child.root=fresh.root/'program-install';child.run_direct.return_value=dict(phase='AWAITING_RELOAD',mode='install_all')
+        with patch('looktool.direct.DirectJob',side_effect=[fresh,prior,child]):
+            result=worker.run('direct_resume_looks',dict(workspace=str(fresh.root),failed_workspace=str(old),firmware='2.01',
+                                                         power_confirmed=True,options={}),self.root)
+        self.assertEqual(result['phase'],'AWAITING_RELOAD')
+        self.assertIs(child.run_direct.call_args.kwargs['paused'],fresh)
+
+    def test_a_checkpoint_that_cannot_continue_is_refused_before_any_connection(self):
+        old,fresh,prior=self.names_checkpoint()
+        def refuse(folder):raise ValueError('Not a completed-name reload checkpoint')
+        with self.assertRaisesRegex(ValueError,'Not a completed-name reload checkpoint'):
+            self.resume(old,fresh,prior,source=refuse)
+        fresh.run_direct.assert_not_called();prior.verify_names_reload.assert_not_called()
 
     def test_verify_resource_checkpoint_cannot_mark_program_install_complete(self):
         path=self.root/'direct.private.json';path.write_text('{"phase":"AWAITING_RESOURCE_RELOAD","mode":"install_all"}')

@@ -110,6 +110,46 @@ class LookEditorTests(unittest.TestCase):
         self.assertNotEqual(request['arguments']['workspace'],str(root))
         self.assertEqual((root/'direct.private.json').read_bytes(),before)
 
+    def stopped_continuation(self,journal=(),error_type='BodyMismatch'):
+        """A names-paused job, and a continuation of it that stopped (another body connected), as the page
+        finds them: its pointer on the continuation, the paused job as the resume source."""
+        paused,plan=self.pending('AWAITING_RESOURCE_RELOAD')
+        stopped=data_root()/'work'/'looks-continuation'
+        write_json(stopped/'direct.private.json',dict(schema='a7c2-direct-job/1',mode='install_all',phase='NEEDS_REVIEW',
+            bundle_options=plan['bundle_options'],  # a continuation carries its paused job's plan
+            failed_during='READING',journal=list(journal),names_resume_from=str(paused),error_type=error_type,
+            error='Checkpoint belongs to a different body, or body identity is missing'))
+        write_json(data_root()/'desktop.json',dict(look_direct_work=str(stopped),look_resume_source=str(paused)))
+        return paused,stopped
+
+    def test_a_continuation_that_stopped_before_writing_continues_its_paused_job(self):
+        paused,stopped=self.stopped_continuation()
+        window=self.window()
+        self.assertEqual(window.look_button.text(),'继续槽位更改')
+        with patch('desktopapp.window.ask', return_value=True),patch('desktopapp.window.QtCore.QProcess'):
+            window.look_button.click()
+        request=json.loads((window.current_job/'request.private.json').read_text())
+        self.assertEqual(request['action'],'direct_resume_looks')
+        self.assertEqual(request['arguments']['failed_workspace'],str(paused))
+
+    def test_a_paused_job_that_no_longer_holds_offers_a_fresh_retry_not_a_dead_continue(self):
+        # E.g. FL2/FL3 written after the names pause: its programs differ, so Continue could only fail again.
+        paused,stopped=self.stopped_continuation(error_type='PausedJobChanged')
+        window=self.window()
+        self.assertIn('上次未写入',window.look_button.text())
+        with patch('desktopapp.window.ask', return_value=True),patch('desktopapp.window.QtCore.QProcess'):
+            window.look_button.click()
+        request=json.loads((window.current_job/'request.private.json').read_text())
+        self.assertEqual(request['action'],'direct_looks_import')
+
+    def test_a_continuation_that_started_writing_is_never_continued_or_retried(self):
+        paused,stopped=self.stopped_continuation(journal=[dict(event='native_intent',mode=1,stage='checkpoint.staged.so')])
+        window=self.window()
+        with patch.object(jobs,'new_job') as new,patch.object(W.QMessageBox,'warning') as warning, \
+                patch('desktopapp.window.QtGui.QDesktopServices.openUrl'):
+            window.look_button.click()
+        new.assert_not_called();warning.assert_called_once()
+
     def test_read_only_retry_needs_complete_native_cleanup_and_no_write_intent(self):
         from desktopapp.lookbatch import read_only_failure
         base=dict(phase='NEEDS_REVIEW',failed_during='PLANNED',journal=[

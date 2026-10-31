@@ -119,22 +119,37 @@ def run(action, args, job):
         if mode=='resume_settings':
             result=obj.resume_install_settings(args['failed_workspace'],power_confirmed=args.get('power_confirmed',False))
         elif mode=='resume_looks':
+            from looktool import namespause
+            from looktool.direct import ResourceReloadPending
             prior_root=Path(args['failed_workspace'])
             prior=DirectJob(prior_root)
             saved=json.loads(prior.state_path.read_text(encoding='utf-8'))
+            def install(job,plan,root,paused=None):
+                # The programs of `plan`, a names-paused job's record; its look is in `root`. With `paused`,
+                # the job itself, the writer checks it in its own session first (DirectJob.run_direct).
+                return job.run_direct(plan['mode'],version=args['firmware'],power_confirmed=args.get('power_confirmed',False),
+                    bundle_options=plan.get('bundle_options'),slot=plan.get('slot'),name=plan.get('name'),
+                    look_path=str(root/'reference.a7look') if plan['mode']=='look_import' else None,paused=paused)
             if saved['phase']=='NEEDS_REVIEW':
                 result=obj.prepare_names_reload(prior_root,power_confirmed=args.get('power_confirmed',False))
                 if result['phase']=='RESOURCE_RELOAD_VERIFIED':
-                    prior_root=obj.root
+                    # The recovery job is the program install's paused job: checked again in the writer's
+                    # session, and where a stopped install routes back to.
+                    recovery=obj;prior_root=obj.root
                     obj=DirectJob(prior_root/'program-install')
+                    result=install(obj,result,prior_root,recovery)
             else:
-                result=prior.verify_names_reload()
-                if result['phase']!='RESOURCE_RELOAD_VERIFIED':
-                    obj=prior
-            if result['phase']=='RESOURCE_RELOAD_VERIFIED':
-                result=obj.run_direct(result['mode'],version=args['firmware'],power_confirmed=args.get('power_confirmed',False),
-                    bundle_options=result.get('bundle_options'),slot=result.get('slot'),name=result.get('name'),
-                    look_path=str(prior_root/'reference.a7look') if result['mode']=='look_import' else None)
+                # One service connection: the paused job's check runs inside the writer's session, before it
+                # writes. Opening a second session straight after the check's own is where the camera
+                # refused service mode (31 Oct 2026). A checkpoint that cannot continue is refused first.
+                _,prior.state,_=namespause.source(prior_root)
+                try:
+                    result=install(obj,prior.state,prior_root,prior)
+                except ResourceReloadPending as exc:
+                    print(str(exc),flush=True)
+                    # Not ready now, whatever an earlier Verify recorded: report the paused job as waiting
+                    # (One-click would otherwise continue again at once); its record stays as it was.
+                    obj=prior;result=dict(json.loads(prior.state_path.read_text(encoding='utf-8')),phase=namespause.WAIT)
         elif mode == 'verify':
             prior = json.loads(obj.state_path.read_text(encoding='utf-8'))
             if prior['mode'] == 'factory_reset':

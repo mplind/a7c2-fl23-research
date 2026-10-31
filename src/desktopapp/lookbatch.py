@@ -39,3 +39,13 @@ def read_only_failure(state):
         stop=stages[n+1] if n+1<len(stages) else len(events)
         if not any(e.get('event')=='native_cleanup_verified' for e in events[index+1:stop]):return False
     return True
+
+
+def stopped_continuation(state):
+    """The names-paused job that `state`, a continuation of it (DirectJob.run_direct's names_resume_from),
+    came from, when that continuation stopped before writing anything and the paused job can still go on
+    (no cold restart yet, another body connected, a refused connection): the job to continue. Else None,
+    also when the paused job no longer holds (PausedJobChanged), which leaves a fresh plan."""
+    resume=state.get('names_resume_from')
+    if not resume or state.get('error_type')=='PausedJobChanged':return None
+    return resume if read_only_failure(state) else None

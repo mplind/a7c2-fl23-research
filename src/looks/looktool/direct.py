@@ -34,6 +34,19 @@ class JobOtherBuild(ContentChanged, buildprofile.OtherBuild):
         self.recorded, self.camera = recorded, camera
 
 
+RELOAD_PENDING = '尚未确认新的冷启动与只读挂载；没有重复写入。请按弹窗完成断电重开、接回。'
+
+
+class ResourceReloadPending(ValueError):
+    """A names-paused job is not ready to continue: no cold restart since its names were written, or /usr
+    is not read-only again. Nothing was written, and the paused job stays as it was."""
+
+
+class PausedJobChanged(ValueError):
+    """A names-paused job no longer holds on its camera (its program windows or name files differ, e.g.
+    another feature was written since), so it can never continue: plan afresh instead. Nothing was written."""
+
+
 def recipe_defaults(ap, slots):
     result = {}
     def key(attribute):
@@ -496,7 +509,15 @@ class DirectJob(Rollback):
 
     def run_direct(self, mode, *, version, power_confirmed, factory_values=None,
                    factory_path=None, slot=None, look_path=None, name=None, bundle_options=None,
-                   recovery_identity=None,recovery_source=None):
+                   recovery_identity=None,recovery_source=None,paused=None):
+        """Plan and write `mode` in one service session. With `paused`, a names-paused look write (a
+        DirectJob whose names are written), this continues it: the session opens only on its body, and
+        before anything is written it checks the paused job still holds (check_names_paused, right after
+        the camera is read) and the camera has been cold-restarted (names_reload_ready, after the runtime
+        probe); not restarted, it stops with ResourceReloadPending. The paused job's record is left as it
+        was; this job records where it continues from (names_resume_from)."""
+        if paused is not None and mode not in ('install_all','look_import'):
+            raise ValueError('Only a look write continues a names-paused job')
         require_power(confirmed=power_confirmed)
         if version != '2.01':
             raise ValueError('Direct operations support ILCE-7CM2 2.01 only')
@@ -517,11 +538,13 @@ class DirectJob(Rollback):
             factory_path=factory_path, job_id=uuid.uuid4().hex[:16], journal=[], backup_created=False,
             power_confirmation=require_power(confirmed=True))
         if mode=='factory_reset' and recovery_source:self.state['supersedes_workspace']=str(recovery_source)
+        if paused is not None:self.state['names_resume_from']=str(paused.root)
         if mode == 'install_all':self.state['bundle_options'] = bundle_options
         self.save('READING')
         resource_pause=False
         try:
-            context=(self.recovery_session(recovery_identity) if mode=='factory_reset' and recovery_identity else self.factory())
+            context=(self.recovery_session(recovery_identity) if mode=='factory_reset' and recovery_identity else
+                     self.factory(paused.state['identity']) if paused is not None else self.factory())
             with context as camera:
                 self.state['identity'] = camera.identity
                 if mode in ('sound_enable','sound_disable','sound_restore'):
@@ -533,6 +556,7 @@ class DirectJob(Rollback):
                     from .factoryrecover import supersede_temporary
                     supersede_temporary(camera,self.root/'evidence/superseded-temporary',self.record)
                 current = self.capture(camera)
+                if paused is not None:paused.check_names_paused(camera)
                 if mode == 'install_all':
                     target, wanted, rename = bundle.plan(current, camera.records(current['settings-ram.bin']), bundle_options,
                                                          bundle_rows, build=camera.require_build())
@@ -568,6 +592,10 @@ class DirectJob(Rollback):
                 runtime = self.native(camera, 'runtime', 0)
                 if runtime['image_mode'].strip() not in ('0', '2'):
                     raise ValueError('Unsupported retained image state')
+                if paused is not None:
+                    if not paused.names_reload_ready(runtime):
+                        raise ResourceReloadPending(RELOAD_PENDING)
+                    self.record('names_reload_verified', paused=str(paused.root), boot_id=runtime['boot_id'].strip())
                 self.prepare_vertical(camera)
                 planned_change = bool(mode=='sound_restore' or programs or inverse_names or (forward and not forward.get('unchanged'))
                     or (self.vertical_stage and self.vertical_stage.needs_change)
@@ -695,17 +723,36 @@ class DirectJob(Rollback):
         except BaseException as exc:
             self.stopped(exc);raise
 
-    def verify_names_reload(self):
+    def check_names_paused(self,camera):
+        """In an open session on `camera`, check that this names-paused job still holds: the same body, its
+        program windows still the originals, and every name file as it wrote them. Raises on any difference;
+        reads only. Loads the job's record into self.state."""
         from . import namespause
-        root,self.state,raw=namespause.source(self.root)
-        if self.state['phase'] not in (namespause.WAIT,'RESOURCE_RELOAD_VERIFIED'):raise ValueError('First prepare resource reload')
-        with self.recovery_session(self.state['identity']) as camera:
+        root,self.state,_=namespause.source(self.root)
+        if self.state['phase'] not in (namespause.WAIT,'RESOURCE_RELOAD_VERIFIED'):raise PausedJobChanged('First prepare resource reload')
+        checkpoint.same_body(camera.identity,self.state['identity'])
+        try:
             namespause.verify_files(camera,root,self.state)
+        except ValueError as exc:
+            raise PausedJobChanged(str(exc)) from exc
+
+    def names_reload_ready(self,runtime):
+        """Whether the camera has been cold-restarted since this job wrote its names, by the session's
+        runtime probe `runtime`: /usr read-only again, and a boot id, new unless no reload was needed."""
+        boot=runtime.get('boot_id','').strip()
+        return bool(runtime.get('usr_mount_readonly') is True and boot and
+                    (self.state.get('resource_reload_not_needed') or boot!=self.state.get('source_boot_id')))
+
+    def verify_names_reload(self):
+        """The Verify button's read-only check of a names-paused job, in a session of its own: records
+        RESOURCE_RELOAD_VERIFIED once the camera has been cold-restarted."""
+        from . import namespause
+        _,self.state,_=namespause.source(self.root)
+        with self.recovery_session(self.state['identity']) as camera:
+            self.check_names_paused(camera)
             runtime=self.native(camera,'runtime',0)
-            ready=(runtime.get('usr_mount_readonly') is True and
-                (self.state.get('resource_reload_not_needed') or runtime['boot_id'].strip()!=self.state.get('source_boot_id')))
-        if not ready:
-            print('尚未确认新的冷启动与只读挂载；没有重复写入。请按弹窗完成断电重开、接回。',flush=True)
+        if not self.names_reload_ready(runtime):
+            print(RELOAD_PENDING,flush=True)
             return self.state
         self.save('RESOURCE_RELOAD_VERIFIED',resource_reload_verified=True,resource_boot_id=runtime['boot_id'].strip())
         return self.state
