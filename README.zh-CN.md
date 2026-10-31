@@ -100,7 +100,7 @@ A7C II Tools 把照片 LUT、Adobe DCP 配置文件，或修图软件中某个�
     python -m pip install --no-build-isolation -r desktop-requirements.txt pyinstaller==6.16.0
     ```
 
-2. 从 [Releases](https://github.com/mplind/a7c2-fl23-research/releases) 下载 `A7C2Tools-desktop-assets.zip`，解压到该文件夹。其中包含六款内置外观、胶片外观库和快门声，与 macOS 安装包中的文件相同。
+2. 从 [Releases](https://github.com/mplind/a7c2-fl23-research/releases) 下载 `A7C2Tools-desktop-assets.zip`，解压到该文件夹。其中包含六款内置外观、胶片外观库、配对 DCP 配置文件和快门声，与 macOS 安装包中的文件相同。
 3. 加入所在平台的辅助文件并构建：
 
     ```sh

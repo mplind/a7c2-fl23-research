@@ -100,7 +100,7 @@ This fork has been built and tested only on an Intel Mac, because that is the on
     python -m pip install --no-build-isolation -r desktop-requirements.txt pyinstaller==6.16.0
     ```
 
-2. Download `A7C2Tools-desktop-assets.zip` from [Releases](https://github.com/mplind/a7c2-fl23-research/releases) and unzip it in that folder. It holds the six built-in looks, the film-look library and the shutter sounds, the same files the macOS package carries.
+2. Download `A7C2Tools-desktop-assets.zip` from [Releases](https://github.com/mplind/a7c2-fl23-research/releases) and unzip it in that folder. It holds the six built-in looks, the film-look library, the paired DCP profiles and the shutter sounds, the same files the macOS package carries.
 3. Add your platform's helpers and build:
 
     ```sh
