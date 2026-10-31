@@ -18,8 +18,8 @@ import prepare_personal_looks as personal  # noqa: E402
 from looksamples import look_file  # noqa: E402
 from packsamples import OWNER_SIX as SIX  # noqa: E402
 
-DEHANCER_LICENCE = 'Personal use only — converted from a purchased Dehancer licence; not for distribution'
-DXO_LICENCE = 'Personal use only — converted from a purchased DxO licence; not for distribution'
+DEHANCER_LICENCE = 'Personal use only: converted from a purchased Dehancer licence; not for distribution'
+DXO_LICENCE = 'Personal use only: converted from a purchased DxO licence; not for distribution'
 BUNDLED_LICENCE = 'Already bundled with A7C II Tools (its attribution: owner-supplied DCP, MIT). Fujifilm-derived.'
 
 

@@ -283,7 +283,7 @@ class RenderJob:
 
 
 class PreviewDialog(W.QDialog):
-    """Renders through a RenderJob; the model work cannot be cancelled, so a closed dialog just drops the result."""
+    """Renders through a RenderJob; the model work cannot be cancelled, so closing the dialog drops the result."""
 
     def __init__(self, look, *, cache, parent=None, render=None):
         super().__init__(parent)

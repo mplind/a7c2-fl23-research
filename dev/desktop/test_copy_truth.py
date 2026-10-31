@@ -549,3 +549,12 @@ def test_the_popup_after_a_finished_look_write_has_no_names_stage_step():
 def test_terms_the_look_settings_never_recipes_outside_film_recipes():
     from desktopapp.en_engine import ENGINE
     assert [e for e in ENGINE.values() if isinstance(e, str) and 'programs and recipes' in e] == []
+
+
+def test_the_write_button_counts_one_change_and_many(window):
+    # The README's own-LUT steps end with one slot; "Write 1 changes…" read wrong on the main write button.
+    ui = window('en')
+    ui.look_editor.add_row(4)
+    assert ui.look_button.text() == 'Write 1 change…'
+    ui.look_editor.add_row(5)
+    assert ui.look_button.text() == 'Write 2 changes…'

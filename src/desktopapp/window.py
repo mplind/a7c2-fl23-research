@@ -885,7 +885,7 @@ class Window(W.QMainWindow):
                 # A job a firmware refusal stopped is not continued: the plan stays editable beneath the refusal.
                 self.look_pending.setText(refusal);self.look_pending.setVisible(bool(refusal));self.look_editor.setEnabled(not busy)
                 rows=self.look_editor.values()
-                self.look_button.setText(tr('查看并应用这 %d 项更改')%len(rows) if rows else tr('添加操作项后继续'))
+                self.look_button.setText((tr('查看并应用这 1 项更改') if len(rows)==1 else tr('查看并应用这 %d 项更改')%len(rows)) if rows else tr('添加操作项后继续'))
                 self.look_button.setEnabled(bool(rows) and not self.look_editor.errors() and not busy)
         finally:self._look_refreshing=False
         self.apply_write_gate()

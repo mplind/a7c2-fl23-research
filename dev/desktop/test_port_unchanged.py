@@ -668,7 +668,7 @@ def test_custom_look_windows_lie_inside_the_restore_regions(name, build):
 
 
 def stock_layout():
-    """An appFw.so-sized buffer holding just what canonical_windows checks: every canvas root, every
+    """An appFw.so-sized buffer holding only what canonical_windows checks: every canvas root, every
     original image ID, portrait and landscape, and both stock gauge blocks."""
     raw = bytearray(max(max(portrait, landscape) + max(delta, 24) for portrait, landscape, delta, _ in portraitlayout.PAIRS) + 4)
     for portrait, landscape, delta, original in portraitlayout.PAIRS:

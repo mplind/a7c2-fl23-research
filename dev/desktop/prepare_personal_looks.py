@@ -39,7 +39,7 @@ KINDS = {'Kodachrome': 'slide', 'Velvia': 'slide', 'Fuji Provia': 'slide', 'Port
 # The maker and site of the app each look was converted from, by the manifest's 'source'.
 MAKERS = {'dehancer': ('Dehancer', 'https://www.dehancer.com/'),
              'dxo': ('DxO', 'https://www.dxo.com/dxo-filmpack/')}
-LICENCE = 'Personal use only — converted from a purchased %s licence; not for distribution'
+LICENCE = 'Personal use only: converted from a purchased %s licence; not for distribution'
 # The manifest's reasons end with the look's fit, which the library dialog shows on its own.
 FIT_SENTENCE = re.compile(r'\s*Fit: MAE .*\Z', re.S)
 # The Classic Chrome that A7C II Tools already bundles (its paired profile library). It keeps the licence

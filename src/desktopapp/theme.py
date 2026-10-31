@@ -81,7 +81,7 @@ def mono_families():
 def tinted(name, colour):
     """Path of an SVG asset with its stroke recoloured, for style sheet url(). The copies live in
     one folder under the app's data, named by asset, colour and content, so launches reuse them
-    and a folder removed mid-session is simply recreated."""
+    and a folder removed mid-session is recreated."""
     source = (ASSETS / name).read_text(encoding='utf-8')
     digest = hashlib.sha1(source.encode('utf-8')).hexdigest()[:8]
     folder = data_root() / 'cache/theme'

@@ -1,4 +1,4 @@
-"""The root conftest's guard holds in this test tree too, not only under dev/desktop: no test may run
+"""The root conftest's guard holds in this test tree as well as under dev/desktop: no test may run
 ioreg or diskutil, which read and unmount the Mac's USB devices and disks (an attached camera's among
 them), nor reach the administrator prompt."""
 from pathlib import Path
