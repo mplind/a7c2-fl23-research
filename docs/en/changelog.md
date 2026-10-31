@@ -2,9 +2,13 @@
 
 [Home](../../README.md) · [简体中文](../zh-CN/changelog.md)
 
-## Unreleased — messages that match what the app does
+## Unreleased — truthful messages, one-connection Continue and the first camera check
 
 - Buttons, help text, confirmations and job messages say what each control and job actually does, checked against the code. The FL2/FL3, Vertical display and Shutter sound switches are one row each with both buttons; buttons that open a dialog first end with an ellipsis; the write confirmation says the click confirms the battery level, which the app can't read, and what the build check does and doesn't cover; the banner while a task runs says whether the camera is in use; the log names each one-click step; and the Mac no longer shows the Prepare and driver rows, which do nothing there that Detect or Test doesn't. Nothing in the camera writes changed.
+- Continuing a look change after its names were written now uses one service connection. The check that the camera was cold-restarted and still holds the written names runs inside the connection that writes the programs, before anything is written. Before, a separate check connection came first, and on 31 Oct 2026 the camera refused service mode for the second one three times; only a cold restart cleared it. If Continue stops before writing (no cold restart yet, another camera connected, a refused connection), the page and One-click offer Continue on the same paused change again instead of a fresh retry. If the paused change can no longer go on, for example because FL2/FL3 was written after its names, they offer a fresh retry. A different camera is refused before it is authenticated.
+- A passed connection Test names the firmware build it found and says nothing was written, instead of "Done. Details are in the log."
+- Instructions to pick the camera's USB mode use the camera's own label, MassStorage (MSC), and no longer give its position: it is item 3 in USB Connection Mode, not item 2.
+- First camera check of the second 2.01 compile (CP build 23 Sep 2025), with r7, 30–31 Oct 2026: the read-only fingerprint and Test identified the build; FL2/FL3, six custom looks (Custom 1–6, and one slot changed afterwards) and Vertical display were written, read back and checked on the camera after the cold restart; a final read-only fingerprint found the same build with only tool-owned regions changed. Shutter sound was not tried. Resetting a slot to ST has not been tried on this camera.
 
 ## 3.0.3 Intel macOS build r7 — firmware build gate and body-build support — 2026-10-28
 
