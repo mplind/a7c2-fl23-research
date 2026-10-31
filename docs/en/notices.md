@@ -2,7 +2,7 @@
 
 [Home](../../README.md) · [简体中文](../zh-CN/notices.md)
 
-Newly authored code is [MIT licensed](../../LICENSE). This is independent research, not affiliated with Sony, Fujifilm, Ricoh or Adobe; look names imply neither endorsement nor exact color equivalence.
+Original project code owned or licensable by QAQLeonard in this distribution uses the unmodified standard [PolyForm Noncommercial License 1.0.0](../../LICENSE). This fork's own changes use the same licence. All commercial use and profit-making are prohibited. This is independent research, not affiliated with Sony, Fujifilm, Ricoh or Adobe; look names imply neither endorsement nor exact color equivalence.
 
 ## DCPs and paired looks
 
@@ -15,10 +15,10 @@ Newly authored code is [MIT licensed](../../LICENSE). This is independent resear
 - These DCPs are **RAW-development profiles for the Sony ILCE-7CM2**, not firmware. To use one manually in Lightroom on Windows, copy it into `%APPDATA%\Adobe\CameraRaw\CameraProfiles` and restart Lightroom/Camera Raw.
 
 Licenses:
-- **Fuji-style:** used with the author's permission and licensed under [MIT](../../LICENSE).
-- **Ricoh-style:** used with the author's permission and licensed under [MIT](../../LICENSE).
-- **FL2/FL3 DCPs:** the two Lightroom profiles matching the in-camera FL2 and FL3, used with the author's permission and licensed under [MIT](../../LICENSE); included with the 3.0 Release.
-- Every DCP and the look data derived from it is used with the authors' permission and licensed under MIT, like the code. Original metadata is recorded in the [manifest](../profiles/manifest.json).
+- **Fuji-style:** used with the author's permission and licensed under [MIT](../licenses/project-legacy-MIT.txt).
+- **Ricoh-style:** used with the author's permission and licensed under [MIT](../licenses/project-legacy-MIT.txt).
+- **FL2/FL3 DCPs:** the two Lightroom profiles matching the in-camera FL2 and FL3, used with the author's permission and licensed under [MIT](../licenses/project-legacy-MIT.txt); included with the 3.0 Release.
+- Every DCP and the look data derived from it is used with the authors' permission and retains its original MIT license without applying the new PolyForm noncommercial license. Original metadata is recorded in the [manifest](../profiles/manifest.json).
 
 ## Code and research sources
 
@@ -39,3 +39,55 @@ Licenses:
 ## Firmware and data
 
 Sony A7C II 2.01 and Alpha 1 II 4.00 firmware were analysis sources; Sony firmware, trademarks and data remain their owners' material. This project distributes no complete firmware, signed update container, body backup/calibration, photos, credentials or private derived data. The built-in factory reference holds only generic stock bytes for the regions this project changes.
+
+## Risk notice and use statement
+
+> **Version note:** this statement matches the current local preview's startup notice. Released 3.0.3 does not yet include that consent dialog and still uses a limited built-in factory reference; user-provided recovery sources belong to the development version. This documentation update does not replace published packages.
+>
+> **In this fork:** the app does not show the startup consent dialog either. The statement below still sets out the risks and the terms of use; read it before your first write.
+
+### Independent research and device authorization
+
+This is a free, independent project for photographic color research, interoperability, learning and technical discussion. It is not affiliated with, authorized, approved, sponsored or endorsed by Sony, its affiliates or authorized repair providers. Product names identify compatible devices; the corresponding trademarks remain their owners' property.
+
+Only operate a device you lawfully own or for which the lawful owner has given explicit, informed permission. Do not modify rental, display, sale-stock or another person's equipment without authorization.
+
+### Important device risks and liability
+
+**Modifications can cause a camera to fail to boot, repeatedly restart, malfunction or lose images/settings, and may result in repair or replacement costs. They can also affect official updates and warranty or repair eligibility.** Coverage depends on applicable law, the damage and service policies; free repairs are not guaranteed.
+
+**Successful writes, complete readback and offline tests do not establish boot safety or stability in every mode. One-click restoration is not a complete system reinstallation and is not guaranteed to recover damage or an unbootable camera.** Preserve important images, same-body backups and any required official firmware. A backup does not guarantee recovery.
+
+The software is provided as is to the extent permitted by law, without promises of correctness, fitness, safety or successful recovery. Users decide whether to proceed and bear risks that lawfully fall to them. **This statement does not exclude or limit liability that cannot lawfully be excluded**, including applicable non-excludable liability for intentional misconduct or gross negligence.
+
+### No commercial use or profit-making
+
+**All commercial use and profit-making are prohibited. The author explicitly opposes paid flashing, paid remote installation, resale or paid bundles of the tool, paid unlocking, selling activation keys/dongles, and hardware bundles for profit. This project is provided free of charge. The author offers no paid flashing service and has not authorized anyone to offer these paid services in the author's name.**
+
+### Do not impersonate Sony or claim author authorization
+
+**The author has never authorized anyone to offer paid services, advertise or promise warranty coverage in the author's or Sony's official name. Do not impersonate Sony, the author or an authorized service provider.** Third-party fees imply no author involvement, approval, endorsement or guarantee. Those parties remain responsible for their own transactions and conduct under applicable law.
+
+### License files and liability
+
+Original project code in this distribution uses the unmodified standard [PolyForm Noncommercial License 1.0.0](../../LICENSE), available from the [PolyForm project](https://polyformproject.org/licenses/noncommercial/1.0.0). This license is granted only for original code owned or licensable by QAQLeonard. Other contributors' separately licensed contributions, third-party components, DCP/profile assets and firmware material retain their existing licenses and rights. Earlier permissions are not retroactively revoked; see the [legacy MIT text](../licenses/project-legacy-MIT.txt). This statement does not exclude liability that cannot lawfully be excluded.
+
+Required Notice: Copyright (c) 2026 QAQLeonard, for original project-authored code.
+
+This fork's own changes, listed in the [changelog](changelog.md), use the same PolyForm Noncommercial License 1.0.0.
+
+Required Notice: Copyright (c) 2026 mplind, for changes made in this fork.
+
+### Firmware sources, copyright and DMCA considerations
+
+To respect firmware copyright and reduce distribution and anti-circumvention risks, including those under the US Digital Millennium Copyright Act (DMCA), the project does not supply complete Sony firmware, signed official update packages, original voice packs or other bodies' backups for download. Factory recovery always requires an original source; use your own same-body backup or obtain a compatible **ILCE-7CM2 2.01 `BODYDATA.DAT`** from Sony for local processing.
+
+This is a project distribution policy, not a claim that the DMCA requires every user to download firmware. Device ownership, backups, personal research or non-commercial purpose do not automatically authorize circumvention; applicable restrictions and exceptions depend on the law and conduct involved.
+
+Some implementations contain or process small instruction/data fragments derived from firmware research and FL2/FL3 donor color data; it would be inaccurate to claim that the project contains no Sony-derived bytes. Rights remain with their owners, and authorization for every implementation is not guaranteed. **This statement, the research purpose and user consent neither confer Sony authorization nor prevent objections, takedown requests or litigation.**
+
+### Confirmation and rights-holder contact
+
+Each normal desktop launch requires manually checking the agreement and selecting the continue button. Leaving it unchecked, declining or closing the dialog does not open the operation interface. Confirmation provides risk notice; it does not waive rights that cannot lawfully be waived.
+
+Rights holders may identify disputed content and the basis of their claim through [project Issues](https://github.com/QAQLeonard/a7c2-fl23-research/issues); the author will review and address the report.

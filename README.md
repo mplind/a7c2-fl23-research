@@ -18,7 +18,7 @@
 
 <div align="center">
 
-[![License: MIT][license-shield]][license-url] [![Camera: ILCE-7CM2 firmware 2.01][camera-shield]][camera-url] [![macOS: Intel][macos-shield]][install-url]
+[![License: PolyForm Noncommercial][license-shield]][license-url] [![Camera: ILCE-7CM2 firmware 2.01][camera-shield]][camera-url] [![macOS: Intel][macos-shield]][install-url]
 
 </div>
 
@@ -26,7 +26,7 @@ Turn your LUTs, DCP profiles and editor looks into in-camera Creative Looks on t
 
 A7C II Tools converts a photo LUT, an Adobe DCP profile or the colour of a look from your editor into a Creative Look, and writes it into one of the camera's six Custom slots. Live view shows the look before you press the shutter, and every JPEG comes out with it. The same app adds FL2/FL3, vertical display and a shutter sound, and puts everything back on request.
 
-This is a fork of [A7C II Tools](https://github.com/QAQLeonard/a7c2-fl23-research) by QAQLeonard. It adds an English interface, Intel Mac support, and a check of the camera's 2.01 firmware build before every write.
+This is a fork of [A7C II Tools](https://github.com/QAQLeonard/a7c2-fl23-research) by QAQLeonard. It adds an English interface, Intel Mac support, and a check of the camera's 2.01 firmware build before every write. Like upstream, it's free for noncommercial use only: nobody may sell it or charge to install it.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/readme/looks-dark.jpg">
@@ -81,6 +81,9 @@ Now you switch between them on the camera and live view changes with each one, s
 
 You need a Sony A7C II (ILCE-7CM2) on firmware 2.01, an Intel Mac (tested on macOS 15) and a USB cable that carries data.
 
+> [!WARNING]
+> This is unofficial research software, not made or endorsed by Sony. Writing to the camera can stop it booting, make it restart over and over or lose images and settings, and can affect official updates, warranty and repair. A complete read-back doesn't prove the camera will boot, and Factory restore may not recover it. Use it only on a camera you own or have the owner's permission to change, back up your images first, and read the full [risk notice](docs/en/notices.md#risk-notice-and-use-statement).
+
 1. Download `A7C2Tools-macOS-x86_64.dmg` from [Releases](https://github.com/mplind/a7c2-fl23-research/releases).
 2. Open it and drag **A7C II Tools** to Applications.
 3. The app has no Developer ID signature. On first launch, allow it under **System Settings → Privacy & Security → Open Anyway**.
@@ -119,8 +122,7 @@ This fork has been built and tested only on an Intel Mac, because that is the on
 
 After a write, the dialog asks for a cold restart: unplug USB, wait for the access lamp to stop blinking, switch the camera off, take the battery out for at least a minute, then put it back and switch on. Switching off and on again is not enough.
 
-> [!IMPORTANT]
-> The app changes programs in the camera's firmware. Read each dialog, keep the camera connected and powered until the app says reading and writing have ended, and if it reports an error, click **Export diagnostics…** before trying again.
+Read each dialog, and keep the camera connected and powered until the app says reading and writing have ended. If it reports an error, click **Export diagnostics…** before trying again.
 
 <details>
 <summary><b>Each feature on its own</b></summary>
@@ -215,9 +217,11 @@ For other cameras: [lzh2016zzz/a7cr-fl23-research](https://github.com/lzh2016zzz
 
 ## License
 
-[MIT](LICENSE), copyright the A7C II FL2/FL3 preview contributors and mplind. Bundled looks and third-party components keep their own licences; see the [notices](docs/en/notices.md).
+[PolyForm Noncommercial 1.0.0](LICENSE), like upstream. You can use, change and share this fork for any noncommercial purpose. All commercial use and profit-making are prohibited, including paid flashing, paid installs, resale and paid bundles.
 
-[license-shield]: https://img.shields.io/badge/license-MIT-c4732b?style=flat-square
+Upstream versions from before 25 Oct 2026 keep their [MIT terms](docs/licenses/project-legacy-MIT.txt). Bundled looks, DCP profiles and third-party components keep their own licences, and the required notices are in the [notices](docs/en/notices.md).
+
+[license-shield]: https://img.shields.io/badge/license-PolyForm%20Noncommercial-c4732b?style=flat-square
 [license-url]: LICENSE
 [camera-shield]: https://img.shields.io/badge/camera-ILCE--7CM2%20firmware%202.01-c4732b?style=flat-square
 [camera-url]: #install

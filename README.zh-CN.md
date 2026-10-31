@@ -18,7 +18,7 @@
 
 <div align="center">
 
-[![License: MIT][license-shield]][license-url] [![Camera: ILCE-7CM2 firmware 2.01][camera-shield]][camera-url] [![macOS: Intel][macos-shield]][install-url]
+[![License: PolyForm Noncommercial][license-shield]][license-url] [![Camera: ILCE-7CM2 firmware 2.01][camera-shield]][camera-url] [![macOS: Intel][macos-shield]][install-url]
 
 </div>
 
@@ -26,7 +26,7 @@
 
 A7C II Tools 把照片 LUT、Adobe DCP 配置文件，或修图软件中某个外观的色彩，转换为创意外观，写入相机的六个自定义槽位之一。按下快门前，取景画面就是这个外观，每张 JPEG 都直接带上它。同一个应用还能加入 FL2/FL3、竖屏显示和快门声，并能按需全部恢复。
 
-本项目是 QAQLeonard 的 [A7C II Tools](https://github.com/QAQLeonard/a7c2-fl23-research) 的分支，加入了英文界面、Intel Mac 支持，并在每次写入前核对相机的 2.01 固件编译版本。
+本项目是 QAQLeonard 的 [A7C II Tools](https://github.com/QAQLeonard/a7c2-fl23-research) 的分支，加入了英文界面、Intel Mac 支持，并在每次写入前核对相机的 2.01 固件编译版本。与上游一样，本分支只允许非商业使用：任何人不得出售它，也不得收费代装。
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/readme/looks-dark.jpg">
@@ -81,6 +81,9 @@ A7C II Tools 把照片 LUT、Adobe DCP 配置文件，或修图软件中某个�
 
 你需要：固件 2.01 的 Sony A7C II（ILCE-7CM2）、一台 Intel Mac（在 macOS 15 上测试）和一根能传数据的 USB 线。
 
+> [!WARNING]
+> 这是非官方的研究软件，与 Sony 无关，也未获 Sony 认可。写入相机可能导致无法开机、反复重启、丢失照片或设置，并可能影响官方更新、保修和维修。完整读回不代表相机一定能正常启动，恢复原厂功能也不保证能救回相机。只在你自己拥有、或已获机主许可的相机上使用，先备份照片，并阅读完整的[风险告知](docs/zh-CN/notices.md#风险告知与使用声明)。
+
 1. 从 [Releases](https://github.com/mplind/a7c2-fl23-research/releases) 下载 `A7C2Tools-macOS-x86_64.dmg`。
 2. 打开后把 **A7C II Tools** 拖进“应用程序”。
 3. 应用没有开发者签名。首次打开时，在 **系统设置 → 隐私与安全性 → 仍要打开** 中允许。
@@ -119,8 +122,7 @@ A7C II Tools 把照片 LUT、Adobe DCP 配置文件，或修图软件中某个�
 
 写入后，弹窗会提示断电重开：拔掉 USB，等存取灯停止闪烁，关机，取下电池至少一分钟，再装回开机。只关机再开机不够。
 
-> [!IMPORTANT]
-> 应用会改动相机固件中的程序。请阅读每个弹窗；在应用显示“读写已结束”之前，保持相机连接和供电。如果应用报错，请先点 **导出诊断包**，再重试。
+请阅读每个弹窗；在应用显示“读写已结束”之前，保持相机连接和供电。如果应用报错，请先点 **导出诊断包**，再重试。
 
 <details>
 <summary><b>单独使用各项功能</b></summary>
@@ -215,9 +217,11 @@ A7C II Tools 由 [QAQLeonard](https://github.com/QAQLeonard) 和原项目的贡�
 
 ## 许可
 
-[MIT](LICENSE)，版权归 A7C II FL2/FL3 preview contributors 和 mplind。内置外观和第三方组件保留各自的许可，见[声明](docs/zh-CN/notices.md)。
+与上游一样采用 [PolyForm Noncommercial 1.0.0](LICENSE)。你可以出于任何非商业目的使用、修改和分享本分支；禁止一切商用牟利，包括收费代刷、收费代装、转售和付费捆绑。
 
-[license-shield]: https://img.shields.io/badge/license-MIT-c4732b?style=flat-square
+上游在 2026 年 10 月 25 日之前的版本保留其 [MIT 条款](docs/licenses/project-legacy-MIT.txt)。内置外观、DCP 配置文件和第三方组件保留各自的许可，必需声明见[声明](docs/zh-CN/notices.md)。
+
+[license-shield]: https://img.shields.io/badge/license-PolyForm%20Noncommercial-c4732b?style=flat-square
 [license-url]: LICENSE
 [camera-shield]: https://img.shields.io/badge/camera-ILCE--7CM2%20firmware%202.01-c4732b?style=flat-square
 [camera-url]: #安装

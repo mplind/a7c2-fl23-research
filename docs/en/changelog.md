@@ -2,7 +2,9 @@
 
 [Home](../../README.md) · [简体中文](../zh-CN/changelog.md)
 
-## Unreleased — truthful messages, one-connection Continue and the first camera check
+## 3.0.3-intel.1 — first public release of the Intel and English fork — 2026-10-31
+
+- This fork follows upstream to the PolyForm Noncommercial License 1.0.0. Its own changes are released on the same terms, so all commercial use and profit-making are prohibited. The README leads with converting your own LUTs, DCP profiles and editor looks.
 
 - Buttons, help text, confirmations and job messages say what each control and job does, checked against the code. The FL2/FL3, Vertical display and Shutter sound switches are one row each with both buttons; buttons that open a dialog first end with an ellipsis; the write confirmation says the click confirms the battery level, which the app can't read, and what the build check does and doesn't cover; the banner while a task runs says whether the camera is in use; the log names each one-click step; and the Mac no longer shows the Prepare and driver rows, which do nothing there that Detect or Test doesn't. Nothing in the camera writes changed.
 - Continuing a look change after its names were written now uses one service connection. The check that the camera was cold-restarted and still holds the written names runs inside the connection that writes the programs, before anything is written. Before, a separate check connection came first, and on 31 Oct 2026 the camera refused service mode for the second one three times; only a cold restart cleared it. If Continue stops before writing (no cold restart yet, another camera connected, a refused connection), the page and One-click offer Continue on the same paused change again instead of a fresh retry. If the paused change can no longer go on, for example because FL2/FL3 was written after its names, they offer a fresh retry. A different camera is refused before it is authenticated.
@@ -21,6 +23,14 @@ A local Intel macOS build, `A7C2Tools-3.0.3-macOS-x86_64-r7-buildgate.dmg`, on t
 - libusb's debug log is on only for jobs that write to the camera, where a failure needs the trace, and for Check connection stability. It writes about 10 MB/min of root-owned logs, so read-only jobs no longer turn it on. An explicit `LIBUSB_DEBUG` passes through.
 - New app icon: one sunset through six film looks in a 35mm slide mount.
 - Evidence is offline only. The tests run against both builds' real program files, and the packaged self-test and startup check pass. Nothing in this build has run on a camera yet: FL2/FL3, looks, Vertical display and shutter sound on the second compile wait for a step-by-step camera check.
+
+## Standard license update — 2026-10-25
+
+- Use the unmodified public PolyForm Noncommercial License 1.0.0, replacing the previous MIT/Commons Clause combination and custom preamble. README and startup notice prominently state the commercial-use/profit prohibition, separately from the false-authorization heading. Third-party and previous licenses are retained.
+
+## License change — 2026-10-25
+
+- Apply MIT with Commons Clause 1.0 to QAQLeonard's original project code in subsequent distributions, within the rights owned or authorized. Restrict paid flashing, resale and paid unlocking according to the clause's definition of Sell. Retain the original MIT text and separately licensed contributions, third-party components and DCP/profile terms. This is a source-available license, not plain MIT or an OSI-approved open-source license. Earlier grants and published release packages are unchanged.
 
 ## 3.0.3 — USB recovery and sound workflow fixes — 2026-10-23
 
