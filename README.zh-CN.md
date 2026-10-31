@@ -1,476 +1,225 @@
-# A7C II Tools 3.0
+<a id="readme-top"></a>
 
-[English](README.md) · **简体中文**
+<div align="center">
+  <img src="docs/images/readme/icon.png" alt="A7C II Tools 图标：35mm 幻灯片框中，透过六种胶片外观看到的日落" width="112">
 
-给 **Sony A7C II（ILCE-7CM2）固件 2.01** 用的桌面工具：FL2／FL3、自定义创意外观、电子快门声音、竖屏显示，以及一键恢复原厂功能。
+  <h1>A7C II Tools</h1>
 
-**3.0 是第一个带正式图形界面的版本。**从装驱动、安装、断电重开到核对，都在同一个窗口里按按钮完成，不再需要命令行。
+  <p><b>任何 LUT，装进相机。</b></p>
 
-## 支持的机型
+  <p>
+    <a href="#用你自己的外观">用你自己的外观</a> •
+    <a href="#安装">安装</a> •
+    <a href="#首次使用">首次使用</a> •
+    <a href="#这个分支改了什么">这个分支改了什么</a> •
+    <a href="README.md">English</a>
+  </p>
+</div>
 
-> [!IMPORTANT]
-> **本工具只支持 Sony A7C II（ILCE-7CM2），固件 2.01。**其他机型（包括初代 A7C、A7 IV、A7CR、A7R V、A6700、A7 V 等）都**不能**使用，程序会拒绝连接，请不要尝试。
+<div align="center">
 
-其他机型可以关注下面这些独立项目。它们和本项目没有关系，支持范围和风险以各自的说明为准：
+[![License: MIT][license-shield]][license-url] [![Camera: ILCE-7CM2 firmware 2.01][camera-shield]][camera-url] [![macOS: Intel][macos-shield]][install-url]
 
-| 机型 | 项目 | 内容 |
-| --- | --- | --- |
-| A7CR | [lzh2016zzz/a7cr-fl23-research](https://github.com/lzh2016zzz/a7cr-fl23-research) | FL2／FL3 移植研究 |
-| A7CR | [injectiver/a7cr-creative-look-tools](https://github.com/injectiver/a7cr-creative-look-tools) | 固件 2.01 的 FL2／FL3 与自定义外观研究工具（研究源码，不提供刷写命令） |
-| A7R V | [Hearts-Ace/sony-a7r5-custom-firmware](https://github.com/Hearts-Ace/sony-a7r5-custom-firmware) | FL2／FL3 固件适配与 RAW 色彩研究 |
-| A7 IV | [DavidBuchanan314/ILCE-7M4-RE](https://github.com/DavidBuchanan314/ILCE-7M4-RE) | 机身固件逆向研究笔记 |
-| A6700 | [xyzhangxin/sony-a6700-powerful](https://github.com/xyzhangxin/sony-a6700-powerful) | 固件 2.00 中文教程：Pico 接线、进入 Fastboot、备份，以及功能解锁 |
-| A7 V | 暂时没有改机身固件的项目 | [751K/sony-a7m5-looks](https://github.com/751K/sony-a7m5-looks) 把 A7 V 的创意外观做成了 Lightroom／Capture One 配置文件（只在电脑上用，不改相机） |
+</div>
 
-**交流群：**[Telegram（推荐）](https://t.me/sonyfwlab) · [Discord](https://discord.gg/SwPdfSd9c)
-**作者：**小红书 [QAQLeonard（读研版）](https://www.xiaohongshu.com/user/profile/660501f7000000000600d03c) · 抖音 **LeonardZ**（抖音号 `90860261487`）
+把你的 LUT、DCP 配置文件和修图软件里的外观，变成 Sony A7C II 机内的创意外观。英文界面分支，支持 Intel Mac。
 
-> [!IMPORTANT]
-> 本工具会修改相机固件中的程序和设置。请先完整读一遍下面的[操作指南](#操作指南)再动手。遇到软件报错时，**先导出诊断包，不要反复重试写入**。
+A7C II Tools 把照片 LUT、Adobe DCP 配置文件，或修图软件中某个外观的色彩，转换为创意外观，写入相机的六个自定义槽位之一。按下快门前，取景画面就是这个外观，每张 JPEG 都直接带上它。同一个应用还能加入 FL2/FL3、竖屏显示和快门声，并能按需全部恢复。
 
-## 目录
+本项目是 QAQLeonard 的 [A7C II Tools](https://github.com/QAQLeonard/a7c2-fl23-research) 的分支，加入了英文界面、Intel Mac 支持，并在每次写入前核对相机的 2.01 固件编译版本。
 
-- [支持的机型](#支持的机型)
-- [能做什么](#能做什么)
-- [下载与系统要求](#下载与系统要求)
-- [开始前必读](#开始前必读)
-- [操作指南](#操作指南)
-  - [第 1 步：安装驱动（Windows）](#第-1-步安装驱动windows)
-  - [驱动出错：先卸载再重装](#驱动出错先卸载再重装)
-  - [驱动还是装不上：用 Zadig 手动安装](#驱动还是装不上用-zadig-手动安装)
-  - [第 2 步：之前装过？先恢复原厂功能](#第-2-步之前装过先恢复原厂功能)
-  - [第 3 步：一键安装](#第-3-步一键安装)
-  - [第 4 步：在机身上检查](#第-4-步在机身上检查)
-- [单独使用各功能](#单独使用各功能)
-- [常见问题](#常见问题)
-- [验证状态](#验证状态)
-- [命令行与开发](#命令行与开发)
-- [旧版本下载](#旧版本下载)
-- [来源与许可](#来源与许可)
-- [滤镜效果对比](#滤镜效果对比)
-- [致谢](#致谢)
-- [赞助](#赞助)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/readme/looks-dark.jpg">
+  <img src="docs/images/readme/looks-light.jpg" alt="同一张果盘照片：原图，以及 Portra 400、Kodachrome 64、Velvia 100、Gold 200 和 500T 2383 胶片外观" width="760">
+</picture>
 
-## 能做什么
+<sub>应用转换的五款开放胶片 LUT，套在同一张相机 JPEG 上（A7 IV，标准风格拍摄），即 A7C II 从自定义槽位渲染的效果。外观：[spektrafilm](https://github.com/andreavolpato/spektrafilm)，作者 Andrea Volpato，CC BY-SA 4.0。</sub>
 
-| 功能 | 说明 |
+## 用你自己的外观
+
+只改变色彩和影调的外观，都可以放进自定义槽位。转换器在你的电脑上运行，接受三类来源：
+
+| 你手上有 | 怎样放进相机 |
 | --- | --- |
-| **一键安装** | 一次装好六款内置外观、FL2／FL3、电子快门声和竖屏显示；Lightroom 插件可选。 |
-| **FL2／FL3** | 在创意外观列表里加入 FL2、FL3，也可以随时移除。 |
-| **自定义创意外观** | 把 `.a7look` 写入自订 1–6 并设置机内名称，或把槽位恢复为 ST；没列出的槽位不受影响。 |
-| **外观转换** | 把 DCP 或 CUBE 离线转换成 `.a7look`，不需要 Lightroom；附带 15 组已配对的 DCP／A7Look。 |
-| **Lightroom 插件** | 导入 RAW 时，按拍摄时用的自订槽位自动套用对应的 DCP。 |
-| **电子快门声音** | 开启索尼原生电子快门声，或截取一段音频／视频作为自定义快门声。 |
-| **竖屏显示** | 竖握相机时，拍摄信息和图标跟着转向（整个 MENU 不转）。 |
-| **恢复原厂功能** | 移除本项目的全部修改，恢复原厂 2.01 行为。**不需要旧备份**，机身校准保留。 |
+| 照片 LUT（`.cube`），输入 Sony ST / sRGB，输出 sRGB | 直接选为源文件。 |
+| Adobe 相机配置文件（`.dcp`） | 直接选为源文件，不需要 Lightroom。 |
+| 修图软件里的外观，例如 Lightroom 或 Capture One 预设、DxO FilmPack、Dehancer | 保存转换器提供的 HALD 图像，在修图软件中只给它加上外观的色彩，导出 16 位 sRGB TIFF，再选这个 TIFF。已用 DxO FilmPack 和 Dehancer 测试。 |
+| 视频或 Log LUT，例如 S-Log3 转 Rec.709 | 先在调色软件中导出 sRGB 输入、sRGB 输出的版本；见 [LUT 格式](docs/zh-CN/lut-formats.md)。 |
 
-## 下载与系统要求
+1. 在 **自定义创意外观** 页面的 **工具** 中，点 **从 DCP、LUT 或 HALD 图像生成 A7Look** 旁的 **生成…**。选择源文件，起个名字，点 **开始生成**。转换器会把相机的外观表对你的源文件拟合 12 次，保留最接近的一次，所以需要一些时间。
+2. 点 **+ 添加操作项**，选择槽位，设为 **写入 A7Look**，选择你的 `.a7look`。**预览…** 会把外观套在你自己用 ST 拍的 JPEG 上，并排显示源文件效果和机内效果。此时还没有写入任何内容。
+3. 点 **查看并应用这 1 项更改**，按弹窗操作。断电重开后，这个槽位就是你的外观，其他槽位保持不变。
 
-| 系统 | 下载 | 说明 |
-| --- | --- | --- |
-| **Windows 10／11 x64** | [Releases](https://github.com/QAQLeonard/a7c2-fl23-research/releases) 中的 `A7C2Tools-Windows-x64.zip` | 整包解压后运行 `A7C2Tools.exe`。`_internal` 和 `Profiles` 文件夹要和它放在一起，不要单独拷出 EXE。不需要另装 Python。 |
-| **macOS 14+（Apple Silicon）** | [Releases](https://github.com/QAQLeonard/a7c2-fl23-research/releases) 中的 `A7C2Tools-macOS-arm64.dmg` | 把 APP 拖进“应用程序”再打开。没有开发者签名，首次打开需在“系统设置 → 隐私与安全性”中允许。不提供 Intel 版。**Mac 实机 USB 尚未验证。** |
-
-两个安装包都自带 **15 组配对的 DCP 和 `.a7look`**（富士 11 款、理光彩色 4 款），同一款的两个文件同名并排存放：
-- **Windows**：在 EXE 旁边的 `Profiles` 文件夹里。
-- **macOS**：在 APP 内部。在软件的“自定义创意外观”页点 **打开内置 DCP／A7Look 配对库** 就能打开。
-
-`.a7look` 用来写入相机；对应的 `.dcp` 用于 Lightroom 里的 RAW 显影。
-
-相机：**ILCE-7CM2，固件 2.01**。其他机型和固件版本一律不支持。
-
-## 开始前必读
-
-- **电量：**电池至少 50%。每次写入前，软件都会弹窗请你确认供电。
-- **连接：**用能传数据的 USB 线直接插在电脑上，尽量不经过扩展坞或 Hub。一次只连一台相机。
-- **USB 模式：**相机菜单里把 USB 连接设为 **海量存储（Mass Storage）**。
-- **正常现象：**连接或切换驱动时，相机显示 **“请检查所连接的设备”**，电脑也可能不显示相机盘符，这些都是正常的。成功与否以软件里的进度和日志为准，不要因为这条提示拔线或重装驱动。
-- **写入时：**软件显示正在执行时，不要拔线、关机或关闭软件。只有软件明确提示“读写已结束”后，才按提示操作。
-- **打开软件本身**不会连接或写入相机。
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/readme/convert-zh-dark.png">
+  <img src="docs/images/readme/convert-zh-light.png" alt="生成 A7Look 对话框：已选择 CUBE LUT 作为源文件，并填写外观名称和输出文件" width="620">
+</picture>
 
 > [!NOTE]
-> **断电重开**是贯穿整个流程的关键步骤，每次写入完成后都会用到。软件会弹窗提示，步骤是：
->
-> 1. 拔掉 USB 线和其他外部供电。
-> 2. 等存取灯停止闪烁。
-> 3. 把电源拨到 OFF，等屏幕和存取灯完全熄灭。
-> 4. 取下电池，**至少等 1 分钟**。
-> 5. 装回电池，开机。
->
-> 只关机再开机不算断电重开。新写入的程序必须这样才会加载。
+> 相机保存的是对你的外观的拟合近似。拟合较差或未知时，应用会列出该外观并在写入前询问。颗粒、暗角、锐化和局部调整无法放进色彩表，不会被带过去；HALD 检查会拒绝带有这些效果的导出。
 
-## 操作指南
+## 功能
 
-按顺序走以下四步。
+- **你的外观成为创意外观。** CUBE LUT、DCP 配置文件和修图软件外观都能转换为 `.a7look`，写入自定义 1–6，并使用你取的名字。
+- **写入前先预览。** 在你自己的照片上，并排看到源文件效果和机内效果，然后才写入相机。
+- **现成的外观。** 6 款内置外观、12 款开放胶片外观，以及 15 对供 Lightroom 使用的 DCP 配置文件。
+- **创意外观列表里的 FL2 和 FL3。** 把两款外观加入相机自己的菜单；也可在同一页面移除。
+- **竖屏显示。** 竖握相机时，拍摄信息和图标随之转向。
+- **电子快门声。** Sony 原生快门声，或从任意音视频中截取的最长 2 秒片段。
+- **每次写入前核对固件编译版本。** 应用识别相机的两个程序文件，只写入已知的编译版本，写入后完整读回。
+- **恢复原厂功能。** 在工具改动过的位置写回 Sony 原始字节，无需备份或下载固件。
 
-```text
-第 1 步 装驱动（Windows）──出错──→ 卸载驱动 → 重新插线 → 再装一次
-   │     └─ 推荐：USB 稳定性检测（只读），不通过就换线／换口
-   │
-第 2 步 以前装过本项目的任何版本？──是──→ 恢复原厂功能 → 断电重开 → 核对
-   │否
-第 3 步 一键安装 → 断电重开 → 接回 USB → 继续安装 → 安装完成
-   │
-第 4 步 在机身上检查外观、FL2/FL3、快门声和竖屏
-```
+## 拍摄时怎么用
 
-### 第 1 步：安装驱动（Windows）
+假设你修图时常用三款 LUT：一款暖调人像、一款褪色街拍、一款反转片风格。你在 Mac 上逐一转换，用昨天拍的几张 JPEG 预览，然后一次写入自定义 4、5、6。
 
-软件和相机之间要经过两种 USB 身份通信：普通的海量存储 `054C:0E8A`，以及认证后的服务连接 `054C:0336`。这两种身份都需要 WinUSB 驱动。
+应用先写入三个名称，提示断电重开，再写入外观本身并读回。第二次断电重开后，自定义 4–6 就是你的三款外观。
 
-1. 相机开机，选择海量存储，连接电脑。
-2. 打开软件左侧的 **连接与驱动**。
-3. 点 **检测相机与驱动**。日志里应能看到 `054C:0E8A`。如果看不到，检查数据线和 USB 模式。
-4. 点 **准备两阶段驱动并测试连接**：
-   - 软件先为 `0E8A` 安装驱动，然后让相机进入服务连接，等 `0336` 出现后再为它安装驱动。
-   - Windows 可能弹出**一到两次**管理员权限请求，点“是”。
-   - 已经装好可用驱动（WinUSB／libusbK／libusb0）的身份会直接沿用，不重复安装。
-   - 过程中相机显示“请检查所连接的设备”是正常的。
-5. 日志出现 **“服务连接成功，驱动准备结束”** 就完成了。这一步**不会写入相机固件**。
-6. **推荐：**在第一次写入之前，点 **检测 USB 连接稳定性（只读）** 测一下数据线和接口。
-   - 测试**至少持续 2 分钟**，反复读取相机里的两个程序文件（写入后完整读回的也是这两个文件），每一轮都和第一轮逐字节比对。
-   - 任何一次读取出错、内容不一致，或单次读取超过 20 秒，都判为不通过。
-   - 全程只读，不写入相机。
-   - 写入或读回时如果掉线，结果可能变成“未知”，处理起来很麻烦。所以写入前先确认连接稳定。
-   - 没通过就换一根线，或换电脑后侧的 USB 口，直到测试通过再继续。
-   - 测试通过不代表写入期间一定不会掉线。写入时仍要保持线和供电稳定。
+之后在相机上切换，取景画面随之变化，拍之前就能选好外观。每张 JPEG 直接出片，RAW 文件不受影响，仍可按自己的方式冲洗。
+
+## 安装
+
+你需要：固件 2.01 的 Sony A7C II（ILCE-7CM2）、一台 Intel Mac（在 macOS 15 上测试）和一根能传数据的 USB 线。
+
+1. 从 [Releases](https://github.com/mplind/a7c2-fl23-research/releases) 下载 `A7C2Tools-macOS-x86_64.dmg`。
+2. 打开后把 **A7C II Tools** 拖进“应用程序”。
+3. 应用没有开发者签名。首次打开时，在 **系统设置 → 隐私与安全性 → 仍要打开** 中允许。
+
+### Windows 和 Apple Silicon
+
+这个分支只在 Intel Mac 上构建和测试过，因为我只有这一台电脑。各平台代码相同，你可以在要运行它的电脑上自行构建。
+
+1. 安装 64 位 Python 3.11，然后获取代码并安装构建工具：
+
+    ```sh
+    git clone https://github.com/mplind/a7c2-fl23-research.git
+    cd a7c2-fl23-research
+    python -m pip install --no-build-isolation -r desktop-requirements.txt pyinstaller==6.16.0
+    ```
+
+2. 从 [Releases](https://github.com/mplind/a7c2-fl23-research/releases) 下载 `A7C2Tools-desktop-assets.zip`，解压到该文件夹。其中包含六款内置外观、胶片外观库和快门声，与 macOS 安装包中的文件相同。
+3. 加入所在平台的辅助文件并构建：
+
+    ```sh
+    python dev/desktop/prepare_assets.py
+    python dev/desktop/build.py --edition public
+    ```
+
+4. 安装包位于 `dist/`：Windows 上为 `A7C2Tools-Windows-x64.zip`，Apple Silicon Mac 上为 `A7C2Tools-macOS-arm64.dmg`。在 Windows 上，**连接与驱动** 页面还会为相机安装 USB 驱动。
 
 > [!TIP]
-> 一键安装开头也会自动检查并准备驱动。单独先做这一步的好处是：驱动问题能在写入任何东西之前就暴露出来。
+> 如果你在 Windows 或 Apple Silicon 上构建了它，请提交一个 [issue](https://github.com/mplind/a7c2-fl23-research/issues)，写明安装包、操作系统，以及在相机上试过什么，哪怕只是只读的 **测试**。如果需要改动才能构建，也欢迎提交 pull request。你的反馈是这些版本唯一的测试。
 
-**macOS：**不需要安装驱动。
-- 先关闭“照片”“图像捕捉”等可能占用相机存储卡的程序。
-- 在 **连接与驱动** 页点 **准备 USB 服务连接**。
-- 每次相机操作都会打开一个“终端”窗口，请在里面输入 **Mac 登录密码**，用来通过 sudo 接管 USB。程序不读取也不保存密码；输入前关掉窗口，相机操作就不会开始。
+## 首次使用
 
-### 驱动出错：先卸载再重装
+1. 在相机上，把 **MENU → 设置 → USB → USB 连接模式** 设为 **海量存储（MSC）**，连接到 Mac。
+2. 在应用中打开 **连接与驱动**，点 **测试**。在弹出的“终端”窗口输入 Mac 登录密码；应用不会读取或保存它。
+3. **相机固件编译版本** 一行会显示你的版本，例如“Sony 2.01（机身版本，2025 年 9 月 23 日）”。不写入任何内容。
+4. 按[用你自己的外观](#用你自己的外观)写入自己的外观，或打开 **一键安装**，一次写入六款内置外观、FL2/FL3、竖屏显示和快门声。
 
-出现以下任一情况，说明驱动状态可能不对：
-- 第 1 步报错，或者提示 `0336` 出现了但接口打不开。
-- 以前用 Zadig 等工具装过别的驱动。
-- 相机连上后 Windows 一直识别异常。
-
-这时**先卸载，再按第 1 步重装**：
-
-1. 在 **连接与驱动** 页点 **卸载相机驱动，恢复 Windows 默认连接**，确认，并在 Windows 弹窗中允许管理员权限。
-   - 只处理 Sony `054C:0E8A`／`054C:0336` 的第三方驱动，不影响其他设备，也不修改相机固件。
-   - 卸载前会把驱动包备份到任务目录。
-2. 按日志提示操作：
-   - 一般是**拔掉 USB，再以海量存储模式重新插上**，让 Windows 换回默认驱动。
-   - 如果日志提示 Windows 需要重启，就重启电脑（软件不会自动重启）。
-3. 回到[第 1 步](#第-1-步安装驱动windows)，重新点 **准备两阶段驱动并测试连接**。
-
-还是不行的话，换一根线、换一个电脑后侧的 USB 口，用 **检测 USB 连接稳定性（只读）** 排查。仍不行就点窗口底部的 **导出诊断包**，发到交流群。
-
-### 驱动还是装不上：用 Zadig 手动安装
-
-软件自动装驱动失败的电脑，大多数改用 [Zadig](https://zadig.akeo.ie/) 手动安装就能成功。整个过程不写入相机，只更换这台电脑上相机两个 USB 身份所用的驱动。
-
-软件 **连接与驱动** 页上，**准备两阶段驱动并测试连接（自动）** 旁边就是 **用 Zadig 手动安装驱动（自动失败时）** 按钮，点开有下面同样的步骤和 Zadig 下载链接。
-
-**先了解：相机有两个 USB 身份，两个都要装驱动**
-
-| 阶段 | Zadig 里显示的名称 | USB ID | 什么时候出现 |
-| --- | --- | --- | --- |
-| 普通连接 | `ILCE-7CM2` | `054C` `0E8A` | 相机开机、选海量存储、接上电脑 |
-| 服务模式 | `Sony USB Device` | `054C` `0336` | 软件认证之后才出现，相机屏幕通常显示“请检查所连接的设备” |
-
-**准备**
-
-1. 从 Zadig 官网下载最新版 `zadig-x.x.exe`（单个文件，不用安装）。
-2. 完全关闭本软件。
-3. 相机开机，菜单里的 USB 连接选 **海量存储（Mass Storage）**。用能传数据的线直接接电脑：不要经过扩展坞，台式机用机箱后面的口。
-
-**第一部分：给 `0E8A` 装驱动**
-
-1. 右键 Zadig，选 **以管理员身份运行**。弹出是否检查更新的提示时，选哪个都可以。
-2. 在菜单 **Options** 里勾选 **List All Devices**。不勾选就看不到相机。
-3. 在上方下拉框里选 **`ILCE-7CM2`**。
-4. **核对 USB ID 一栏是 `054C` `0E8A`。** 对不上就是选错了，换一项再核对。不要给键盘、鼠标、U 盘、网卡等其他设备换驱动。
-5. 绿色箭头左边是当前驱动（例如 `USBSTOR`）。在箭头右边的驱动框里，用上下箭头选 **libusbK**。
-6. 点大按钮 **Replace Driver**（当前没有驱动时显示为 **Install Driver**）。等 1–2 分钟，直到提示 **The driver was installed successfully**。
-7. 换好后，电脑上相机的盘符会消失，相机显示“请检查所连接的设备”。这都是正常的。
-
-**第二部分：让 `0336` 出现，再给它装驱动**
-
-1. Zadig 先不要关。打开本软件的 **连接与驱动** 页，点 **准备两阶段驱动并测试连接**。
-2. 软件会沿用刚装好的 `0E8A` 驱动进行认证。认证后，相机变成 `Sony USB Device`（`054C 0336`）。
-   - 软件自动给 `0336` 装好驱动、日志出现 **“服务连接成功，驱动准备结束”**：已经完成，直接看第三部分。
-   - 日志提示 `0336` 没有驱动、接口打不开，或一直等不到 `0336`：**先不要拔线，也不要关相机**，继续下一步。
-3. 回到 Zadig，再点一次 **Options → List All Devices** 刷新列表。在下拉框里选 **`Sony USB Device`**，**核对 USB ID 是 `054C` `0336`**。
-   - 列表里找不到 `0336`，说明相机已经退出服务模式。回到本部分第 1 步再测一次连接，`0336` 出现后马上在 Zadig 里刷新。
-4. 驱动同样选 **libusbK**，点 **Replace Driver** 或 **Install Driver**，等到提示成功。
-
-**第三部分：断电后重新测试**
-
-1. 拔掉 USB，相机关机，**取出电池约 1 分钟**。装回电池开机，选海量存储，重新接上。
-2. 在本软件里再点一次 **准备两阶段驱动并测试连接**。日志出现 **“服务连接成功，驱动准备结束”** 后，就可以进行[第 3 步：一键安装](#第-3-步一键安装)。
-
-**检查是否装对：** 打开 Windows 设备管理器，应能看到 **libusbK USB Devices** 分类，下面有 `ILCE-7CM2`；装过 `0336` 后还会有 `Sony USB Device`。
-
-**遇到问题**
-
-- **libusbK 安装失败：** 重新以管理员身份运行 Zadig 再试。仍然失败，可以改选 **WinUSB**。本软件可以使用 WinUSB、libusbK、libusb0 中的任意一种。
-- **下拉框里没有相机：** 确认 **List All Devices** 已勾选，相机已开机、选了海量存储，并换一根能传数据的线。
-- **想恢复原样：** 在本软件 **连接与驱动** 页点 **卸载相机驱动，恢复 Windows 默认连接**，Zadig 装的驱动也会一起卸载。之后拔插 USB，相机会重新显示为 U 盘。
-- **Mac 不需要装驱动。**
-
-### 第 2 步：之前装过？先恢复原厂功能
-
-**只要这台相机以前用过本项目的任何版本，就先恢复原厂功能再安装 3.0。**包括：FL23 v1.0／v2.x、`lut.py` 导入过外观、`shutter.py`／`vertical.py`、以及之前的桌面测试版。这样能清掉旧版本留下的修改，让 3.0 从干净的原厂 2.01 状态开始。
-
-从没改过的相机可以跳过这一步。
-
-1. 在相机上把创意外观切到 **ST**。
-2. 打开 **恢复原厂功能**，点 **恢复／继续恢复原厂 2.01 功能（无需旧备份）**，确认供电后开始。
-   - 软件内置了原厂 2.01 对应区域的数据，不需要旧备份，也不需要下载固件。
-   - 机身校准、计数器和无关设置会保留。
-3. 写入并完整读回后，弹窗会提示**恢复尚未完成**。按[断电重开](#开始前必读)的步骤操作，开机确认能正常取景。
-4. 接回 USB（海量存储），点 **重启后核对并完成恢复**。核对通过后才显示恢复完成，软件同时会清除旧的安装状态。
-
-> [!WARNING]
-> 恢复会把自订 1–6 全部设为 ST，之前放在里面的配方**找不回来**。需要保留的话，先自己记下参数。
-
-恢复中途断了也没关系：再点同一个按钮，软件会读取相机当前状态，只处理没完成的部分。如果按钮变成 **断电后重试恢复（本次尚未写入）**，说明这次还没开始写入，按弹窗断电重开后再点即可。
-
-### 第 3 步：一键安装
+写入后，弹窗会提示断电重开：拔掉 USB，等存取灯停止闪烁，关机，取下电池至少一分钟，再装回开机。只关机再开机不够。
 
 > [!IMPORTANT]
-> 一键安装前，请先完成[第 1 步](#第-1-步安装驱动windows)，确认日志出现“服务连接成功，驱动准备结束”。很多安装失败都是因为驱动还没装好就直接一键安装。第一次在这台电脑上一键安装时，软件也会弹窗提醒。驱动装不上，请按[用 Zadig 手动安装](#驱动还是装不上用-zadig-手动安装)处理。
-
-1. 打开 **首页 · 一键安装**。默认勾选：
-   - **安装内置六款外观**（替换自订 1–6，索尼原有的创意外观保留）
-   - **启用 FL2／FL3**
-   - **启用索尼原生电子快门声音**
-   - **保存开启竖屏拍摄信息显示**
-   - **安装 Lightroom 自动识别插件**：可选，需要电脑上装有 Lightroom Classic
-2. 点 **一键安装**，确认供电。软件会检查驱动，把所有选项合并成一次写入，并完整读回。
-3. 弹窗提示 **“读写已结束”** 后，[断电重开](#开始前必读)。
-4. 开机，接回 USB（海量存储），回到首页点 **继续安装**（还是同一个按钮）。软件先核对新开机和实际加载状态，然后接入声音和插件，**不会重复写入**。
-5. 弹出 **“安装完成”**，列出本次安装的外观和功能。之后可以随时点 **查看上次安装结果（不连接相机）**。
-
-如果中间提示“名称已写好，程序尚未写入”，说明相机的旧资源还占着。按弹窗断电重开，接回后仍点 **继续安装**，名称不会重复写入。
-
-**默认六款外观：**
-
-| 自订槽位 | 1 | 2 | 3 | 4 | 5 | 6 |
-| --- | --- | --- | --- | --- | --- | --- |
-| 外观 | Classic Neg.（NC） | Classic Chrome（CC） | Nostalgic Neg.（NN） | Astia | GR 正片 | GR 负片 |
-
-想装自己的外观：先取消勾选内置六款，再展开 **改用自己的 A7Look 文件**，为各槽位选择 `.a7look` 文件；留空的槽位保持原样。
-
-### 第 4 步：在机身上检查
-
-- 在 ST 和各自订槽位之间来回切换，确认实时预览立即变化，再拍照、回放。
-- 各自订槽位的基础外观应保持为 ST；改成其他基础外观后，自定义效果可能不生效。
-- 在创意外观列表里确认 FL2、FL3 能选择、拍摄和回放。
-- 用电子快门拍一张，确认有快门声。听不到时，先检查机内的“音频信号”设置。
-- 竖握相机，检查拍摄信息是否转向。
-
-内置外观是对原 DCP 的拟合近似，不保证颜色和原 DCP 完全一致。
-
-## 单独使用各功能
-
-所有写入操作都是“写入 → 完整读回 → 弹窗提示断电重开”。完成第 1 步后，各页面都可以单独使用。
-
-### FL2／FL3
-
-- **启用／重新启用 FL2 / FL3**：写入后断电重开，在相机里能选到就可以用了，不需要再接电脑核对。
-- **从列表移除 FL2 / FL3，保留自定义外观**：只关掉菜单入口，自定义外观用到的共用代码保留，之后可以再启用。
-- 移除前，请先在相机上切到 ST。
-
-### 自定义创意外观
-
-1. 点 **添加操作项**，为每个要改的槽位添加一项：
-   - **写入 A7Look**：选择 `.a7look` 文件，可选填机内名称（留空则用文件里的名称）。
-   - **恢复 ST 默认**：把槽位还原成 ST。新增项默认是这个。
-2. 点 **查看并应用这 N 项更改**，核对清单后确认。多个槽位一次写完，没列出的槽位不动。
-3. 断电重开后即可使用，不需要另外点核对。
-
-> [!NOTE]
-> 写入的自定义外观以 **ST 为基础外观**。在相机里选用对应的自订槽位即可，不用把创意外观切到 ST；但不要在相机里把该自订槽位的基础外观改成 ST 以外的选项，否则自定义效果可能不生效或颜色不对，改回 ST 即可恢复。相机不会锁定这个选项。
-
-页面上的辅助工具：
-- **打开内置 DCP／A7Look 配对库**：包含富士 11 款、理光 4 款，共 15 组，DCP 和 `.a7look` 同名并排存放。
-- **从 DCP／LUT 生成 A7Look…**：离线转换，不连接相机。
-  - **CUBE** 的输入必须是 **Sony ST／sRGB**，输出为 sRGB。**S-Log3 等 Log LUT 不能直接用**，详见 [LUT 格式与色彩空间](docs/zh-CN/lut-formats.md)。
-  - **DCP** 由软件内置解析拟合，不需要 Lightroom。
-- **安装 LrC 自动识别插件…**：装好后在 Lightroom 的增效工具管理器中启用一次。之后导入 RAW 时，插件按拍摄时用的槽位套用对应的 DCP。插件不会改动 RAW 数据本身。
-
-### 电子快门声音
-
-1. **开启电子快门声**：开启索尼原生的电子快门声音，写入后断电重开生效。
-2. 选择音频或视频文件，设置 **起点** 和 **长度**（0.01–2 秒），点 **转换所选片段**。这一步只在电脑上处理，不连接相机。
-3. 可选：用 **音量降低 −3 dB／音量提高 +3 dB／还原转换时音量** 调整音量。
-4. 点 **保存当前自定义声音**，写入后断电重开生效。
-5. **相机内临时试听** 是可选步骤：先在相机里试听，这时要**保持开机**拔掉 USB，试拍一张；满意后接回 USB 再保存。
-6. 想换回原来的声音，点 **恢复原厂音效**。
-
-### 竖屏显示
-
-> [!NOTE]
-> 竖屏菜单线框部分正在重写，这一节在代码完成后更新。
-
-- **启用竖屏显示**：保存竖屏开关，断电重开后，竖握相机时拍摄信息和图标跟着转向。
-- **关闭竖屏显示**：先关闭竖屏，再撤销相关修改。
-- 两个按钮都可以重复点；状态相同时不会重复写入。
-
-### 恢复原厂功能
-
-见[第 2 步](#第-2-步之前装过先恢复原厂功能)。高级选项里另外提供两种方式：
-- 导入完整的原厂 `BODYDATA.DAT` 来恢复。
-- 用以前的机身备份回到过去的状态（旧版 FL23 或 `lut.py` 留下的备份）。
-
-## 常见问题
-
-| 现象 | 处理 |
-| --- | --- |
-| 相机显示“请检查所连接的设备” | 正常现象。看软件日志判断进度。 |
-| 未找到 `054C:0E8A` | 相机没选海量存储，或线不能传数据。改好后重新插线。 |
-| `0336` 一直不出现 | 软件会冷却后自动重试，最多 3 次。仍失败就按[驱动出错](#驱动出错先卸载再重装)处理，或[用 Zadig 手动安装](#驱动还是装不上用-zadig-手动安装)。 |
-| 认证后相机跳到回放画面，`0336` 一直不出现 | 换电脑上的 USB 2.0 口（或用 USB 2.0 数据线／扩展坞）再试；部分电脑走 USB 3 高速连接时相机不进服务模式。 |
-| `0336` 出现了但接口打不开 | 驱动问题。卸载驱动后重装，不要反复点安装。 |
-| 安装或恢复中途断了 | 再点**同一个按钮**。软件会读取当前状态，从断点继续，已完成的部分不会重写。 |
-| 软件提示“结果未知”或“需要核对” | **不要重试写入。**点 **导出诊断包**，发到交流群。 |
-| 听不到快门声 | 检查机内“音频信号”是否开启。 |
-| 外观颜色和 DCP 不完全一样 | 机内色表是拟合近似，属于正常范围。 |
-| Mac 上终端要求输入密码 | 输入 Mac 登录密码，用于 sudo 接管 USB。 |
-
-诊断包包含设备信息和本机路径，公开分享前请先检查。软件不会导出固件、机身校准或照片。
-
-## 验证状态
-
-| 范围 | 状态 |
-| --- | --- |
-| FL2／FL3、六款外观安装、恢复原厂功能 | 已在作者的 Windows + A7C II 上通过实机写入、读回与重开核对 |
-| 自定义外观预览／拍照、临时试听 | 已在同一台相机上测试 |
-| 持久化自定义快门声 | 离线测试和打包自检通过；实机长期验证进行中 |
-| 竖屏显示（含菜单线框） | 正在重写，待实机验收 |
-| macOS USB | 安装包已构建，实机 USB 尚未验证 |
-
-离线测试和字节读回不能证明相机在所有情况下都能正常工作。目前只在一台相机上验证过。各版本的测试记录见[更新日志](docs/zh-CN/changelog.md)。
-
-## 命令行与开发
-
-图形界面已经覆盖日常使用。原有的命令行工具仍保留，供高级用户和开发使用：
-
-| 入口 | 用途 |
-| --- | --- |
-| `python desktop.py` | 从源码运行桌面程序（64 位 Python 3.11，先 `pip install -r desktop-requirements.txt`） |
-| `FL23.cmd` | 旧版 FL2／FL3 命令行安装 |
-| `python lut.py` | 旧版外观导入与单槽恢复 |
-| `python recovery.py` | 用原始备份完整回退 |
-| `python a7look_compile.py` | 离线把 DCP／CUBE 编译成 `.a7look` |
-
-离线测试（不访问相机）：`python -m pytest dev/desktop -q`。架构、构建和打包见 [开发说明](docs/zh-CN/development.md)。让 AI 修改代码前，请先读 [AGENTS.md](AGENTS.md)。
-
-## 旧版本下载
-
-- [v2.2-preview.1](https://github.com/QAQLeonard/a7c2-fl23-research/releases/tag/v2.2-preview.1)：命令行版 FL23、`lut.py`、`recovery.py`
-- [v2.1](https://github.com/QAQLeonard/a7c2-fl23-research/releases/tag/v2.1) · [v1.0](https://github.com/QAQLeonard/a7c2-fl23-research/releases/tag/v1.0)
-- [全部 18 款原始 DCP 文件](https://github.com/QAQLeonard/a7c2-fl23-research/releases/download/v2.1/a7c2-dcp-profiles-2026-10-18.zip)（[来源说明](docs/zh-CN/notices.md)）
-
-用过旧版本的相机，升级前请先做[第 2 步](#第-2-步之前装过先恢复原厂功能)。
-
-## 来源与许可
-
-代码采用 [MIT](LICENSE) 许可。DCP、参考外观和打包的第三方组件保留各自的许可与署名，见[许可说明](docs/zh-CN/notices.md)。富士 DCP 参考来自小红书 **门萨特里顿**，理光 DCP 参考来自小红书 **爸总林先森**。
-
-本项目为独立研究，与 Sony、Fujifilm、Ricoh、Adobe 无关。外观名称不代表官方认可或颜色完全一致，本工具也不是索尼签名的更新。
-
-## 滤镜效果对比
+> 应用会改动相机固件中的程序。请阅读每个弹窗；在应用显示“读写已结束”之前，保持相机连接和供电。如果应用报错，请先点 **导出诊断包**，再重试。
 
 <details>
-<summary>展开逐场景对比图</summary>
+<summary><b>单独使用各项功能</b></summary>
 
-相机直出 JPG，仅缩放、拼接和添加标签；没有曝光、白平衡或色彩调整。拍摄参数存在变化，供效果参考，不是受控测量。
+这些页面的每次写入都会读回，然后弹窗给出下一步：通常是断电重开，以及在相机上要检查什么。
 
-每组依次展示三张独立对比图：**ST／FL／FL2／FL3**、**ST／NC／CC／NN**、**ST／E／GR 正片／GR 负片**；每张四宫格按左上、右上、左下、右下读取。NC＝Classic Neg.，CC＝Classic Chrome，NN＝Nostalgic Neg.，E＝Eterna；这批不包含 Astia。
-
-[下载全部 19 张高清对比图（约 152 MB）](https://github.com/QAQLeonard/a7c2-fl23-research/releases/download/v2.1/a7c2-film-comparisons-2026-10-18.zip)，含第一组 ST 补充对比及总览。
-
-**01 · 饮料柜**
-
-![01 · 饮料柜 — ST / FL / FL2 / FL3](docs/images/film-comparison/01_饮料柜/01-1_ST_FL_FL2_FL3.jpg)
-
-![01 · 饮料柜 — ST / NC / CC / NN](docs/images/film-comparison/01_饮料柜/01-2_ST_NC_CC_NN.jpg)
-
-![01 · 饮料柜 — ST / Eterna / GR Positive / GR Negative](docs/images/film-comparison/01_饮料柜/01-3_ST_E_GR正片_GR负片.jpg)
-
-**02 · 绿植**
-
-![02 · 绿植 — ST / FL / FL2 / FL3](docs/images/film-comparison/02_绿植/02-1_ST_FL_FL2_FL3.jpg)
-
-![02 · 绿植 — ST / NC / CC / NN](docs/images/film-comparison/02_绿植/02-2_ST_NC_CC_NN.jpg)
-
-![02 · 绿植 — ST / Eterna / GR Positive / GR Negative](docs/images/film-comparison/02_绿植/02-3_ST_E_GR正片_GR负片.jpg)
-
-**03 · 柜台**
-
-![03 · 柜台 — ST / FL / FL2 / FL3](docs/images/film-comparison/03_柜台/03-1_ST_FL_FL2_FL3.jpg)
-
-![03 · 柜台 — ST / NC / CC / NN](docs/images/film-comparison/03_柜台/03-2_ST_NC_CC_NN.jpg)
-
-![03 · 柜台 — ST / Eterna / GR Positive / GR Negative](docs/images/film-comparison/03_柜台/03-3_ST_E_GR正片_GR负片.jpg)
-
-**04 · 旋转楼梯**
-
-![04 · 旋转楼梯 — ST / FL / FL2 / FL3](docs/images/film-comparison/04_旋转楼梯/04-1_ST_FL_FL2_FL3.jpg)
-
-![04 · 旋转楼梯 — ST / NC / CC / NN](docs/images/film-comparison/04_旋转楼梯/04-2_ST_NC_CC_NN.jpg)
-
-![04 · 旋转楼梯 — ST / Eterna / GR Positive / GR Negative](docs/images/film-comparison/04_旋转楼梯/04-3_ST_E_GR正片_GR负片.jpg)
-
-**05 · 书架**
-
-![05 · 书架 — ST / FL / FL2 / FL3](docs/images/film-comparison/05_书架/05-1_ST_FL_FL2_FL3.jpg)
-
-![05 · 书架 — ST / NC / CC / NN](docs/images/film-comparison/05_书架/05-2_ST_NC_CC_NN.jpg)
-
-![05 · 书架 — ST / Eterna / GR Positive / GR Negative](docs/images/film-comparison/05_书架/05-3_ST_E_GR正片_GR负片.jpg)
-
-**06 · 海报**
-
-![06 · 海报 — ST / FL / FL2 / FL3](docs/images/film-comparison/06_海报/06-1_ST_FL_FL2_FL3.jpg)
-
-![06 · 海报 — ST / NC / CC / NN](docs/images/film-comparison/06_海报/06-2_ST_NC_CC_NN.jpg)
-
-![06 · 海报 — ST / Eterna / GR Positive / GR Negative](docs/images/film-comparison/06_海报/06-3_ST_E_GR正片_GR负片.jpg)
+- **一键安装：** 勾选需要的功能，点 **一键安装…** 开始。弹窗提示时，断电重开、接回，再点 **继续安装** 完成。
+- **FL2 / FL3：** **启用** 把 FL2 和 FL3 加入创意外观列表。**移除** 把它们从列表拿掉，自定义外观照常可用。移除前请在相机上选 ST。
+- **自定义创意外观：** 对每个要改的槽位点 **从胶片外观库添加…** 或 **+ 添加操作项**，再点 **查看并应用这 N 项更改** 写入。名称有变化的槽位分两步写：先写名称，断电重开后点 **继续槽位更改** 写入外观本身。
+- **竖屏显示：** 用 **开启** 或 **停用** 切换。断电重开后，横握和竖握分别检查 Fn 菜单。竖屏创意外观选择页的外框仍偏粗，橙色指针朝向尚未修正。
+- **电子快门声：** **开启** 后，使用电子快门时播放 Sony 原生声音（需打开“音频信号”）。要用自己的声音：选择文件，点 **转换**，可先在相机上 **试听**，再点 **保存到相机…** 保存。
+- **恢复原厂功能：** **恢复…** 写回 Sony 原始字节，并把自定义 1–6 恢复为 ST。断电重开后点 **核对**；只有核对通过，恢复才算完成。
 
 </details>
 
-## 致谢
+<details>
+<summary><b>出问题时</b></summary>
 
-这是我的第一个开源项目，没想到能收到这么多关注和支持，真心谢谢大家。
+| 现象 | 怎么做 |
+| --- | --- |
+| 相机显示“请检查连接的设备” | 任务进行中属正常现象，以应用的提示为准。 |
+| 三次尝试后相机仍未进入服务模式 | 没有写入任何内容。断电重开、接回后重试。 |
+| 槽位更改在写完名称后停下 | 断电重开、接回，再点 **继续槽位更改**（一键安装页为 **继续安装**）。 |
+| 版本一行显示固件编译版本不受支持 | 所有写入按钮已停用，没有写入任何内容。应用只支持 Sony 公开的 2.01 更新和[这个分支改了什么](#这个分支改了什么)中的第二种 2.01 编译版本。 |
+| 任何操作报告结果未知 | 不要重试写入。点 **导出诊断包** 并保留诊断包。 |
 
-- **合作者**：感谢 [@UzLung1435](https://github.com/UzLung1435) 贡献的 FL23 重构、USB 兼容性修复和照片／视频曲线分流（[#5](https://github.com/QAQLeonard/a7c2-fl23-research/pull/5)、[#6](https://github.com/QAQLeonard/a7c2-fl23-research/pull/6)），也感谢每一位提交 Issue、PR 和建议的朋友。
-- **色彩**：感谢小红书 **门萨特里顿** 和 **爸总林先森** 提供 DCP，也感谢帮我拟合、比对色彩标准的网友。没有你们，就没有现在的内置外观。
-- **参考与引用的项目**：本项目站在这些工作的肩膀上——
-  - [lzh2016zzz/a7cr-fl23-research](https://github.com/lzh2016zzz/a7cr-fl23-research)：A7CR 上的 FL2／FL3 移植研究，本项目参数、标签和 WBI 方法的起点。
-  - [Hearts-Ace/sony-a7r5-custom-firmware](https://github.com/Hearts-Ace/sony-a7r5-custom-firmware)：A7R V 的 FL2／FL3 固件适配与 RAW 色彩研究，FL2／FL3 色彩数据移植的重要参考。
-  - [MDHan/a7c2-fl23-macos](https://github.com/MDHan/a7c2-fl23-macos)：A7C II 的 macOS 版本，Mac 上识别相机存储、接管 USB 的流程参考。
-  - [ma1co/Sony-PMCA-RE](https://github.com/ma1co/Sony-PMCA-RE)、[ma1co/fwtool.py](https://github.com/ma1co/fwtool.py) 和 [YuuLuo/a7c2-service-preload](https://github.com/YuuLuo/a7c2-service-preload)：服务模式通信、固件解析和 A7C II 服务模式研究。
-  - 也感谢所有引用、转载和二次开发本项目的开发者。
-- **测试**：感谢愿意用自己的相机实机测试、耐心回传日志的各位。每一次反馈都让工具更安全。
-- **大家**：感谢每一位点 Star、转发和在群里交流的朋友，是你们让这个项目走到了 3.0。
+</details>
 
-## 赞助
+## 这个分支改了什么
 
-如果这个项目帮到了你，欢迎请我喝杯咖啡 ☕。赞助完全自愿，不影响任何功能，项目会一直免费开源。
+| 改动 | 说明 |
+| --- | --- |
+| 英文界面 | 按钮、弹窗、日志和终端信息，逐条按代码的实际作用核对。在“界面语言”中仍可切回中文。 |
+| Intel Mac | 可在 x86_64 macOS 上构建和运行。原项目只构建 Apple Silicon 版本。 |
+| 固件编译版本核对 | 读取 `appFw.so` 和 `cpapp-b.bin`，排除工具所属区域后，与支持的版本比对 SHA-256，然后才写入。 |
+| 第二种 2.01 编译版本 | 支持 CP 构建日期为 2025 年 9 月 23 日的 2.01 编译版本。它出现在一台版本界面显示 2.01、但程序与 Sony 公开更新不同的机身上，Sony 的更新程序不会重新安装它。 |
+| 单次连接继续 | 继续暂停的槽位更改时，在同一次服务连接中核对重开并写入外观。 |
+| 提示一致 | 每次写入后，状态栏、终端和弹窗给出同样的下一步。 |
 
-<table>
-  <tr>
-    <td align="center"><img src="docs/images/sponsor/wechat.png" alt="微信支付收款码" width="200"><br>微信支付</td>
-    <td align="center"><img src="docs/images/sponsor/alipay.png" alt="支付宝收款码" width="200"><br>支付宝</td>
-    <td align="center"><img src="docs/images/sponsor/usdt-bep20.png" alt="USDT（BEP20）收款码" width="200"><br>USDT（BEP20）</td>
-  </tr>
-</table>
+[更新日志](docs/zh-CN/changelog.md)记录了每项改动。
 
-**USDT 地址**（仅限 **BNB Smart Chain／BEP20** 网络的 USDT）：
+## 一次写入的过程
 
-```text
-0xbf0b2900f7a45a029a42013b90911f796735a753
+```mermaid
+flowchart LR
+  A[USB 连接] --> B[读取 appFw.so 和 cpapp-b.bin]
+  B --> C{支持的 2.01 编译版本？}
+  C -- 否 --> X[拒绝：不写入任何内容]
+  C -- 是 --> D[按该版本规划改动]
+  D --> E[写入，再逐字节读回]
+  E --> F[断电重开后加载]
 ```
 
-> [!WARNING]
-> 请只用 BEP20 网络转 USDT。其他网络或其他币种可能无法到账，也请不要向这个地址转 NFT。
+## 目前的测试
+
+2026 年 10 月 30 日和 31 日，在一台运行第二种 2.01 编译版本的 A7C II 上，用 Intel Mac 测试：
+
+| 功能 | 结果 |
+| --- | --- |
+| 版本核对（只读指纹和应用内“测试”） | 识别出版本，没有写入 |
+| 由 CUBE LUT 和 HALD 导出转换的六款外观，以及之后更换的一个槽位 | 已写入、读回，断电重开后可用 |
+| FL2 / FL3 | 已写入、读回，断电重开后可用 |
+| 竖屏显示 | 已写入、读回，横握和竖握均已检查 |
+| 电子快门声 | 未在这台相机上测试 |
+| 恢复原厂功能，以及把槽位恢复为 ST | 未用本分支在这台相机上测试 |
+| Windows 和 Apple Silicon 版本 | 本分支未构建、未测试 |
+
+离线测试覆盖了两种 2.01 编译版本的真实程序文件。字节读回和离线测试不能证明每台相机都表现一致；目前只有一台相机运行过本分支。
+
+## 开发
+
+用 64 位 Python 3.11 从源码运行应用，并在不连接相机的情况下运行测试：
+
+```sh
+python -m pip install --no-build-isolation -r desktop-requirements.txt pytest==8.3.5
+python -m pytest dev/desktop dev/shutter_sound/tests dev/vertical -q
+```
+
+打包、代码结构和提交检查（`git config core.hooksPath dev/git-hooks`）见[开发指南](docs/zh-CN/development.md)。修改会写入相机的代码前，请先阅读 [AGENTS.md](AGENTS.md)。
+
+## 致谢
+
+A7C II Tools 由 [QAQLeonard](https://github.com/QAQLeonard) 和原项目的贡献者完成，这个分支在其基础上补充。如想支持原作者，请看[原项目 README](https://github.com/QAQLeonard/a7c2-fl23-research#readme) 中的赞助部分。
+
+原项目参考并建立在 [lzh2016zzz/a7cr-fl23-research](https://github.com/lzh2016zzz/a7cr-fl23-research)、[Hearts-Ace/sony-a7r5-custom-firmware](https://github.com/Hearts-Ace/sony-a7r5-custom-firmware)、[MDHan/a7c2-fl23-macos](https://github.com/MDHan/a7c2-fl23-macos)、[ma1co/Sony-PMCA-RE](https://github.com/ma1co/Sony-PMCA-RE)、[ma1co/fwtool.py](https://github.com/ma1co/fwtool.py) 和 [YuuLuo/a7c2-service-preload](https://github.com/YuuLuo/a7c2-service-preload) 之上。富士和理光参考 DCP 归功于小红书的门萨特里顿和爸总林先森，开放胶片外观来自 Andrea Volpato 的 [spektrafilm](https://github.com/andreavolpato/spektrafilm)。每款内置外观的来源和许可见[声明](docs/zh-CN/notices.md)。
+
+这是独立项目，与 Sony、Fujifilm、Ricoh、Kodak、Adobe、Capture One、DxO 或 Dehancer 无关。外观名称只描述风格，不代表授权或颜色完全一致。
+
+## 相关项目
+
+其他机型：[lzh2016zzz/a7cr-fl23-research](https://github.com/lzh2016zzz/a7cr-fl23-research)（A7CR）、[injectiver/a7cr-creative-look-tools](https://github.com/injectiver/a7cr-creative-look-tools)（A7CR）、[Hearts-Ace/sony-a7r5-custom-firmware](https://github.com/Hearts-Ace/sony-a7r5-custom-firmware)（A7R V）、[DavidBuchanan314/ILCE-7M4-RE](https://github.com/DavidBuchanan314/ILCE-7M4-RE)（A7 IV）和 [751K/sony-a7m5-looks](https://github.com/751K/sony-a7m5-looks)（A7 V 外观的 Lightroom 配置文件）。它们是独立项目，范围和风险各不相同。
+
+## 许可
+
+[MIT](LICENSE)，版权归 A7C II FL2/FL3 preview contributors 和 mplind。内置外观和第三方组件保留各自的许可，见[声明](docs/zh-CN/notices.md)。
+
+[license-shield]: https://img.shields.io/badge/license-MIT-c4732b?style=flat-square
+[license-url]: LICENSE
+[camera-shield]: https://img.shields.io/badge/camera-ILCE--7CM2%20firmware%202.01-c4732b?style=flat-square
+[camera-url]: #安装
+[macos-shield]: https://img.shields.io/badge/macOS-Intel-c4732b?style=flat-square
+[install-url]: #安装
