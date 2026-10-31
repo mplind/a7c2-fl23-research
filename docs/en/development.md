@@ -126,6 +126,8 @@ Outputs:
 - **macOS:** `dist/A7C2Tools-macOS-<arch>.dmg`, named after the Mac that builds it: `arm64` on Apple Silicon, `x86_64` on Intel. Build on the kind of Mac it is for. The paired library lives inside the app (`desktop-assets/profile-library-v1`).
 - `profilepack.py` refuses to package unless all 11 Fujifilm and 4 Ricoh color pairs are present. Monochrome pairs are allowed only if they meet the independent error limits (MAE ≤3/255, P95 ≤12/255).
 
+**Untested builds:** `release.yml` also runs when a release is published, or by hand with a release tag (`gh workflow run release.yml -f tag=<tag>`). It checks out that tag, unpacks the release's `A7C2Tools-desktop-assets.zip`, runs the same tests and packaged checks, and publishes the Windows and Apple Silicon packages as a pre-release named `<tag>-untested` that is never marked latest. The release needs the assets zip attached.
+
 CI: `.github/workflows/desktop-preview.yml` builds on native Windows and `macos-15` runners and uploads artifacts without publishing a Release. Updating `dev/desktop/native-build-request.json` triggers an Apple Silicon build. Keystone/Unicorn build from source on ARM64 (Xcode CLT, CMake 3.31.6); Zig is 0.13.0.
 
 Packages have no Developer ID signature. Offline tests, packaged self-tests and byte readback do not prove camera boot safety, colors or sound. Physical acceptance is recorded separately in the [changelog](changelog.md).

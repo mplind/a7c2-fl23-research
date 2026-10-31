@@ -4,15 +4,29 @@ name: Release packages
 # packages are built and checked; then a DRAFT release is created for the
 # parent commit. Publishing the draft stays a manual step. Never add desktop-assets/personal (the
 # owner's personal assets): the guard tests fail on it and a public build refuses to package it.
+#
+# A published release (or a manual run naming one) builds the same two packages from that release's
+# source and its public A7C2Tools-desktop-assets.zip, with the same tests and checks, and publishes
+# them as a separate pre-release, <tag>-untested, that is never marked latest.
 on:
   push:
     branches: ['build/release-*']
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release whose source and A7C2Tools-desktop-assets.zip to build, e.g. v3.0.3-intel.1'
+        required: true
+        type: string
 
 permissions:
   contents: write
 
 jobs:
   package:
+    # Publishing the untested pre-release is itself a release event; only full releases build.
+    if: github.event_name != 'release' || !github.event.release.prerelease
     strategy:
       fail-fast: false
       matrix:
@@ -25,6 +39,8 @@ jobs:
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.event.release.tag_name || github.sha }}
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -37,6 +53,17 @@ jobs:
         run: python -m pip install --no-build-isolation -r desktop-requirements.txt pyinstaller==6.16.0 pytest==8.3.5
       - name: Native dependency load check
         run: python -c "import platform, keystone, unicorn; k=keystone.Ks(keystone.KS_ARCH_ARM64, keystone.KS_MODE_LITTLE_ENDIAN); print(platform.machine(), k.asm('mov x0, 1'), unicorn.Uc(unicorn.UC_ARCH_ARM64, unicorn.UC_MODE_ARM))"
+      - name: Release inputs from the source release
+        # A release branch commits desktop-assets itself; for a release, the public assets zip attached
+        # to it holds the same files (the six, the film-look library, the paired DCPs and the sounds).
+        if: github.event_name != 'push'
+        shell: bash
+        env:
+          SOURCE_TAG: ${{ inputs.tag || github.event.release.tag_name }}
+        run: |
+          gh release download "$SOURCE_TAG" --repo "$GITHUB_REPOSITORY" --pattern A7C2Tools-desktop-assets.zip
+          python -c "import zipfile; zipfile.ZipFile('A7C2Tools-desktop-assets.zip').extractall('.')"
+          rm A7C2Tools-desktop-assets.zip
       - name: Prepare build assets
         run: python dev/desktop/prepare_assets.py
       - name: Focused desktop contracts
@@ -85,6 +112,7 @@ jobs:
           if-no-files-found: error
 
   draft-release:
+    if: github.event_name == 'push'
     needs: package
     runs-on: ubuntu-latest
     env:
@@ -110,3 +138,43 @@ jobs:
           else
             gh release create "$tag" --draft --target "$target" --title "$title" --notes-file release-assets/notes.md $files
           fi
+
+  untested-prerelease:
+    if: github.event_name != 'push'
+    needs: package
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SOURCE_TAG: ${{ inputs.tag || github.event.release.tag_name }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: packages
+          merge-multiple: true
+      - name: Publish the untested pre-release
+        # A rerun for the same tag replaces the pre-release, so its files and checksums always match.
+        run: |
+          tag="$SOURCE_TAG-untested"
+          repo="https://github.com/$GITHUB_REPOSITORY"
+          target=$(gh api "repos/$GITHUB_REPOSITORY/commits/$SOURCE_TAG" --jq .sha)
+          {
+            echo "Untested Windows and Apple Silicon builds of [$SOURCE_TAG]($repo/releases/tag/$SOURCE_TAG), made by GitHub Actions from the same source and the same public assets. Nobody has run them on a camera yet."
+            echo
+            echo '- `A7C2Tools-Windows-x64.zip`: Windows 10 or 11, x64. The **Connection and drivers** page sets up the camera'"'"'s USB driver.'
+            echo '- `A7C2Tools-macOS-arm64.dmg`: Apple Silicon Macs. It has no Developer ID signature, so on first launch allow it under **System Settings → Privacy & Security → Open Anyway**.'
+            echo
+            echo "Both passed the build's tests and the packaged self-test and startup checks on GitHub's runners, and that is all the testing they have had. If you try one, start with the read-only **Test** on Connection and drivers, then tell us how it went in a [build report]($repo/issues/new?template=build-report.yml)."
+            echo
+            echo "Read the [risk notice]($repo/blob/main/docs/en/notices.md#risk-notice-and-use-statement) before your first write. Like upstream, this fork uses the PolyForm Noncommercial License 1.0.0: all commercial use and profit-making are prohibited."
+            echo
+            echo 'SHA-256:'
+            echo
+            echo '```'
+            (cd packages && sha256sum A7C2Tools-Windows-x64.zip A7C2Tools-macOS-arm64.dmg)
+            echo '```'
+          } > notes.md
+          cat notes.md
+          gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "$tag" --repo "$GITHUB_REPOSITORY" --prerelease --latest=false --target "$target" \
+            --title "$SOURCE_TAG untested builds: Windows and Apple Silicon" --notes-file notes.md \
+            packages/A7C2Tools-Windows-x64.zip packages/A7C2Tools-macOS-arm64.dmg

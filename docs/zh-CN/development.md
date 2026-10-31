@@ -126,6 +126,8 @@ python desktop.py
 - **macOS**：`dist/A7C2Tools-macOS-<架构>.dmg`，按构建所用的 Mac 命名：Apple Silicon 为 `arm64`，Intel 为 `x86_64`。在目标类型的 Mac 上构建。配对库在 APP 内部（`desktop-assets/profile-library-v1`）。
 - `profilepack.py` 要求富士 11 组、理光彩色 4 组配对全部齐全，否则拒绝打包。黑白配对只有满足独立误差标准（MAE ≤3/255、P95 ≤12/255）才能加入。
 
+**未经测试的构建：** 发布正式版本时，或手动指定版本标签运行时（`gh workflow run release.yml -f tag=<tag>`），`release.yml` 会检出该标签，解压该版本附带的 `A7C2Tools-desktop-assets.zip`，运行相同的测试和安装包检查，再把 Windows 和 Apple Silicon 安装包发布为名为 `<tag>-untested` 的预发布版本，且从不标记为最新版本。该版本必须附带资源压缩包。
+
 CI：`.github/workflows/desktop-preview.yml` 在原生 Windows 和 `macos-15` runner 上构建并上传产物，不发布 Release。修改 `dev/desktop/native-build-request.json` 会触发 Apple Silicon 构建。ARM64 上 Keystone／Unicorn 从源码编译（需要 Xcode 命令行工具和 CMake 3.31.6）；Zig 版本为 0.13.0。
 
 安装包没有 Developer ID 签名。离线测试、打包自检和字节读回都不能证明相机能安全启动，也不能证明颜色或声音正确。实机验收单独记录在[更新日志](changelog.md)中。
